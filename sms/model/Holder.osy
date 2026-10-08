@@ -1,0 +1,48 @@
+namespace Osysharp.Privacy.Sms;
+
+using Osysharp.Sms;
+using Osysharp.Privacy;
+
+/// The texts the app sent a person — found by their number, as the outbox stores it (E.164).
+public class SmsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Sms";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "sms.sent", Label = "Texts we sent you", Purpose = Translate("Telling you what you asked us to, and codes you asked for"),
+      SubjectKind = "everyone we texted", Basis = RetentionBasis.Contract },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    var n = 0;
+    foreach (var p in s.Phones) {
+      var number = NormalisedPhone(p);
+      if (number != "") { n = n + OutgoingSms.Count(m => m.To == number); }
+    }
+    return n;
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    foreach (var p in s.Phones) { EraseSmsTo(p); }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<SentTextRow> rows = [];
+    List<ExportItem> items = [];
+    foreach (var p in s.Phones) {
+      var number = NormalisedPhone(p);
+      if (number == "") { continue; }
+      foreach (var m in OutgoingSms.Where(m => m.To == number).OrderBy(m => m.CreatedAt).ToList()) {
+        rows.Add(new SentTextRow { At = m.SentAt ?? m.CreatedAt, Text = m.Text });
+        items.Add(new ExportItem { At = m.SentAt ?? m.CreatedAt, Title = Translate("A text we sent you"), Body = m.Text });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One text in a person's export.
+public class SentTextRow {
+  public DateTime At;
+  public string Text = "";
+}

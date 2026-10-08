@@ -1,0 +1,17 @@
+using Osysharp.Privacy;
+using Osysharp.Observability;
+using Osysharp.Sms;
+using PrivacySmsKitTests;
+
+app.Privacy = new PrivacySetup { Controller = "The Desk AB", SupervisoryAuthority = "IMY, imy.se" };
+app.Audit = new AuditConfig { Redact = new AuditRedaction { Properties = [OutgoingSms.To, OutgoingSms.Text] } };
+app.AuthBootstrap = new AuthBootstrap { Role = DeskRole.Authenticator, Login = SignInWithCode };
+app.Auth = new PasswordAuth { LoginField = Email, PasswordField = CodeHash };
+app = new() {
+  Name = "PrivacySmsKitTests",
+  // Addresses and numbers — the kits' as well as any of the desk's own — are the admins'; the sign-in reads the code it
+  // sent, so its role is cleared too. Every other level the kits announce is read through each row's own security.
+  Classifications = [
+    new Classification(Personal.Contact) { Roles = [DeskRole.Admin, DeskRole.Authenticator] },
+  ],
+};

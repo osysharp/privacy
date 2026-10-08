@@ -1,0 +1,18 @@
+// Osysharp.Privacy.Sms — the texts an app sent a person, as Osysharp.Privacy's holder: in their copy of their data, and
+// erased when they ask. A request reaches them by the number it names (`FileRequest(…, phone:)` — staff check it is
+// theirs by calling it).
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: Sms does not force privacy requests on an app that only texts, and
+//   Privacy does not force a texting provider on its apps. An app using both gets it by itself — `completes` below, and `osy lock` says so — the
+//   holder is DISCOVERED, nothing is wired.
+package Osysharp.Privacy.Sms {
+  version     "0.2.0";
+  minPlatform "0.9.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.Sms — the texts the app sent a person, found by their number, in their copy of their data and erased when they ask.";
+  completes   Osysharp.Privacy@0, Osysharp.Sms@0;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Sms@0;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}

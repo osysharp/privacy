@@ -1,0 +1,42 @@
+// Everything this desk says: who manages privacy, and who reads the texts it sent.
+namespace PrivacySmsKitTests;
+
+using Osysharp.Identity;
+using Osysharp.Inbox;
+using Osysharp.ServiceHours;
+using Osysharp.Sms;
+using Osysharp.Privacy;
+
+[Role] enum DeskRole { Authenticator, Admin, Agent }
+
+policy IsAdmin => RoleGrant.Any(g => g.Member == user && g.Role == DeskRole.Admin);
+policy ManagesPrivacy => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+
+/// The desk's people.
+entity Person : Principal {
+  [MaxLength(200)] string CodeHash = "";
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+    deny read CodeHash when !IsAuthenticator;
+  }
+}
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }
+
+[AuthMethod]
+string SignInWithCode(string email, string code) {
+  var p = Person.FirstOrDefault(x => x.Email == NormalisedEmail(email));
+  if (p == null || !p.IsActive) { Security.VerifyPassword(code); return ""; }
+  if (!Security.VerifyPassword(code, p.CodeHash)) { return ""; }
+  return Security.IssueJwt(p.Id, p.Email);
+}
+
+partial entity OutgoingSms { security { allow read when IsAdmin; } }
