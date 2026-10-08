@@ -1,0 +1,367 @@
+// A customer's conversations under a privacy request — what is erased now, what is kept RESTRICTED for legal claims and
+// until when, who reads it meanwhile, what the daily purge ends for everyone, and that nobody erases anything any other
+// way.
+
+using Osysharp.Identity;
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Conversations;
+using Osysharp.Memory.Testing;
+using PrivacyConversationsKitTests;
+
+/// The desk: Ada works it and manages privacy; Lou places legal holds and handles claims (and works the desk); Mailroom
+/// is what the mailbox receives as.
+[TestFixture]
+void Desk() {
+  var ada = new Person { Email = "ada@desk.test", DisplayName = "Ada" };
+  new RoleGrant { Member = ada, Role = DeskRole.Admin };
+  var lou = new Person { Email = "lou@desk.test", DisplayName = "Lou" };
+  new RoleGrant { Member = lou, Role = DeskRole.Legal };
+  new RoleGrant { Member = lou, Role = DeskRole.Agent };
+  var mail = new Person { Email = "mailroom@desk.test", DisplayName = "Mailroom" };
+  new RoleGrant { Member = mail, Role = DeskRole.Integration };
+}
+
+principal Ada => Person.Single(p => p.Email == "ada@desk.test");
+principal Lou => Person.Single(p => p.Email == "lou@desk.test");
+principal Mailroom => Person.Single(p => p.Email == "mailroom@desk.test");
+
+/// Ana writes by mail — in Swedish, so her words gain a translated copy — and the desk answers.
+Conversation Writes(string from, string id, string subject, string text) {
+  Conversation? c = null;
+  runas (Mailroom) {
+    ReceiveInbound(new InboundMessage { ChannelKey = "email", Endpoint = "support@desk.test", From = from, FromName = "Ana Lima",
+                                        ExternalId = "<" + Security.RandomHex(8) + "@example.test>", Subject = subject, Text = text });
+    UnitOfWork.Commit();
+  }
+  // Her message's language and its copy in the desk's language are made after it is written.
+  Background.Settle();
+  runas (Ada) {
+    c = Conversation.Single(x => x.Subject == subject);
+    Post(c, "Thank you — we are looking at it.");
+    UnitOfWork.Commit();
+  }
+  Background.Settle();
+  return c!;
+}
+
+/// Ana has two conversations — a question, and a complaint the desk marked as one. Answers the complaint's id.
+Guid AnaWithAComplaint(string token) {
+  Writes("ana@example.test", "q", "Frågan " + token, "Hej, jag undrar om leveransen " + token + ".");
+  var complaint = Writes("ana@example.test", "c", "Klagomål " + token, "Hej, jag har ett klagomal " + token + ".");
+  runas (Ada) { new Complaint { Conversation = complaint.Id }; UnitOfWork.Commit(); }
+  return complaint.Id;
+}
+
+PrivacyRequest ErasureOfAna() {
+  var r = FileRequest(RequestKind.Erasure, null, "ana@example.test", IdentityCheck.CodeToKnownAddress, "A code to the address she writes from.");
+  ApproveRequest(r);
+  return PrivacyRequest.Single(x => x.Id == r.Id);
+}
+
+[Test(Desk)]
+void an_erasure_erases_her_other_conversations_and_keeps_the_complaint_restricted_saying_until_when() {
+  var complaint = AnaWithAComplaint("ZEBRA77");
+  runas (Ada) { new ReplyDraft { Conversation = complaint, Text = "Dear Ana, about the ZEBRA77 complaint…" }; UnitOfWork.Commit(); }
+  runas (Ada) {
+    var r = ErasureOfAna();
+    // Answered at once — nothing waits: what must be kept is kept RESTRICTED, and she is told why and until when.
+    Assert.Equal(RequestState.Done, r.State);
+    var claims = PlanLine.Single(l => l.Request == r && l.Category == "conversations.claims");
+    Assert.Equal(PlanOutcome.Restrict, claims.Outcome);
+    Assert.NotNull(claims.Until);
+    var who = PlanLine.Single(l => l.Request == r && l.Category == "conversations.contact-points");
+    Assert.Equal(PlanOutcome.Restrict, who.Outcome);
+    Assert.Equal(claims.Until, who.Until);
+    Assert.Contains("needed to know who you are in a conversation kept for", who.Reason);
+    Assert.Equal(PlanOutcome.Erase, PlanLine.Single(l => l.Request == r && l.Category == "conversations.service").Outcome);
+    Assert.Contains("What we keep, and why: Conversations about a complaint or a dispute, for the establishment, exercise or defence of legal claims", r.Response);
+    Assert.Contains("What we keep, and why: Your name, email addresses and phone numbers, needed to know who you are", r.Response);
+    // Her question is gone — its words, its subject and the copy search read.
+    Assert.Equal("[erased]", Message.Single(m => m.Conversation.Subject == null && m.Direction == MessageDirection.Inbound).Text);
+    Assert.Equal(0, Message.Count(m => m.Text.Contains("leveransen ZEBRA77")));
+    Assert.Equal(0, Message.Count(m => m.CanonicalText != null && m.CanonicalText.Contains("ZEBRA77")));
+    // The complaint — every entry, the desk's reply included — and who she is are KEPT, and absent from the desk's every
+    // read: the conversation, its messages, its renderings, her address, her name, the draft the desk kept beside it.
+    Assert.Equal(0, Conversation.Count(c => c.Id == complaint));
+    Assert.Equal(0, ConversationEntry.Count(e => e.Conversation.Id == complaint));
+    Assert.Equal(0, Message.Count(m => m.Text.Contains("klagomal ZEBRA77")));
+    Assert.Equal(0, MessageText.Count(t => t.Text.Contains("klagomal ZEBRA77")));
+    Assert.Equal(0, ContactPoint.Count(p => p.Value == "ana@example.test"));
+    Assert.Equal(0, Customer.Count(c => c.DisplayName == "Ana Lima"));
+    Assert.Equal(0, ReplyDraft.Count());
+    Assert.True(Restriction.Count("conversations.claims") > 0);
+    // …and the desk knows it is kept, and until when — from its own mark, never from the conversation.
+    Assert.Equal(claims.Until, KeptMark.Single(k => k.Conversation == complaint).Until);
+    // Recorded as erasures, each with what it reached; who she is was not erased — it is kept.
+    Assert.Equal(1, PartyErasure.Count(e => e.Reach == ErasureReach.Words && e.MessagesErased == 1));
+    Assert.Equal(1, PartyErasure.Count(e => e.Reach == ErasureReach.CanonicalCopies));
+    Assert.Equal(0, PartyErasure.Count(e => e.Reach == ErasureReach.Identity));
+  }
+}
+
+[Test(Desk)]
+void whoever_handles_claims_reads_the_kept_complaint_and_nobody_else_does() {
+  var complaint = AnaWithAComplaint("IBIS40");
+  runas (Ada) { ErasureOfAna(); }
+  runas (Lou) {
+    var t = ConversationForAClaim(complaint);
+    Assert.Equal("Klagomål IBIS40", t.Subject);
+    Assert.True(t.Entries.Any(e => e.Text.Contains("klagomal IBIS40")));
+    Assert.True(t.Entries.Any(e => e.Text == "Thank you — we are looking at it."));
+    Assert.True(t.People.Any(p => p.Contains("ana@example.test")));
+    // A purpose read hands over what the claim needs — the desk's ordinary reads still find nothing.
+    Assert.Equal(0, Message.Count(m => m.Text.Contains("klagomal IBIS40")));
+  }
+  // Managing privacy is not handling claims.
+  runas (Ada) { Assert.Denied(() => ConversationForAClaim(complaint)); }
+}
+
+[Test(Desk)]
+void the_purge_lifts_the_complaint_on_its_day_and_erases_it_and_her() {
+  var complaint = AnaWithAComplaint("OKAPI12");
+  runas (Ada) {
+    new ReplyDraft { Conversation = complaint, Text = "Dear Ana, OKAPI12…" };
+    UnitOfWork.Commit();
+    ErasureOfAna();
+  }
+  // 36 months after the complaint's last entry, and a day.
+  TestClock.Advance(TimeSpan.FromDays(3 * 366 + 2));
+  runas (Ada) {
+    PurgeNow();
+    // Nothing of her is left anywhere the app keeps data — tables, files, memory — kept or not.
+    Assert.NoTraceOf("OKAPI12");
+    Assert.NoTraceOf("Ana Lima");
+    Assert.Equal(0, Restriction.Count("conversations.claims"));
+    // The complaint is back in ordinary use only as its shape: erased, recorded.
+    Assert.True(IsExpired(Conversation.Single(c => c.Id == complaint)));
+    Assert.Equal(0, ContactPoint.Count(p => p.Value == "ana@example.test"));
+    Assert.Equal("erased", Customer.Single().Tier);
+    Assert.Equal(1, PartyErasure.Count(e => e.Reach == ErasureReach.Identity));
+    Assert.Equal(0, KeptMark.Count());
+  }
+}
+
+[Test(Desk)]
+void a_hold_on_her_keeps_the_complaint_past_its_period_until_it_is_lifted() {
+  var complaint = AnaWithAComplaint("TAPIR5");
+  runas (Ada) { ErasureOfAna(); }
+  var holdId = Guid.Empty;
+  runas (Lou) { holdId = PlaceHold("ana@example.test", null, "Ana's dispute", "Her lawyer wrote.", DateTime.UtcNow.AddDays(2000)).Id; }
+  TestClock.Advance(TimeSpan.FromDays(3 * 366 + 2));
+  runas (Ada) { PurgeNow(); }
+  // Past its period, and still kept — the hold stands.
+  runas (Lou) {
+    Assert.True(ConversationForAClaim(complaint).Entries.Any(e => e.Text.Contains("klagomal TAPIR5")));
+    Assert.True(Restriction.Count("conversations.claims") > 0);
+    Assert.Null(KeptMark.Single(k => k.Conversation == complaint).Until);
+    LiftHold(LegalHold.Single(h => h.Id == holdId), "The dispute was settled.");
+  }
+  runas (Ada) {
+    PurgeNow();
+    Assert.NoTraceOf("TAPIR5");
+    Assert.Equal(0, Restriction.Count("conversations.claims"));
+  }
+}
+
+[Test(Desk)]
+void her_access_request_after_an_erasure_still_shows_what_is_kept_about_her() {
+  AnaWithAComplaint("MOOSE3");
+  runas (Ada) {
+    ErasureOfAna();
+    var r = FileRequest(RequestKind.Access, null, "ana@example.test", IdentityCheck.CodeToKnownAddress, "A code to her address.");
+    ApproveRequest(r);
+    var h = new ConversationsPersonalData();
+    var s = SubjectOf(PrivacyRequest.Single(x => x.Id == r.Id));
+    Assert.Equal(PlanOutcome.Export, PlanLine.Single(l => l.Request.Id == r.Id && l.Category == "conversations.claims").Outcome);
+    Assert.Contains("klagomal MOOSE3", h.Export(s, CategoryOf("conversations.claims")).Json);
+    Assert.Contains("ana@example.test", h.Export(s, CategoryOf("conversations.contact-points")).Json);
+  }
+}
+
+[Test(Desk)]
+void an_erased_customer_with_no_complaint_leaves_no_trace_at_once() {
+  // Her words are indexed for search (her message's canonical copy is `[Searchable(Memory)]`) — so the erasure has a
+  // search index to empty too.
+  TestEmbedder.Use(new WordsEmbedder());
+  Writes("ana@example.test", "q-LLAMA33", "Frågan LLAMA33", "Hej, jag undrar om leveransen LLAMA33.");
+  runas (Ada) { Assert.Equal(1, SearchConversations("leveransen LLAMA33").Count); }
+  runas (Ada) {
+    var r = ErasureOfAna();
+    Assert.Equal(RequestState.Done, r.State);
+    // Not a search away either: what was embedded from her words went with them.
+    Assert.Equal(0, SearchConversations("leveransen LLAMA33").Count);
+    Assert.NoTraceOf("LLAMA33");
+    // Her name too — the one every entry she wrote was signed with.
+    Assert.NoTraceOf("Ana Lima");
+    // The mail the desk sent her went from the channel's outbox too.
+    Assert.Equal(0, Carried.Count(c => c.To == "ana@example.test"));
+  }
+}
+
+[Test(Desk)]
+void nobody_erases_a_customer_except_through_a_privacy_request() {
+  Writes("ana@example.test", "q-DIRECT", "Direct", "Please forget me.");
+  runas (Ada) {
+    var party = Message.Single(m => m.Text == "Please forget me.").ByParty!;
+    // Not even the person who manages privacy: an erasure recorded directly bypasses the plan.
+    Assert.Denied(() => { new PartyErasure { Party = party, Reach = ErasureReach.Words, At = DateTime.UtcNow }; UnitOfWork.Commit(); });
+    Assert.Equal("Please forget me.", Message.Single(m => m.Direction == MessageDirection.Inbound).Text);
+  }
+}
+
+[Test(Desk)]
+void a_conversation_past_its_period_is_purged_for_everyone_unless_a_hold_covers_it() {
+  var old = Writes("ana@example.test", "o-1", "Old question", "A question from long ago.");
+  var held = Writes("bo@example.test", "o-2", "Held question", "A question somebody is fighting about.");
+  runas (Lou) { PlaceCaseHold("Conversation", held.Id, "Bo's question", "Dispute with Bo", "His lawyer wrote.", DateTime.UtcNow.AddDays(500)); }
+  runas (Ada) { new ReplyDraft { Conversation = old.Id, Text = "Dear Ana, about your question…" }; UnitOfWork.Commit(); }
+  TestClock.Advance(TimeSpan.FromDays(370));
+  var fresh = Writes("cy@example.test", "n-1", "New question", "A question from today.");
+  runas (Ada) {
+    PurgeNow();
+    Assert.Equal(0, Message.Count(m => m.Text == "A question from long ago."));
+    Assert.Equal(1, Message.Count(m => m.Text == "A question somebody is fighting about."));
+    Assert.Equal(1, Message.Count(m => m.Text == "A question from today."));
+    // What the app kept beside it — a draft — went with it.
+    Assert.Equal(0, ReplyDraft.Count());
+    Assert.True(IsExpired(Conversation.Single(c => c.Id == old.Id)));
+    Assert.Equal(1, ConversationEvent.Count(e => e.Kind == "conversations.retention-erased"));
+  }
+}
+
+/// A message split off a held conversation is still evidence in that matter: the hold reaches the conversation it was
+/// split into, and the purge keeps it there too — a split is no way out of a hold.
+[Test(Desk)]
+void a_message_split_off_a_held_conversation_is_still_kept_by_the_hold() {
+  var held = Writes("bo@example.test", "h-1", "Disputed order", "The parcel never arrived.");
+  runas (Mailroom) {
+    var key = ConversationThreadKey.Where(k => k.Conversation.Id == held.Id).Select(k => k.Key).First();
+    var again = new InboundMessage { ChannelKey = "email", Endpoint = "support@desk.test", From = "bo@example.test",
+                                     FromName = "Bo", ExternalId = "<h-2@example.test>", Subject = "Re: Disputed order",
+                                     Text = "And the refund you promised never came." };
+    again.ThreadKeys.Add(key);
+    ReceiveInbound(again);
+    UnitOfWork.Commit();
+  }
+  runas (Lou) { PlaceCaseHold("Conversation", held.Id, "Bo's order", "Dispute with Bo", "His lawyer wrote.", DateTime.UtcNow.AddDays(500)); }
+  Guid intoId = Guid.Empty;
+  runas (Ada) {
+    var refund = Message.Single(m => m.ExternalId == "<h-2@example.test>");
+    intoId = SplitOff(refund, "The refund").Id;
+    UnitOfWork.Commit();
+    Assert.Equal(intoId, Message.Single(m => m.ExternalId == "<h-2@example.test>").Conversation.Id);
+  }
+  TestClock.Advance(TimeSpan.FromDays(370));
+  runas (Ada) {
+    PurgeNow();
+    Assert.Equal(1, Message.Count(m => m.Text == "The parcel never arrived."));
+    Assert.Equal(1, Message.Count(m => m.Text == "And the refund you promised never came."));
+    Assert.False(IsExpired(Conversation.Single(c => c.Id == intoId)));
+  }
+}
+
+/// …and so is a side conversation started beside it: what the desk asked the carrier about a held matter is kept by
+/// the hold too, past its own period.
+/// SECURITY-INVARIANT(erasure-blanks-the-desks-words-beside) — the desk asked a carrier about Ana's parcel in a side
+/// conversation, naming her. Her erasure blanks what the DESK wrote there — the message, the mail that carried it, the
+/// side conversation's subject and the line that repeats it on her conversation — and leaves the carrier's own answer.
+[Test(Desk)]
+void an_erasure_blanks_what_the_desk_wrote_about_her_in_a_side_conversation_and_keeps_the_suppliers_words() {
+  var c = Writes("ana@example.test", "q-ZEBRA7", "Frågan ZEBRA7", "Hej, jag undrar om leveransen ZEBRA7.");
+  Guid sideId = Guid.Empty;
+  runas (Ada) {
+    sideId = StartSideConversationTo(c.Id, "carrier@freight.test", "Parcel ZEBRA7 for Ana", "Where is the parcel ZEBRA7 for Ana at Elm Street?");
+  }
+  Background.Settle();
+  var askedRef = "";
+  runas (Ada) { askedRef = Carried.Single(x => x.To == "carrier@freight.test").Ref; }
+  runas (Mailroom) {
+    ReceiveInbound(new InboundMessage { ChannelKey = "email", Endpoint = "support@desk.test", From = "carrier@freight.test",
+                                        FromName = "Freight Co", ExternalId = "<carrier-1@freight.test>", ThreadKeys = [askedRef],
+                                        Subject = "Re: Parcel", Text = "Our depot has it — we deliver on Friday." });
+    UnitOfWork.Commit();
+  }
+  Background.Settle();
+  runas (Ada) { Assert.Equal(2, Message.Count(m => m.Conversation.Id == sideId)); }
+  runas (Ada) {
+    Assert.Equal(RequestState.Done, ErasureOfAna().State);
+    Assert.NoTraceOf("ZEBRA7");
+    Assert.NoTraceOf("Elm Street");
+    Assert.Equal(0, Carried.Count(x => x.To == "carrier@freight.test"));
+    // The carrier's own words are theirs, and stay.
+    Assert.Equal(1, Message.Count(m => m.Conversation.Id == sideId && m.Text == "Our depot has it — we deliver on Friday."));
+  }
+}
+
+[Test(Desk)]
+void a_side_conversation_beside_a_held_conversation_is_kept_by_the_hold() {
+  var held = Writes("bo@example.test", "h-1", "Disputed order", "The parcel never arrived.");
+  runas (Lou) { PlaceCaseHold("Conversation", held.Id, "Bo's order", "Dispute with Bo", "His lawyer wrote.", DateTime.UtcNow.AddDays(500)); }
+  Guid sideId = Guid.Empty;
+  runas (Ada) {
+    sideId = StartSideConversationTo(held.Id, "", "Was it delivered?", "The driver's log says left at the door.");
+    Assert.Equal(1, Message.Count(m => m.Conversation.Id == sideId));
+  }
+  TestClock.Advance(TimeSpan.FromDays(370));
+  runas (Ada) {
+    PurgeNow();
+    Assert.Equal(1, Message.Count(m => m.Text == "The driver's log says left at the door."));
+    Assert.False(IsExpired(Conversation.Single(c => c.Id == sideId)));
+  }
+}
+
+[Test(Desk)]
+void her_export_carries_each_kind_of_conversation_under_its_own_category() {
+  AnaWithAComplaint("GECKO9");
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Access, null, "ana@example.test", IdentityCheck.CodeToKnownAddress, "A code to her address.");
+    ApproveRequest(r);
+    var h = new ConversationsPersonalData();
+    var s = SubjectOf(PrivacyRequest.Single(x => x.Id == r.Id));
+    Assert.Contains("klagomal GECKO9", h.Export(s, CategoryOf("conversations.claims")).Json);
+    Assert.DoesNotContain("leveransen GECKO9", h.Export(s, CategoryOf("conversations.claims")).Json);
+    Assert.Contains("leveransen GECKO9", h.Export(s, CategoryOf("conversations.service")).Json);
+    Assert.Contains("ana@example.test", h.Export(s, CategoryOf("conversations.contact-points")).Json);
+    Assert.Contains("[en]", h.Export(s, CategoryOf("conversations.analysis")).Json);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+}
+
+[Test(Desk)]
+void a_restriction_keeps_all_her_conversations_out_of_use_until_she_lifts_it() {
+  var complaint = AnaWithAComplaint("HERON8");
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Restriction, null, "ana@example.test", IdentityCheck.CodeToKnownAddress, "A code to her address.");
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Contains("until you ask us to lift the restriction", done.Response);
+    Assert.Null(PlanLine.Single(l => l.Request == done && l.Category == "conversations.claims").Until);
+    // Her question and her complaint, and who she is: out of every ordinary read.
+    Assert.Equal(0, Message.Count(m => m.Text.Contains("HERON8")));
+    Assert.Equal(0, ContactPoint.Count(p => p.Value == "ana@example.test"));
+    // Nothing was erased — a restriction keeps.
+    Assert.Equal(0, PartyErasure.Count());
+    Assert.Null(KeptMark.Single(k => k.Conversation == complaint).Until);
+  }
+  // The complaint is still there for a claim.
+  runas (Lou) { Assert.True(ConversationForAClaim(complaint).Entries.Any(e => e.Text.Contains("klagomal HERON8"))); }
+}
+
+/// D-RTL2 Q2 — a timeline line keeps WHO it names as a fact (classified, with which party), never inside a sentence, so
+/// erasing who she is reaches it: two records of Ana merged put her name on both timelines, and once she is erased
+/// nothing of her name is left anywhere the app keeps data.
+[Test(Desk)]
+void erasing_who_she_is_reaches_her_name_on_a_merge_line_too() {
+  Writes("ana@example.test", "m-1", "Fråga LYNX3", "Hej, en fråga om LYNX3.");
+  Writes("ana.lima@work.example", "m-2", "Fråga igen LYNX3", "Hej igen, om LYNX3.");
+  runas (Ada) {
+    var first = Message.Single(m => m.Text == "Hej, en fråga om LYNX3.").ByParty!;
+    var second = Message.Single(m => m.Text == "Hej igen, om LYNX3.").ByParty!;
+    Assert.Equal(MergeState.Merged, MergeParties(first, second).State);
+    Assert.True(ConversationEvent.Any(e => e.Kind == "conversations.parties-merged" && e.Person == "Ana Lima"));
+    ErasureOfAna();
+    Assert.NoTraceOf("Ana Lima");
+  }
+}

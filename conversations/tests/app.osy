@@ -1,0 +1,25 @@
+// The producer's test project for Osysharp.Privacy.Conversations — the smallest correct consumer: a support desk whose
+// customers write by mail, that answers privacy requests with Osysharp.Privacy, and says which of its conversations are
+// complaints (`DeskPrivacy`). A customer asks to be erased; their other conversations, their contact points and the
+// redacted copies go, a complaint is kept for legal claims until its period ends — and then it goes too.
+app PrivacyConversationsKitTests {
+  model "model/**/*.osy";
+  tests "**/*.test.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Organizations@0;
+  use Osysharp.Organizations.Accounts@0;
+  use Osysharp.Collaboration@0;
+  use Osysharp.Inbox@0;
+  use Osysharp.ServiceHours;
+  use Osysharp.Mail@0;
+  use Osysharp.Conversations@0;
+  use Osysharp.Privacy@0;
+  // Osysharp.Privacy.Conversations, the package under test, is not written: it arrives by itself because this app uses
+  // Privacy and Conversations, which it completes (`osy lock` includes it and says so).
+  use Osysharp.Memory;
+  // A deterministic embedder, so a test can prove an erasure leaves nothing searchable (`TestEmbedder.Use`).
+  use Osysharp.Memory.Testing@0;
+  use Osysharp.Workflow;
+  use Osysharp.Observability;
+  use Osysharp.Storage;
+}

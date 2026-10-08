@@ -1,0 +1,67 @@
+// WHAT A KEPT COMPLAINT COSTS AS IT GROWS — keeping it for a claim, and reading it for one, read each kind of row once
+// for the whole conversation however many messages it holds. Each test sets one customer's complaint at two replies
+// and another's at sixteen, and a read per message turns it red with both numbers. The desk is in erasure.test.osy.
+using Osysharp.Identity;
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Conversations;
+using PrivacyConversationsKitTests;
+
+/// `email` writes a complaint the desk marks as one and answers `replies` times. Answers its id.
+Guid ComplaintFrom(string email, string token, int replies) {
+  var c = Writes(email, "c", "Klagomål " + token, "Hej, jag har ett klagomal " + token + ".");
+  runas (Ada) {
+    new Complaint { Conversation = c.Id };
+    for (var i = 2; i <= replies; i++) { Post(c, "Reply " + i + " about " + token + "."); }
+    UnitOfWork.Commit();
+  }
+  return c.Id;
+}
+
+/// `email` asks to be erased, and the desk approves it at once — the complaint is KEPT, restricted.
+void ErasureOf(string email) {
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, null, email, IdentityCheck.CodeToKnownAddress, "A code to the address she writes from.");
+    ApproveRequest(r);
+  }
+}
+
+/// ⭐ KEEPING A COMPLAINT READS EACH KIND OF ITS ROWS ONCE — its renderings, files and deliveries are read for the whole
+/// conversation, not once per message. Every row it keeps is still WRITTEN, and fourteen more messages' writes may batch
+/// into one more statement; a read per message would be three more statements for each of them.
+[Test(Desk)]
+void keeping_a_complaint_reads_the_same_however_long_it_is() {
+  ComplaintFrom("cy@example.test", "FIRST1", 2);
+  ComplaintFrom("ana@example.test", "SHORT1", 2);
+  ComplaintFrom("bea@example.test", "LONG16", 16);
+  // The desk's first erasure sets up what every later one reuses — it is not what this compares.
+  ErasureOf("cy@example.test");
+  var mark = Cost.Mark();
+  ErasureOf("ana@example.test");
+  var two = Cost.StatementsSince(mark);
+  mark = Cost.Mark();
+  ErasureOf("bea@example.test");
+  var sixteen = Cost.StatementsSince(mark);
+  Log.Information("Keeping a complaint: " + two + " statements with two replies, " + sixteen + " with sixteen");
+  Assert.AtMost(two + 1, sixteen);
+}
+
+/// ⭐ READING A KEPT COMPLAINT FOR A CLAIM READS ITS MESSAGES AND EVENTS ONCE — not two reads for every entry.
+[Test(Desk)]
+void a_kept_complaint_reads_the_same_for_a_claim_however_long_it_is() {
+  var small = ComplaintFrom("ana@example.test", "SHORT2", 2);
+  var large = ComplaintFrom("bea@example.test", "LONG17", 16);
+  ErasureOf("ana@example.test");
+  ErasureOf("bea@example.test");
+  runas (Lou) {
+    var mark = Cost.Mark();
+    var two = ConversationForAClaim(small);
+    var shortCost = Cost.StatementsSince(mark);
+    mark = Cost.Mark();
+    var sixteen = ConversationForAClaim(large);
+    var longCost = Cost.StatementsSince(mark);
+    Log.Information("ConversationForAClaim: " + shortCost + " statements for " + two.Entries.Count + " entries, " + longCost + " for " + sixteen.Entries.Count);
+    Assert.True(sixteen.Entries.Any(e => e.Text == "Reply 16 about LONG17."));
+    Assert.Equal(shortCost, longCost);
+  }
+}

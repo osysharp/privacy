@@ -1,0 +1,38 @@
+// Asking about your data with no account, as the person does it — signed out, from the privacy kit's own page.
+// `osy test --pixels` photographs each step.
+
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+using PrivacyConversationsKitTests;
+
+[Test(Desk)]
+void a_customer_with_no_account_asks_from_the_page_and_sees_what_it_will_do_first() {
+  Writes("ana@example.test", "u1", "Frågan UI1", "Hej, jag undrar UI1.");
+  Ui.Viewport(1280, 900);
+  Ui.Visit("/privacy/ask");
+  Assert.Visible("Ask about your data");
+  Ui.Fill("Your email address", "ana@example.test");
+  Ui.Shot("ask-without-an-account");
+  Ui.Click("Send me a code");
+  Assert.Visible("We sent a code to a•••@example.test");
+  Ui.Fill("Code", CodeSentTo("ana@example.test"));
+  Ui.Click("Confirm");
+  Ui.Click("Erase your data");
+  // What it will do, category by category, before anything is sent.
+  Assert.Visible("Your other conversations with us", within: "What this will do");
+  Ui.Shot("ask-without-an-account-what-it-does");
+  Ui.Click("Send the request");
+  Assert.Visible("Your request is in");
+  Ui.Shot("ask-without-an-account-sent");
+  runas (Ada) { Assert.Equal(IdentityCheck.CodeToTheirAddress, PrivacyRequest.Single().Check); }
+}
+
+[Test(Desk)]
+void on_a_phone_in_the_dark_the_ask_page_fits() {
+  Ui.Viewport(390, 844);
+  Ui.Theme("dark");
+  Ui.Visit("/privacy/ask");
+  Assert.Visible("Send me a code");
+  Assert.NoOverflow();
+  Ui.Shot("ask-without-an-account-phone-dark");
+}

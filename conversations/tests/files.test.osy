@@ -1,0 +1,40 @@
+// Files under a person's erasure: a file goes because the desk said it is ABOUT them, never because they sent it
+// (owner, Privacy Q7). The original their message arrived as IS their message, and goes with their words.
+
+using Osysharp.Identity;
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Conversations;
+using Osysharp.Storage;
+using PrivacyConversationsKitTests;
+
+byte[] Png() {
+  return Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+}
+
+[Test(Desk)]
+void a_file_she_sent_stays_and_a_file_marked_about_her_goes_with_her_erasure() {
+  Writes("ana@example.test", "f-1", "Files", "Two files, attached.");
+  Guid hers = Guid.Empty;
+  Guid theirs = Guid.Empty;
+  runas (Ada) {
+    var m = Message.Single(x => x.Text == "Two files, attached.");
+    var id = File.Create("passport.png", "image/png", Png());
+    var plan = File.Create("floor-plan.png", "image/png", Png());
+    var a = new MessageAttachment { Message = m, File = id, FileName = "passport.png", ContentType = "image/png", Kind = AttachmentKind.Image };
+    new MessageAttachment { Message = m, File = plan, FileName = "floor-plan.png", ContentType = "image/png", Kind = AttachmentKind.Image };
+    UnitOfWork.Commit();
+    // Her passport is about her — the desk says so. The floor plan is her company's, and says nothing about her.
+    MarkFileAbout(a, m.ByParty);
+    hers = id.Id;
+    theirs = plan.Id;
+  }
+  runas (Ada) {
+    var r = ErasureOfAna();
+    Assert.Equal(RequestState.Done, r.State);
+    Assert.False(FileAsset.Any(f => f.Id == hers));
+    Assert.True(FileAsset.Any(f => f.Id == theirs));
+    Assert.Equal(1, MessageAttachment.Count(x => x.FileName == "floor-plan.png"));
+    Assert.Equal(1, PartyErasure.Single(e => e.Reach == ErasureReach.Words).FilesDeleted);
+  }
+}

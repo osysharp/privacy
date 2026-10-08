@@ -1,0 +1,546 @@
+namespace Osysharp.Privacy.Conversations;
+
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+
+// ── what the Conversations kit holds about a person, and what a request does to it ────────────────────────────────
+//
+// A person is found by the identifiers their request PROVED — an address, a number, their account — never by one this
+// holder finds along the way: the parties holding a contact point with that value (claimed or proven: a mail customer
+// has only ever written FROM it), and the party linked to their account. Their conversations are the ones those parties
+// have a seat in. Each erasure is RECORDED as a `PartyErasure`, and the Conversations kit's own run does the writes.
+//
+// ⚑ A CONVERSATION KEPT FOR LEGAL CLAIMS IS RESTRICTED, NOT LEFT IN USE (D-PRIVACY1 R1, owner 2026-10-02). When a person
+//   asks to be erased, a conversation the app says concerns a claim (`ConcernsAClaim`) is kept — its entries, their
+//   renderings, files and deliveries, and the person themselves (their party and contact points: a complaint is a
+//   complaint BY somebody) — stamped with the category `conversations.claims` and the end of its period. From then on
+//   it is absent from every ordinary read, the desk's and the platform's own, and read only through a purpose read of
+//   that category — `ConversationForAClaim` for whoever handles claims, and this holder's own counting, export, purge
+//   and hold — each read written to the access trail. When its period ends the purge LIFTS it and erases it, and then
+//   erases who they were, as they asked.
+
+public class ConversationsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Conversations";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = ClaimsCategory(), Label = "Conversations about a complaint or a dispute",
+      Purpose = Translate("Establishing, exercising or defending legal claims"), SubjectKind = "customers",
+      Basis = RetentionBasis.LegalClaims,
+      BasisDetail = Translate("the establishment, exercise or defence of legal claims (GDPR Art. 17(3)(e))"),
+      RetainedMonths = 36, RetainedFrom = RetentionStart.Collected, MinMonths = 0, MaxMonths = 120,
+      RetainedFromWords = Translate("from the last message in it") },
+    new DataCategory {
+      Key = ServiceCategory(), Label = "Your other conversations with us",
+      Purpose = Translate("Answering you, and improving our own support"), SubjectKind = "customers",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("answering you, and improving our own support"),
+      // The app's default (`KeepForMonths`); the tenant's own period on the retention page wins (`RetentionOf`).
+      RetainedMonths = App.Setting<ConversationsPrivacySetup>().KeepForMonths, RetainedFrom = RetentionStart.Collected,
+      MinMonths = 0, MaxMonths = 120, RetainedFromWords = Translate("from the last message in it") },
+    new DataCategory {
+      Key = PointsCategory(), Label = "Your name, email addresses and phone numbers",
+      Purpose = Translate("Reaching you about what you asked"), SubjectKind = "customers",
+      Basis = RetentionBasis.Contract, Portable = true,
+      // How every other holder finds a customer — a ticket through its party, by the address on it: erased last.
+      Identifies = true },
+    new DataCategory {
+      Key = AnalysisCategory(), Label = "Redacted copies of your messages in our own language",
+      Purpose = Translate("Searching our past answers, and improving our support"), SubjectKind = "customers",
+      Basis = RetentionBasis.LegitimateInterest },
+  ];
+
+  /// Counted inside a purpose read of the claims category, so what a request already KEPT counts too: a second request
+  /// from the same person is told it is still kept, never that nothing is held.
+  public int Count(DataSubject s, DataCategory c) => CountHeld(s, c.Key);
+
+  /// What waits: only an erasure of a conversation a legal hold covers AS A CASE (a held person is the plan's own
+  /// business — nothing about them is erased while it stands). A complaint never waits: it is kept restricted.
+  public string BlockedBy(DataSubject s, DataCategory c) {
+    if (c.Key == ServiceCategory() || c.Key == AnalysisCategory()) {
+      foreach (var conv in ServiceOf(PartiesOf(s))) {
+        if (HeldAsACase(conv)) { return HeldSentence(); }
+      }
+    }
+    return "";
+  }
+
+  /// Who they are is kept — restricted — while a conversation of theirs is kept for legal claims.
+  public string KeptWith(DataSubject s, DataCategory c) => c.Key == PointsCategory() ? PointsKeptWith(s) : "";
+
+  public void Erase(DataSubject s, DataCategory c) {
+    var parties = PartiesOf(s);
+    var rules = App.Setting<ConversationsPrivacySetup>().Rules;
+    var now = DateTime.UtcNow;
+    foreach (var p in parties) {
+      if (c.Key == ServiceCategory() || c.Key == ClaimsCategory()) {
+        // Claims reach here only when the tenant keeps them for no time at all (`IsKept` is false) — then they are
+        // erased like any other conversation.
+        foreach (var conv in c.Key == ServiceCategory() ? ServiceOf([p]) : ClaimsOf([p])) {
+          new PartyErasure { Party = p, Conversation = conv, Reach = ErasureReach.Words, At = now, Cause = ErasureCause.Request };
+          // …and what the desk wrote about them beside it — to a supplier, a carrier — while the other side's words stay.
+          if (Conversation.Any(x => x.SideOf != null && x.SideOf.Id == conv.Id)) {
+            new PartyErasure { Party = p, Conversation = conv, Reach = ErasureReach.DeskWordsBeside, At = now, Cause = ErasureCause.Request };
+          }
+          rules.Erased(conv);
+        }
+      } else if (c.Key == AnalysisCategory()) {
+        new PartyErasure { Party = p, Reach = ErasureReach.CanonicalCopies, At = now, Cause = ErasureCause.Request };
+      } else {
+        new PartyErasure { Party = p, Reach = ErasureReach.Identity, At = now, Cause = ErasureCause.Request };
+      }
+    }
+  }
+
+  /// Keep what they hold of `c` restricted: a complaint until its period ends (or `untilLifted`, an Art. 18 request),
+  /// who they are with it. Answers the latest end it set.
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) => KeepRestricted(s, c.Key, untilLifted);
+
+  public ExportSection Export(DataSubject s, DataCategory c) => ExportHeld(s, c.Key);
+
+  /// A conversation's period: a claims conversation 36 months (the tenant's setting) after its last entry — kept or not
+  /// — any other its own category's period after it (the app's `KeepForMonths`, or the tenant's). Ended — its words,
+  /// files and subject go, for everyone, recorded. What a legal hold covers is left alone: the conversation itself held
+  /// as a case, or any customer in it held.
+  public int Purge(DataCategory c, DateTime now) {
+    if (c.Key == ClaimsCategory()) { return PurgeClaims(now); }
+    var setup = App.Setting<ConversationsPrivacySetup>();
+    var months = RetentionOf(c).RetainedMonths;
+    if (c.Key != ServiceCategory() || months <= 0) { return 0; }
+    var cutoff = now.AddMonths(-months);
+    var gone = 0;
+    foreach (var conv in Conversation.Where(x => x.LastEntryAt < cutoff || (x.LastEntryAt == null && x.StartedAt < cutoff)).ToList()) {
+      if (IsExpired(conv) || setup.Rules.ConcernsAClaim(conv) || IsConversationHeld(conv)) { continue; }
+      new PartyErasure { Conversation = conv, Reach = ErasureReach.Conversation, At = now, Cause = ErasureCause.PeriodEnded };
+      setup.Rules.Erased(conv);
+      gone = gone + 1;
+    }
+    return gone;
+  }
+
+  /// A legal hold keeps the kept conversations it covers — and the people kept with them — out of the purge while it
+  /// stands, and gives them their period back when it is lifted.
+  public bool Hold(LegalHold hold, DataCategory c, bool held) {
+    if (c.Key != ClaimsCategory()) { return true; }
+    HoldClaims(hold, held);
+    return true;
+  }
+}
+
+/// One redacted copy, as a person's export carries it.
+public class CanonicalCopy {
+  public DateTime At;
+  public string Text = "";
+}
+
+public string ClaimsCategory() { return "conversations.claims"; }
+public string ServiceCategory() { return "conversations.service"; }
+public string PointsCategory() { return "conversations.contact-points"; }
+public string AnalysisCategory() { return "conversations.analysis"; }
+
+// ── the purpose reads: everything that touches a conversation kept for legal claims ───────────────────────────────
+
+/// How many rows of `category` are about `s` — the kept ones included.
+[PurposeRead("conversations.claims")]
+internal int CountHeld(DataSubject s, string category) {
+  var parties = PartiesOf(s);
+  if (category == ClaimsCategory()) { return ClaimsOf(parties).Count; }
+  if (category == ServiceCategory()) { return ServiceOf(parties).Count; }
+  if (category == PointsCategory()) {
+    var n = 0;
+    foreach (var p in parties) { n = n + 1 + ContactPoint.Count(x => x.Party == p && x.Kind != ContactPointKind.Visitor); }
+    return n;
+  }
+  var copies = 0;
+  foreach (var p in parties) { copies = copies + Message.Count(m => m.ByParty == p && m.CanonicalText != null); }
+  return copies;
+}
+
+/// Why who they are is kept: a conversation of theirs is kept for legal claims.
+[PurposeRead("conversations.claims")]
+internal string PointsKeptWith(DataSubject s) {
+  return ClaimsOf(PartiesOf(s)).Count > 0 ? $"needed to know who you are in a conversation {HeldSentence()}" : "";
+}
+
+/// Keep `category` restricted for `s`. Claims: each conversation until its own period ends. Their other conversations
+/// (an Art. 18 request only — on erasure they are erased): until lifted. Who they are: with their complaints, until the
+/// last of them ends — or until lifted.
+[PurposeRead("conversations.claims")]
+internal DateTime? KeepRestricted(DataSubject s, string category, bool untilLifted) {
+  var parties = PartiesOf(s);
+  var claims = ClaimsOf(parties);
+  if (category == ClaimsCategory()) {
+    DateTime? latest = null;
+    foreach (var conv in claims) {
+      DateTime? until = untilLifted ? null : KeepUntil(CategoryOf(ClaimsCategory()), LastOf(conv));
+      StampConversation(conv, ClaimsCategory(), until, false);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    return untilLifted ? null : latest;
+  }
+  if (category == ServiceCategory()) {
+    foreach (var conv in ServiceOf(parties)) { StampConversation(conv, ServiceCategory(), null, false); }
+    return null;
+  }
+  if (category == PointsCategory()) {
+    if (!untilLifted && claims.Count == 0) {
+      // Nothing of theirs is kept for a claim any longer (its period ended since the plan was made): who they are goes.
+      foreach (var p in parties) {
+        new PartyErasure { Party = p, Reach = ErasureReach.Identity, At = DateTime.UtcNow, Cause = ErasureCause.Request };
+      }
+      return null;
+    }
+    DateTime? until = untilLifted ? null : ClaimsKeptUntil(claims);
+    var key = untilLifted ? PointsCategory() : ClaimsCategory();
+    foreach (var p in parties) { StampParty(p, key, until, false); }
+    return until;
+  }
+  // The redacted copies are fields of the messages, kept with the conversations they are in.
+  return null;
+}
+
+/// Everything of `category` about `s`, for the person's access or portability export — the kept rows included: the
+/// person may always see what is kept about them.
+[PurposeRead("conversations.claims")]
+[SuppressWarning("cost-unbounded-read")]   // one person's messages — an access export reaches all of them
+internal ExportSection ExportHeld(DataSubject s, string category) {
+  var parties = PartiesOf(s);
+  if (category == ClaimsCategory() || category == ServiceCategory()) {
+    var ids = (category == ClaimsCategory() ? ClaimsOf(parties) : ServiceOf(parties)).Select(x => x.Id).ToList();
+    List<ExportedMessage> messages = [];
+    List<ExportItem> items = [];
+    foreach (var p in parties) {
+      foreach (var m in ExportPartyData(p).Messages) {
+        if (!ids.Contains(m.Conversation)) { continue; }
+        messages.Add(m);
+        items.Add(new ExportItem { At = m.At, Title = (m.Direction == "sent" ? Translate("You wrote") : Translate("We wrote to you")) + " · " + m.Subject,
+                                   Body = m.Text });
+      }
+    }
+    return new ExportSection { Category = category, Json = JsonSerializer.Serialize(messages), Items = items };
+  }
+  if (category == PointsCategory()) {
+    List<PartyExport> who = [];
+    List<ExportItem> items = [];
+    foreach (var p in parties) {
+      var e = ExportPartyData(p);
+      who.Add(new PartyExport { Name = e.Name, Language = e.Language, ContactPoints = e.ContactPoints });
+      List<ExportField> fields = [new ExportField { Name = Translate("Name"), Value = e.Name }];
+      foreach (var point in e.ContactPoints) { fields.Add(new ExportField { Name = Translate("Reached at"), Value = point }); }
+      if (e.Language != null && e.Language != "") { fields.Add(new ExportField { Name = Translate("Language"), Value = e.Language! }); }
+      items.Add(new ExportItem { Title = Translate("Who you are to us"), Fields = fields });
+    }
+    return new ExportSection { Category = category, Json = JsonSerializer.Serialize(who), Items = items };
+  }
+  // `copyItems`, not `items`: a local's scope is its whole block, so an `items` here would hide the two above (C# CS0136).
+  List<CanonicalCopy> copies = [];
+  List<ExportItem> copyItems = [];
+  foreach (var p in parties) {
+    foreach (var m in Message.Where(m => m.ByParty == p && m.CanonicalText != null).OrderBy(m => m.At).ToList()) {
+      copies.Add(new CanonicalCopy { At = m.At, Text = m.CanonicalText! });
+      copyItems.Add(new ExportItem { At = m.At, Title = Translate("A redacted copy of your message"), Body = m.CanonicalText! });
+    }
+  }
+  return new ExportSection { Category = category, Json = JsonSerializer.Serialize(copies), Items = copyItems };
+}
+
+/// The claims conversations whose period ended — kept or never asked about: each is LIFTED, then erased for everyone,
+/// recorded; and a person kept with them, once none of theirs is kept any longer, is erased as they asked.
+[PurposeRead("conversations.claims")]
+[SuppressWarning("cost-unbounded-read")]   // the conversations whose claims period ended, each erased in this pass, and one conversation's seats
+[SuppressWarning("cost-clause-calls-the-server-per-element")]   // one person's other complaints, asked while erasing them
+internal int PurgeClaims(DateTime now) {
+  var setup = App.Setting<ConversationsPrivacySetup>();
+  var category = CategoryOf(ClaimsCategory());
+  var cutoff = now.AddMonths(-RetentionOf(category).RetainedMonths);
+  var gone = 0;
+  foreach (var conv in Conversation.Where(x => x.LastEntryAt < cutoff || (x.LastEntryAt == null && x.StartedAt < cutoff)).ToList()) {
+    if (IsExpired(conv) || !setup.Rules.ConcernsAClaim(conv)) { continue; }
+    if (KeepUntil(category, LastOf(conv)) > now || IsConversationHeld(conv)) { continue; }
+    List<Party> people = [];
+    foreach (var seat in Participant.Where(x => x.Conversation == conv && x.Party != null).ToList()) {
+      var p = Survivor(seat.Party!);
+      if (!people.Any(x => x.Id == p.Id)) { people.Add(p); }
+    }
+    LiftConversation(conv);
+    new PartyErasure { Conversation = conv, Reach = ErasureReach.Conversation, At = now,
+                       Cause = ErasureCause.ClaimsPeriodEnded };
+    setup.Rules.Erased(conv);
+    gone = gone + 1;
+    foreach (var p in people) {
+      // Another complaint of theirs is still kept: so are they, until the last one ends.
+      if (ClaimsOf([p]).Any(x => x.Id != conv.Id && (KeepUntil(category, LastOf(x)) > now || IsConversationHeld(x)))) { continue; }
+      if (LiftParty(p)) {
+        new PartyErasure { Party = p, Reach = ErasureReach.Identity, At = now,
+                           Cause = ErasureCause.AskedWhileKept };
+      }
+    }
+  }
+  return gone;
+}
+
+/// A hold placed (`held`) keeps every kept conversation it covers, and the people kept with them, until it is lifted;
+/// a hold lifted gives each its period back. Only rows already KEPT move — an ordinary conversation stays ordinary.
+[PurposeRead("conversations.claims")]
+internal int HoldClaims(LegalHold hold, bool held) {
+  var category = CategoryOf(ClaimsCategory());
+  var moved = 0;
+  if (hold.CaseRow != null) {
+    var conv = Conversation.FirstOrDefault(x => x.Id == hold.CaseRow);
+    if (conv != null) {
+      DateTime? until = held ? null : KeepUntil(category, LastOf(conv!));
+      if (StampConversation(conv!, ClaimsCategory(), until, true)) { moved = moved + 1; }
+    }
+    return moved;
+  }
+  var parties = PartiesOf(SubjectOfHold(hold));
+  var claims = ClaimsOf(parties);
+  foreach (var conv in claims) {
+    DateTime? until = held ? null : KeepUntil(category, LastOf(conv));
+    if (StampConversation(conv, ClaimsCategory(), until, true)) { moved = moved + 1; }
+  }
+  if (claims.Count > 0) {
+    DateTime? until = held ? null : ClaimsKeptUntil(claims);
+    foreach (var p in parties) { StampParty(p, ClaimsCategory(), until, true); }
+  }
+  return moved;
+}
+
+/// A conversation kept for a legal claim, as whoever handles claims reads it — every entry, notes included, and who the
+/// customers in it are. The ONE way the desk reads a kept conversation; each read is written to the access trail.
+/// Answers what the claim needs, never the rows.
+[PurposeRead("conversations.claims")]
+[Authorize(HandlesClaims)]
+[SuppressWarning("cost-unbounded-read")]   // one kept conversation, every entry — what a claim reads
+public ClaimTranscript ConversationForAClaim(Guid conversation) {
+  var c = Conversation.FirstOrDefault(x => x.Id == conversation);
+  if (c == null) { throw new ValidationException("No conversation is kept under that id."); }
+  var t = new ClaimTranscript { Conversation = c!.Id, Subject = c!.Subject ?? "", StartedAt = c!.StartedAt };
+  foreach (var seat in Participant.Where(x => x.Conversation == c && x.Party != null).ToList()) {
+    var p = Survivor(seat.Party!);
+    var points = ContactPoint.Where(x => x.Party == p && x.Kind != ContactPointKind.Visitor).Select(x => x.Value).ToList();
+    t.People.Add(points.Count == 0 ? p.DisplayName : $"{p.DisplayName} — {string.Join(", ", points)}");
+  }
+  // Its messages and events read once each, and matched to the entries in memory — not two reads per entry.
+  var messages = Message.Where(x => x.Conversation == c).ToList();
+  var events = ConversationEvent.Where(x => x.Conversation == c).ToList();
+  foreach (var e in ConversationEntry.Where(x => x.Conversation == c).OrderBy(x => x.Sequence).ToList()) {
+    var m = messages.FirstOrDefault(x => x.Id == e.Id);
+    var ev = m == null ? events.FirstOrDefault(x => x.Id == e.Id) : null;
+    t.Entries.Add(new ClaimEntry {
+      At = e.At, By = e.ByName, Visibility = e.Visibility.Label,
+      // An event is said from its facts, in the language of whoever reads the claim.
+      Text = m != null ? m!.Text : (ev != null ? EventWords(ev!) : "") });
+  }
+  return t;
+}
+
+/// What a kept conversation says, for a claim.
+public class ClaimTranscript {
+  public Guid Conversation;
+  public string Subject = "";
+  public DateTime StartedAt;
+  /// Each customer in it — their name and the addresses and numbers they are reached at.
+  public List<string> People = [];
+  public List<ClaimEntry> Entries = [];
+}
+
+/// One entry of a kept conversation.
+public class ClaimEntry {
+  public DateTime At;
+  public string By = "";
+  /// Who could see it — the customer, or the desk alone.
+  public string Visibility = "";
+  public string Text = "";
+}
+
+// ── the stamps — what keeping a conversation, or a person, reaches ───────────────────────────────────────────────
+
+// SECURITY-INVARIANT(a-kept-conversation-is-read-only-for-its-claim): keeping a conversation stamps EVERY row that carries
+// its words — each entry (messages, notes, events), each message's renderings, files and deliveries, the conversation —
+// and keeping a person stamps the party, every party merged into it, their contact points and the merges naming them.
+// A row left out stays in ordinary use while the person was told it is kept "for nothing else" (GDPR Art. 18(2)): a
+// kept complaint read on the desk, searched, exported. Read only through `ConversationForAClaim` (HandlesClaims).
+// Guarded by kits/privacy-conversations/tests
+// `an_erasure_erases_her_other_conversations_and_keeps_the_complaint_restricted_saying_until_when` and
+// `whoever_handles_claims_reads_the_kept_complaint_and_nobody_else_does`.
+/// Keep `conv` for `category` until `until` — every entry of it, each message's renderings, files and deliveries, and
+/// the conversation itself — or, with `onlyIfKept`, move the period of a conversation already kept (answering whether it
+/// was: an ordinary conversation stays ordinary). Then the app keeps what it holds beside it the same way (`Kept`).
+[SuppressWarning("cost-unbounded-read")]   // one conversation's rows, each kind read once — keeping it reaches every one
+internal bool StampConversation(Conversation conv, string category, DateTime? until, bool onlyIfKept) {
+  if (onlyIfKept && !Restriction.SetUntil(conv, until)) { return false; }
+  // Each kind read once for the whole conversation — not once per message.
+  foreach (var r in MessageText.Where(x => x.Message.Conversation == conv).ToList()) {
+    if (onlyIfKept) { Restriction.SetUntil(r, until); } else { Restriction.Restrict(r, category, until); }
+  }
+  foreach (var a in MessageAttachment.Where(x => x.Message.Conversation == conv).ToList()) {
+    if (onlyIfKept) { Restriction.SetUntil(a, until); } else { Restriction.Restrict(a, category, until); }
+  }
+  foreach (var d in MessageDelivery.Where(x => x.Message.Conversation == conv).ToList()) {
+    if (onlyIfKept) { Restriction.SetUntil(d, until); } else { Restriction.Restrict(d, category, until); }
+  }
+  foreach (var e in ConversationEntry.Where(x => x.Conversation == conv).ToList()) {
+    if (onlyIfKept) { Restriction.SetUntil(e, until); } else { Restriction.Restrict(e, category, until); }
+  }
+  if (!onlyIfKept) { Restriction.Restrict(conv, category, until); }
+  App.Setting<ConversationsPrivacySetup>().Rules.Kept(conv, category, until);
+  return true;
+}
+
+/// Lift a conversation whose period ended — back in ordinary use for the one commit that erases it.
+[SuppressWarning("cost-unbounded-read")]   // one conversation's rows, each kind read once — lifting it reaches every one
+internal void LiftConversation(Conversation conv) {
+  foreach (var r in MessageText.Where(x => x.Message.Conversation == conv).ToList()) { Restriction.Lift(r); }
+  foreach (var a in MessageAttachment.Where(x => x.Message.Conversation == conv).ToList()) { Restriction.Lift(a); }
+  foreach (var d in MessageDelivery.Where(x => x.Message.Conversation == conv).ToList()) { Restriction.Lift(d); }
+  foreach (var e in ConversationEntry.Where(x => x.Conversation == conv).ToList()) { Restriction.Lift(e); }
+  Restriction.Lift(conv);
+}
+
+/// Keep a person — the party and every party merged into it, their contact points and the merges that name them — for
+/// `category` until `until`; or, with `onlyIfKept`, move the period of a person already kept.
+[SuppressWarning("cost-unbounded-read")]   // one person's merged parties' contact points and merges
+internal void StampParty(Party party, string category, DateTime? until, bool onlyIfKept) {
+  foreach (var who in PeopleOf(party)) {
+    foreach (var point in ContactPoint.Where(x => x.Party == who).ToList()) {
+      if (onlyIfKept) { Restriction.SetUntil(point, until); } else { Restriction.Restrict(point, category, until); }
+    }
+    foreach (var m in PartyMerge.Where(x => x.Kept == who || x.Absorbed == who).ToList()) {
+      if (onlyIfKept) { Restriction.SetUntil(m, until); } else { Restriction.Restrict(m, category, until); }
+    }
+    if (onlyIfKept) { Restriction.SetUntil(who, until); } else { Restriction.Restrict(who, category, until); }
+  }
+}
+
+/// Lift a person kept with a claim — answers whether they were kept (an ordinary party stays as it is).
+[SuppressWarning("cost-unbounded-read")]   // one person's merged parties' contact points and merges
+internal bool LiftParty(Party party) {
+  var kept = false;
+  foreach (var who in PeopleOf(party)) {
+    foreach (var point in ContactPoint.Where(x => x.Party == who).ToList()) { Restriction.Lift(point); }
+    foreach (var m in PartyMerge.Where(x => x.Kept == who || x.Absorbed == who).ToList()) { Restriction.Lift(m); }
+    if (Restriction.Lift(who)) { kept = true; }
+  }
+  return kept;
+}
+
+/// A party and every party merged into it — one person.
+[SuppressWarning("cost-unbounded-read")]   // the parties merged into one person
+internal List<Party> PeopleOf(Party party) {
+  List<Party> people = [party];
+  for (var i = 0; i < people.Count; i++) {
+    foreach (var a in Party.Where(p => p.MergedInto == people[i]).ToList()) {
+      if (!people.Any(x => x.Id == a.Id)) { people.Add(a); }
+    }
+  }
+  return people;
+}
+
+// ── who and which ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// How a request finds a party — so an app's own row that names one (`[DataSubject] Customer Customer;` on a ticket, where
+/// `Customer : Party`) is found from what the request proved, with no holder written for it (D-DATASUBJECT1): the parties
+/// `PartiesOf` reaches, and every party merged into one of them (a ticket names the party it was opened by, which a merge
+/// may since have folded into another).
+[FindsDataSubject]
+public class PartiesOfASubject {
+  public List<Party> Find(DataSubject s) {
+    var found = PartiesOf(s);
+    var ids = found.Select(p => p.Id).ToList();
+    foreach (var merged in Party.Where(x => x.MergedInto != null && ids.Contains(x.MergedInto.Id)).ToList()) {
+      if (!ids.Contains(merged.Id)) { found.Add(merged); ids.Add(merged.Id); }
+    }
+    return found;
+  }
+}
+
+/// The parties a request's PROVEN identifiers reach — a contact point holding the address or number (claimed or proven),
+/// and the party linked to the account — each as it survives a merge.
+[SuppressWarning("cost-unbounded-read")]   // the contact points and linked parties one request's proven identifiers reach
+public List<Party> PartiesOf(DataSubject s) {
+  List<Party> found = [];
+  foreach (var point in ContactPoint.Where(x => (x.Kind == ContactPointKind.Email && s.Emails.Contains(x.Value))
+                                             || (x.Kind == ContactPointKind.Phone && s.Phones.Contains(x.Value))).ToList()) {
+    var p = Survivor(point.Party);
+    if (!found.Any(x => x.Id == p.Id)) { found.Add(p); }
+  }
+  if (s.Account != null) {
+    foreach (var linked in Party.Where(x => x.Account != null && x.Account.Id == s.Account).ToList()) {
+      var p = Survivor(linked);
+      if (!found.Any(x => x.Id == p.Id)) { found.Add(p); }
+    }
+  }
+  return found;
+}
+
+/// The conversations `parties` are in whose period has not ended.
+public List<Conversation> ConversationsOf(List<Party> parties) {
+  List<Conversation> all = [];
+  foreach (var p in parties) {
+    foreach (var c in ConversationsOfParty(p, null)) {
+      if (!IsExpired(c) && !all.Any(x => x.Id == c.Id)) { all.Add(c); }
+    }
+  }
+  return all;
+}
+
+/// …of them, those the app says concern a claim.
+[SuppressWarning("cost-clause-calls-the-server-per-element")]   // one person's conversations — the app's rule asked of each, during an erasure, export or hold
+public List<Conversation> ClaimsOf(List<Party> parties) {
+  var rules = App.Setting<ConversationsPrivacySetup>().Rules;
+  return ConversationsOf(parties).Where(c => rules.ConcernsAClaim(c)).ToList();
+}
+
+/// …and the rest.
+[SuppressWarning("cost-clause-calls-the-server-per-element")]   // one person's conversations — the app's rule asked of each, during an erasure, export or hold
+public List<Conversation> ServiceOf(List<Party> parties) {
+  var rules = App.Setting<ConversationsPrivacySetup>().Rules;
+  return ConversationsOf(parties).Where(c => !rules.ConcernsAClaim(c)).ToList();
+}
+
+/// The last thing that happened in a conversation — its period counts from it.
+public DateTime LastOf(Conversation c) { return c.LastEntryAt ?? c.StartedAt; }
+
+/// The first instant after the last of `claims` stops being kept.
+public DateTime ClaimsKeptUntil(List<Conversation> claims) {
+  var category = CategoryOf(ClaimsCategory());
+  var latest = KeepUntil(category, LastOf(claims[0]));
+  foreach (var c in claims) {
+    var until = KeepUntil(category, LastOf(c));
+    if (until > latest) { latest = until; }
+  }
+  return latest;
+}
+
+/// A legal hold on `c` as a case — on it, on the conversation it was split off from, or on the one it was started
+/// beside as a side conversation (and so on back): a message split out of a held conversation, and what the desk asked
+/// a supplier about it, are still evidence in that matter — neither is a way out of the hold.
+public bool HeldAsACase(Conversation c) {
+  Conversation? at = c;
+  while (at != null) {
+    if (IsCaseHeld(at.Id)) { return true; }
+    at = at.SplitFrom ?? at.SideOf;
+  }
+  return false;
+}
+
+/// A legal hold covers `c`: held as a case (or split off from one that is), or a customer in it held as a person.
+[SuppressWarning("cost-unbounded-read")]   // one conversation's seats
+public bool IsConversationHeld(Conversation c) {
+  if (HeldAsACase(c)) { return true; }
+  foreach (var seat in Participant.Where(x => x.Conversation == c && x.Party != null).ToList()) {
+    if (IsHeld(SubjectOfParty(seat.Party!))) { return true; }
+  }
+  return false;
+}
+
+/// A party as a data subject — its addresses, numbers and account.
+[SuppressWarning("cost-unbounded-read")]   // one party's contact points
+public DataSubject SubjectOfParty(Party party) {
+  var s = new DataSubject { Account = party.Account == null ? null : party.Account!.Id };
+  foreach (var point in ContactPoint.Where(x => x.Party == party).ToList()) {
+    if (point.Kind == ContactPointKind.Email) { s.Emails.Add(point.Value); }
+    if (point.Kind == ContactPointKind.Phone) { s.Phones.Add(point.Value); }
+  }
+  return s;
+}

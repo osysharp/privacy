@@ -1,0 +1,71 @@
+namespace Osysharp.Privacy.Conversations;
+
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+
+// ── a person with no account proves their address — the desk's own "email me a code" ─────────────────────────────
+//
+// Most of a support desk's customers never made an account: they wrote by mail. To ask about their data they prove the
+// address they wrote from with the Conversations kit's own code (`SendAddressCode` / `ProveAddress`, mailed through the
+// desk's mail channel), and the request is about that address alone. The proof belongs to the BROWSER that asked for
+// the code (`PointCheck.Visit`): only that visit can spend it, once, within Privacy's window — so a code read in someone
+// else's inbox, or a proof id seen over someone's shoulder, files nothing.
+
+/// A proof a request has spent — once, and never again. Written by a request's intake (a run); nobody reads or writes
+/// it otherwise. `[Authority(Owned)]`: the rules are this package's to state (no one, by any request), so an app that
+/// uses it is not asked for a posture it has no reason to give.
+[Authority(Owned)]
+public entity AddressProofSpent {
+  Guid Check;
+  DateTime At;
+  security {
+    deny read;
+    deny create;
+    deny update;
+    deny delete;
+  }
+}
+
+/// Proves an address for Osysharp.Privacy with the Conversations kit's code — discovered by Privacy.
+public class ConversationsAddressProof : IAddressProof {
+  public string Key() => "Osysharp.Conversations";
+
+  public ProofStarted StartFor(string address) {
+    var email = address.Trim().ToLower();
+    var said = SendAddressCode(email);
+    if (said != "") { throw new ValidationException(said); }
+    var visit = Visitor.Id;
+    var check = PointCheck.Where(c => c.Point.Kind == ContactPointKind.Email && c.Point.Value == email && c.Visit == visit
+        && (c.State == ProofState.Sending || c.State == ProofState.Waiting))
+      .OrderByDescending(c => c.CreatedAt).FirstOrDefault();
+    if (check == null) {
+      throw new ValidationException("We could not send a code to that address just now — wait a minute and ask again.");
+    }
+    return new ProofStarted { Id = check.Id, SentTo = MaskedAddress(email) };
+  }
+
+  public string Prove(Guid proof, string code) {
+    var check = PointCheck.FirstOrDefault(c => c.Id == proof);
+    if (check == null) { return "That code no longer works — ask for a new one."; }
+    return ProveAddress(check.Point.Value, code);
+  }
+
+  /// SECURITY-INVARIANT(privacy-a-request-answers-only-its-proven-subject) — the no-account half: an address proof is
+  /// spent only by the browser that made it, only once it is proven, within `within`, and only once. Guarded by
+  /// tests/self.test.osy `a_proof_another_browser_made_files_nothing` and `a_proof_is_spent_once`.
+  public string SpendForVisit(Guid proof, string visit, TimeSpan within) {
+    var check = PointCheck.FirstOrDefault(c => c.Id == proof && c.Visit == visit && c.State == ProofState.Proven);
+    if (check == null) { return ""; }
+    if (check.ModifiedAt < DateTime.UtcNow - within) { return ""; }
+    if (AddressProofSpent.Any(s => s.Check == proof)) { return ""; }
+    new AddressProofSpent { Check = proof, At = DateTime.UtcNow };
+    return check.Point.Value;
+  }
+}
+
+/// "a•••@example.com" — where a code went, said without saying the whole address.
+public string MaskedAddress(string email) {
+  var at = email.IndexOf("@");
+  if (at <= 0) { return "your address"; }
+  return email.Substring(0, 1) + "•••" + email.Substring(at);
+}

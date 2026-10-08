@@ -1,0 +1,126 @@
+// A customer with no account — she only ever wrote by mail — asks about her data for herself: she proves the address
+// she wrote from with a code mailed there, and the request is about that address alone, answered there alone.
+
+using Osysharp.Identity;
+using Osysharp.Mail;
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Conversations;
+using Osysharp.Workflow;
+using PrivacyConversationsKitTests;
+
+/// The six digits in the last code the desk mailed to `to`.
+[SuppressWarning("cost-unbounded-read")]   // a test helper reading its own few checks
+string CodeSentTo(string to) {
+  var code = "";
+  runas (Ada) {
+    // The code goes out on the check's own clock, due at once — a test fires it by settling.
+    foreach (var c in PointCheck.Where(c => c.Point.Value == to && c.State == ProofState.Sending).ToList()) { Workflow.Settle(c); }
+    var text = Carried.Where(c => c.To == to && c.Subject == "Your code").OrderByDescending(c => c.CreatedAt).First().Text;
+    var digits = "";
+    for (var i = 0; i < text.Length; i++) {
+      var ch = text.Substring(i, 1);
+      if ("0123456789".IndexOf(ch) >= 0) { digits = digits + ch; if (digits.Length == 6) { break; } } else { digits = ""; }
+    }
+    code = digits;
+  }
+  return code;
+}
+
+/// The privacy mail to `to` — "" when there is none.
+string PrivacyMailTo(string to) {
+  var text = "";
+  runas (AuthBootstrap) {
+    var m = OutgoingMail.Where(x => x.To == to && x.Subject.StartsWith("Our answer")).OrderByDescending(x => x.CreatedAt).FirstOrDefault();
+    text = m == null ? "" : (m.Text ?? "");
+  }
+  return text;
+}
+
+[Test(Desk)]
+void a_customer_with_no_account_proves_her_address_and_asks_to_be_erased() {
+  Writes("ana@example.test", "s1", "Frågan SELF1", "Hej, jag undrar om leveransen SELF1.");
+  var proof = Guid.Empty;
+  runas (new Visitor { Id = "v-ana" }) {
+    Assert.True(CanAskWithoutAnAccount());
+    var p = ProveAnAddress("Ana@Example.test");
+    proof = p.Id;
+    Assert.Equal("a•••@example.test", p.SentTo);
+  }
+  var code = CodeSentTo("ana@example.test");
+  runas (new Visitor { Id = "v-ana" }) {
+    Assert.Equal("", ConfirmAnAddress(proof, code));
+    var ask = AskAboutAnAddress(RequestKind.Erasure, proof);
+    Assert.NotNull(ask.Request);
+  }
+  runas (Ada) {
+    var r = PrivacyRequest.Single();
+    Assert.Equal(IdentityCheck.CodeToTheirAddress, r.Check);
+    Assert.Null(r.SubjectAccount);
+    Assert.Equal("ana@example.test", r.DeliverTo);
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single().State);
+    Assert.NoTraceOf("SELF1");
+  }
+  // The answer went to the address she proved — and nowhere else…
+  Assert.Contains("What we erased", PrivacyMailTo("ana@example.test"));
+  // …and once it is sent, nothing the app keeps names her: not the outbox's copy of that very answer, which was
+  // written after the erasure ran (Mail's `ForgetOnceSent`).
+  runas (AuthBootstrap) { foreach (var m in OutgoingMail.ToList()) { Workflow.Settle(m); } }
+  runas (Ada) { Assert.NoTraceOf("ana@example.test"); }
+}
+
+[Test(Desk)]
+void a_proof_another_browser_made_files_nothing() {
+  Writes("ana@example.test", "s2", "Frågan SELF2", "Hej, jag undrar SELF2.");
+  var proof = Guid.Empty;
+  runas (new Visitor { Id = "v-ana" }) { proof = ProveAnAddress("ana@example.test").Id; }
+  var code = CodeSentTo("ana@example.test");
+  runas (new Visitor { Id = "v-ana" }) { Assert.Equal("", ConfirmAnAddress(proof, code)); }
+  // Somebody else's browser, holding the proof's id, cannot spend it.
+  runas (new Visitor { Id = "v-mallory" }) {
+    var ask = AskAboutAnAddress(RequestKind.Access, proof);
+    Assert.Null(PrivacyAsk.Single(a => a.Id == ask.Id).Request);
+    Assert.Contains("could not confirm it was you", PrivacyAsk.Single(a => a.Id == ask.Id).Problem);
+  }
+  runas (Ada) { Assert.Equal(0, PrivacyRequest.Count()); }
+}
+
+[Test(Desk)]
+void a_proof_is_spent_once() {
+  Writes("ana@example.test", "s3", "Frågan SELF3", "Hej, jag undrar SELF3.");
+  var proof = Guid.Empty;
+  runas (new Visitor { Id = "v-ana" }) { proof = ProveAnAddress("ana@example.test").Id; }
+  var code = CodeSentTo("ana@example.test");
+  runas (new Visitor { Id = "v-ana" }) {
+    Assert.Equal("", ConfirmAnAddress(proof, code));
+    Assert.NotNull(AskAboutAnAddress(RequestKind.Access, proof).Request);
+    Assert.Null(AskAboutAnAddress(RequestKind.Erasure, proof).Request);
+  }
+  runas (Ada) { Assert.Equal(1, PrivacyRequest.Count()); }
+}
+
+[Test(Desk)]
+void her_copy_reaches_her_only_by_its_mailed_link_and_only_once() {
+  Writes("ana@example.test", "s4", "Frågan SELF4", "Hej, jag undrar SELF4.");
+  var proof = Guid.Empty;
+  runas (new Visitor { Id = "v-ana" }) { proof = ProveAnAddress("ana@example.test").Id; }
+  var code = CodeSentTo("ana@example.test");
+  runas (new Visitor { Id = "v-ana" }) {
+    Assert.Equal("", ConfirmAnAddress(proof, code));
+    AskAboutAnAddress(RequestKind.Access, proof);
+  }
+  ExportLink? link = null;
+  runas (Ada) {
+    var r = PrivacyRequest.Single();
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single().State);
+    link = ExportLink.For(PrivacyRequest.Single());
+  }
+  Assert.Contains("/privacy/export/", PrivacyMailTo("ana@example.test"));
+  // The link is the whole credential — whichever browser opens it, once.
+  runas (new Visitor { Id = "v-phone" }) {
+    Assert.NotEqual("", FetchExportByLink(link!).Readable);
+    Assert.Throws(() => FetchExportByLink(link!));
+  }
+}

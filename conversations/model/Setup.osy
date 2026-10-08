@@ -1,0 +1,45 @@
+namespace Osysharp.Privacy.Conversations;
+
+using Osysharp.Conversations;
+
+/// Who reads a conversation kept for legal claims (`ConversationForAClaim`) — by default whoever places legal holds: the
+/// people who answer for the company's claims. An app says otherwise with `policy HandlesClaims => …;`.
+virtual policy HandlesClaims => PlacesLegalHolds;
+
+/// What the app says about its conversations' privacy — `app.ConversationsPrivacy = new ConversationsPrivacySetup { … }`.
+/// Every field has a default: with none set, no conversation concerns a claim and conversations are kept until a
+/// person asks.
+[AppSetting("ConversationsPrivacy")]
+public class ConversationsPrivacySetup {
+  /// What the app knows that the kit cannot: which conversations concern a claim, and what it keeps beside a
+  /// conversation. Override `ConversationPrivacyRules`.
+  public ConversationPrivacyRules Rules = new ConversationPrivacyRules();
+  /// How many months a conversation that concerns no claim is kept after its last entry, by DEFAULT — then its words,
+  /// files and subject go, for everyone, by the daily purge. 0: until a person asks. It is the `conversations.service`
+  /// category's period, so the people managing privacy change it on the retention page (within 0–120 months, or with a
+  /// reason outside them), and an organisation's retention policy may bound it there. (A claims conversation is kept for
+  /// its own category's period.)
+  public int KeepForMonths = 0;
+}
+
+/// The app's rules — override what it knows:
+///   `public class DeskPrivacy : ConversationPrivacyRules { public override bool ConcernsAClaim(Conversation c) => … }`
+///   `app.ConversationsPrivacy = new ConversationsPrivacySetup { Rules = new DeskPrivacy() };`
+public class ConversationPrivacyRules {
+  /// Whether `conversation` concerns a legal claim — a complaint, a dispute, an order that went wrong — so it is kept
+  /// for legal claims when the person asks to be erased, rather than erased. The kit cannot know what a complaint is;
+  /// the app does. False: nothing is kept for claims.
+  public virtual bool ConcernsAClaim(Conversation conversation) { return false; }
+  /// The person's words in `conversation` were just erased, or its period ended — erase what the APP keeps beside it
+  /// that carries those words: a reply draft somebody left on its ticket, the ticket's own copy of the subject. Runs as
+  /// the system, in the same commit.
+  public virtual void Erased(Conversation conversation) { }
+  /// `conversation` is now KEPT RESTRICTED for `category` until `until` (null: until a hold, or the person, lifts it) —
+  /// absent from every ordinary read, read only for its purpose. Keep what the APP holds beside it the same way: say so
+  /// on the ticket it belongs to, restrict the answers a customer gave on it (`Restriction.Restrict(row, category,
+  /// until)` — the conversation's own category, so one purpose read finds both). Called again whenever its period
+  /// moves (a legal hold placed or lifted). Runs as the system, in the same commit. When a kept conversation's period
+  /// ends, `Erased` is called inside a purpose read for its category — so what the app restricted here is in reach
+  /// again, to lift and erase with it.
+  public virtual void Kept(Conversation conversation, string category, DateTime? until) { }
+}

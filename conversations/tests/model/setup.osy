@@ -1,0 +1,30 @@
+// The desk's settings. In a file of its own with no `namespace`: an `app.X = …` statement's value is resolved outside the
+// file's namespace, and the `using` below is what lets it name the desk's own classes.
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Conversations;
+using Osysharp.Observability;
+using Osysharp.Mail;
+using PrivacyConversationsKitTests;
+
+app.Conversations = new ConversationsSetup {
+  Parties = new DeskParties(),
+  Channels = [new RecordingMail()],
+  Translator = new TaggingTranslator(),
+};
+// Complaints are kept for legal claims; any other conversation a year after its last entry.
+app.ConversationsPrivacy = new ConversationsPrivacySetup { Rules = new DeskPrivacy(), KeepForMonths = 12 };
+app.Mail = new MailSetup { From = "support@desk.test", Sender = new CountingSender() };
+app.Privacy = new PrivacySetup { Controller = "The Desk AB", SupervisoryAuthority = "IMY, imy.se" };
+app.AuthBootstrap = new AuthBootstrap { Role = DeskRole.Authenticator, Login = SignInWithCode };
+app.Auth = new PasswordAuth { LoginField = Email, PasswordField = CodeHash };
+// A customer's words never reach the audit trail: every field holding them is classified `Personal.*` — the kits' on
+// their own fields, the desk's on its own (`ReplyDraft`, `Carried`). The kits' are read through each row's own security
+// without a word from the desk; the desk says the same of its own two levels here.
+app = new() {
+  Name = "PrivacyConversationsKitTests",
+  Classifications = [
+    new Classification(Personal.Contact) { Open = true },
+    new Classification(Personal.Content) { Open = true },
+  ],
+};

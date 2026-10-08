@@ -1,0 +1,172 @@
+// A support desk: its people, who manages privacy, which conversations are complaints, and what it keeps beside a
+// conversation (a reply draft). Everything here is the APP's; the holder is the kit's, discovered.
+namespace PrivacyConversationsKitTests;
+
+using Osysharp.Identity;
+using Osysharp.Inbox;
+using Osysharp.ServiceHours;
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Conversations;
+using Osysharp.Mail;
+
+[Role] enum DeskRole { Authenticator, Agent, Admin, Legal, Integration }
+
+policy IsAgent => RoleGrant.Any(g => g.Member == user && (g.Role == DeskRole.Agent || g.Role == DeskRole.Admin));
+policy IsAdmin => RoleGrant.Any(g => g.Member == user && g.Role == DeskRole.Admin);
+policy IsConversationStaff => IsAgent || RoleGrant.Any(g => g.Member == user && g.Role == DeskRole.Integration);
+policy CollaboratesOnRecords => IsAgent;
+policy ManagesPrivacy => IsAdmin;
+policy PlacesLegalHolds => RoleGrant.Any(g => g.Member == user && g.Role == DeskRole.Legal);
+policy WorksInbox => IsAgent;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+
+/// The desk's people.
+entity Person : Principal {
+  [MaxLength(200)] string CodeHash = "";
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+    deny read CodeHash when !IsAuthenticator;
+  }
+}
+
+/// The desk's own kind of party — with a field of its own that an erasure must reach (`DeskParties.Erase`).
+entity Customer : Osysharp.Conversations.Party {
+  [MaxLength(20)] string Tier = "standard";
+  security {
+    allow read, create, update when IsConversationStaff;
+    allow read when IsConversationCustomer where IsCustomerParty(Id);
+    allow read, create, update when IsAuthenticator;
+    allow create when IsAnonymous || IsAuthenticated;
+  }
+}
+
+partial entity Osysharp.Conversations.Party { security { allow read, create, update when IsConversationStaff; } }
+partial entity ContactPoint { security { allow read, create, update when IsConversationStaff; } }
+partial entity Conversation { security { allow read, create, update when IsConversationStaff; } }
+partial entity Participant { security { allow read, create, update when IsConversationStaff; } }
+partial entity ConversationEntry { security { allow read when IsConversationStaff; } }
+partial entity Message { security { allow read, create, update when IsConversationStaff; } }
+partial entity ConversationEvent { security { allow read, create when IsConversationStaff; } }
+partial entity MessageText { security { allow read, create when IsConversationStaff; } }
+partial entity MessageLanguageWork { security { allow read, create when IsConversationStaff; } }
+partial entity MessageAttachment { security { allow read, create, update when IsConversationStaff; } }
+partial entity MessageDelivery { security { allow read, create, update when IsConversationStaff; } }
+partial entity ConversationThreadKey { security { allow read, create when IsConversationStaff; } }
+partial entity PartyMerge { security { allow read, create when IsConversationStaff; } }
+partial entity ConversationSplit { security { allow read, create when IsConversationStaff; } }
+partial entity PartyErasure { security { allow read when IsConversationStaff; } }
+partial entity PointCheck { security { allow read when IsConversationStaff; } }
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read when WorksInbox; allow create, update, delete when AdministersInbox; } }
+
+/// A conversation the desk marked as a complaint — what makes it concern a claim.
+entity Complaint {
+  Guid Conversation;
+  security { allow read, create when IsAgent; }
+}
+
+/// A reply an agent started and left — the app's own copy of words about the customer, beside their conversation.
+entity ReplyDraft {
+  Guid Conversation;
+  [Classification(Personal.Content), MaxLength(2000)] string Text = "";
+  security { allow read, create, update, delete when IsAgent; }
+}
+
+/// What the desk knows that the kit cannot: a conversation is about a claim once marked a complaint, and its drafts go
+/// when its words do.
+public class DeskPrivacy : ConversationPrivacyRules {
+  public override bool ConcernsAClaim(Conversation conversation) {
+    return Complaint.Any(x => x.Conversation == conversation.Id);
+  }
+  public override void Erased(Conversation conversation) {
+    // Inside the purge's purpose read a kept draft is in reach again: lifted, then gone with its conversation.
+    foreach (var d in ReplyDraft.Where(x => x.Conversation == conversation.Id).ToList()) { Restriction.Lift(d); d.Delete(); }
+    foreach (var k in KeptMark.Where(x => x.Conversation == conversation.Id).ToList()) { k.Delete(); }
+  }
+  /// A kept complaint keeps the drafts beside it the same way, and the desk marks the conversation (what a ticket's
+  /// "Kept for legal claims until …" reads).
+  public override void Kept(Conversation conversation, string category, DateTime? until) {
+    foreach (var d in ReplyDraft.Where(x => x.Conversation == conversation.Id).ToList()) { Restriction.Restrict(d, category, until); }
+    var mark = KeptMark.FirstOrDefault(x => x.Conversation == conversation.Id) ?? new KeptMark { Conversation = conversation.Id };
+    mark.Until = until;
+    mark.Category = category;
+  }
+}
+
+/// The desk's note that a conversation is kept — its id and until when, nothing of what it says.
+entity KeptMark {
+  Guid Conversation;
+  [MaxLength(60)] string Category = "";
+  DateTime? Until;
+  security { allow read when IsAgent; }
+}
+
+/// The desk makes ITS kind of party, and an erasure blanks its field too.
+public class DeskParties : PartyKinds {
+  public override Osysharp.Conversations.Party New(ContactPointKind kind, string value, string displayName) {
+    return new Customer { DisplayName = displayName, Tier = "new" };
+  }
+  public override void Erase(Osysharp.Conversations.Party party) {
+    var c = party as Customer;
+    if (c != null) { c.Tier = "erased"; }
+  }
+}
+
+/// What the mail channel was handed — one row per send. It keeps the address it sent to, which is what
+/// `EraseCopiesTo` must reach.
+entity Carried {
+  [Classification(Personal.Contact), MaxLength(255)] string To = "";
+  [Classification(Personal.Content), MaxLength(300)] string Subject = "";
+  [Classification(Personal.Content)] string Text = "";
+  /// The id `Send` answered for it — what a message's erasure names it by (`EraseCopyOf`).
+  [MaxLength(200)] string Ref = "";
+  security { allow read, create, delete when IsAuthenticated; }
+}
+
+/// "email" that records instead of sending — and forgets what it sent to an erased address.
+public class RecordingMail : IConversationChannel {
+  public string Key { get; } = "email";
+  public ContactPointKind Reaches { get; } = ContactPointKind.Email;
+  public bool IsReady() { return true; }
+  public string Send(OutboundMessage message, string idempotencyKey) {
+    var id = "<" + idempotencyKey + "@desk.test>";
+    new Carried { To = message.To, Subject = message.Subject, Text = message.Text, Ref = id };
+    return id;
+  }
+  public void EraseCopiesTo(string to) {
+    foreach (var c in Carried.Where(x => x.To == to).ToList()) { c.Delete(); }
+  }
+  public void EraseCopyOf(string externalId) {
+    foreach (var c in Carried.Where(x => x.Ref == externalId).ToList()) { c.Delete(); }
+  }
+}
+
+/// A mail sender that carries the message and keeps no copy of who it went to — the outbox is then the one copy.
+public class CountingSender : IMailSender {
+  public string Key { get; } = "counting";
+  public bool IsReady() { return true; }
+  public string SendMail(MailMessage message, string idempotencyKey) { return "sent-" + idempotencyKey; }
+}
+
+/// Swedish is recognised by its words; a translation is the text tagged with its target — `[en] …`. Keeps nothing.
+public class TaggingTranslator : IConversationTranslator {
+  public string Key { get; } = "tagging";
+  public bool IsReady() { return true; }
+  public string Detect(string text) {
+    var t = " " + text.ToLower() + " ";
+    return t.Contains(" hej ") || t.Contains(" jag ") || t.Contains(" inte ") ? "sv" : "en";
+  }
+  public string Translate(string text, string from, string to, List<GlossaryTerm> glossary) { return $"[{to}] {text}"; }
+}
+
+[AuthMethod]
+string SignInWithCode(string email, string code) {
+  var p = Person.FirstOrDefault(x => x.Email == NormalisedEmail(email));
+  if (p == null || !p.IsActive) { Security.VerifyPassword(code); return ""; }
+  if (!Security.VerifyPassword(code, p.CodeHash)) { return ""; }
+  return Security.IssueJwt(p.Id, p.Email);
+}
