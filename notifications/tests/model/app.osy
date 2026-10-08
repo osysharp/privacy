@@ -1,0 +1,58 @@
+// Everything this team says: who manages privacy, who has a bell, and what a notification may be about.
+namespace PrivacyNotificationsKitTests;
+
+using Osysharp.Identity;
+using Osysharp.Inbox;
+using Osysharp.ServiceHours;
+using Osysharp.Notifications;
+using Osysharp.Privacy;
+
+[Role] enum TeamRole { Authenticator, Admin, Member }
+
+policy IsAdmin => RoleGrant.Any(g => g.Member == user && g.Role == TeamRole.Admin);
+policy IsMember => RoleGrant.Any(g => g.Member == user && (g.Role == TeamRole.Member || g.Role == TeamRole.Admin));
+policy ManagesPrivacy => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+policy ReceivesNotifications => IsMember;
+
+/// The team's people.
+entity Person : Principal {
+  [MaxLength(200)] string CodeHash = "";
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+    deny read CodeHash when !IsAuthenticator;
+  }
+}
+
+/// A task a notification is about.
+[Title(Title)]
+entity Task {
+  [Required, MaxLength(120)] string Title;
+  security { allow read, create, update when IsMember; }
+}
+
+app.Notifications = new NotificationsSetup { AppName = "Team" };
+
+/// A task was given to somebody — what they are told.
+[Event("Task assigned")]
+public sealed class TaskAssigned {
+  public Task Task;
+  public override string Sentence() { return "A task is yours now."; }
+}
+
+/// Give `to` a task, and tell them.
+public void GiveTask(Task t, Person to) {
+  Notify(to, new TaskAssigned { Task = t }, by: Session.CurrentUser);
+  UnitOfWork.Commit();
+}
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }
+partial entity Notification { security { allow create when IsMember; allow read when ManagesPrivacy; } }
+partial entity NotificationPreferences { security { allow read when ManagesPrivacy; } }

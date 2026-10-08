@@ -1,0 +1,77 @@
+namespace Osysharp.Privacy.Notifications;
+
+using Osysharp.Identity;
+using Osysharp.Notifications;
+using Osysharp.Privacy;
+
+/// What the app told a person in its bell, and how they asked to be told — found by the account a request proved.
+///
+/// ⚑ ONLY BY THE ACCOUNT. A notification is a person's because it was told TO them; a request that proved only an
+///   address or a number reaches none (an address is not an account here, and guessing would hand somebody another
+///   person's notifications). What a notification says about OTHER people is not copied into it — a ticket's subject or
+///   a customer's name is read from the record when it is shown — so their erasure needs nothing from here.
+public class NotificationsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Notifications";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "notifications.told", Label = Translate("What we told you in the app"),
+      Purpose = Translate("Telling you when something at work needs you, and mailing you what you had not read"),
+      SubjectKind = "people with an account", Basis = RetentionBasis.Contract, Portable = true },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    return Notification.Count(n => n.Recipient.Id == id) + NotificationPreferences.Count(p => p.Person.Id == id);
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    var id = s.Account.Value;
+    foreach (var n in Notification.Where(n => n.Recipient.Id == id).ToList()) { n.Delete(); }
+    foreach (var p in NotificationPreferences.Where(p => p.Person.Id == id).ToList()) { p.Delete(); }
+  }
+
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
+    if (s.Account == null) { return null; }
+    var id = s.Account.Value;
+    DateTime? latest = null;
+    foreach (var n in Notification.Where(n => n.Recipient.Id == id).ToList()) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, n.At);
+      Restriction.Restrict(n, c.Key, until);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    // Their preferences are not restricted: they say only what may be mailed to them, and a restriction is the one
+    // moment that matters most to keep honouring "nothing".
+    return untilLifted ? null : latest;
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<ToldRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var n in Notification.Where(n => n.Recipient.Id == id).OrderBy(n => n.At).ToList()) {
+        var said = SaidOf(n);
+        rows.Add(new ToldRow { At = n.At, Kind = n.Kind, Said = said, ReadAt = n.ReadAt, MailedAt = n.MailedAt });
+        items.Add(new ExportItem { At = n.At, Title = Translate("Something we told you"), Body = said });
+      }
+      foreach (var p in NotificationPreferences.Where(p => p.Person.Id == id).ToList()) {
+        rows.Add(new ToldRow { Kind = "preferences", Said = p.Mail.Label });
+        items.Add(new ExportItem { Title = Translate("What you asked to be mailed"), Body = p.Mail.Label });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One notification, or the preferences, in a person's export.
+public class ToldRow {
+  public DateTime? At;
+  public string Kind = "";
+  /// What it said, in the language of the export.
+  public string Said = "";
+  public DateTime? ReadAt;
+  public DateTime? MailedAt;
+}

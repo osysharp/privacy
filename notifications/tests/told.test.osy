@@ -1,0 +1,77 @@
+// What the app told a person, under their privacy request — reached by her account, and only hers.
+
+using Osysharp.Identity;
+using Osysharp.Notifications;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Notifications;
+using PrivacyNotificationsKitTests;
+
+/// The team: Ada manages privacy; Mia and Leo are members. Mia was given two tasks and Leo one; Mia chose a daily digest.
+[TestFixture]
+void Team() {
+  var ada = new Person { Email = "ada@team.test", DisplayName = "Ada" };
+  new RoleGrant { Member = ada, Role = TeamRole.Admin };
+  var mia = new Person { Email = "mia@team.test", DisplayName = "Mia" };
+  new RoleGrant { Member = mia, Role = TeamRole.Member };
+  var leo = new Person { Email = "leo@team.test", DisplayName = "Leo" };
+  new RoleGrant { Member = leo, Role = TeamRole.Member };
+  new Task { Title = "Renew the office lease" };
+  new Task { Title = "Order new badges" };
+  new NotificationPreferences { Person = mia, Mail = NotificationMail.Daily };
+}
+
+principal Ada => Person.Single(p => p.Email == "ada@team.test");
+principal Mia => Person.Single(p => p.Email == "mia@team.test");
+principal Leo => Person.Single(p => p.Email == "leo@team.test");
+
+void TellTheTeam() {
+  runas (Ada) {
+    var mia = Person.Single(p => p.Email == "mia@team.test");
+    var leo = Person.Single(p => p.Email == "leo@team.test");
+    GiveTask(Task.Single(t => t.Title == "Renew the office lease"), mia);
+    GiveTask(Task.Single(t => t.Title == "Order new badges"), mia);
+    GiveTask(Task.Single(t => t.Title == "Order new badges"), leo);
+  }
+  Background.Settle();
+}
+
+Guid MiasAccount() {
+  Guid id = Guid.Empty;
+  runas (Ada) { id = Person.Single(p => p.Email == "mia@team.test").Id; }
+  return id;
+}
+
+[Test(Team)]
+void her_copy_lists_what_she_was_told_and_how_she_asked_to_be_mailed() {
+  TellTheTeam();
+  runas (Ada) {
+    var section = new NotificationsPersonalData().Export(new DataSubject { Account = MiasAccount() }, CategoryOf("notifications.told"));
+    Assert.Equal(3, section.Items.Count);
+    Assert.Contains("A task is yours now.", section.Json);
+    Assert.Contains("A daily digest of what I have not seen", section.Json);
+  }
+}
+
+[Test(Team)]
+void an_erasure_of_her_account_takes_her_notifications_and_preferences_and_no_others() {
+  TellTheTeam();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, MiasAccount(), "", IdentityCheck.InPerson, "She asked at the front desk with her ID card.");
+    Assert.Equal(3, PlanLine.Single(l => l.Request == r && l.Category == "notifications.told").Items);
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  runas (Mia) {
+    Assert.Equal(0, Notification.Count());
+    Assert.Equal(0, NotificationPreferences.Count());
+  }
+  runas (Leo) { Assert.Equal(1, Notification.Count()); }
+}
+
+[Test(Team)]
+void a_request_that_proved_only_an_address_reaches_no_notifications() {
+  TellTheTeam();
+  runas (Ada) {
+    Assert.Equal(0, new NotificationsPersonalData().Count(new DataSubject { Emails = ["mia@team.test"] }, CategoryOf("notifications.told")));
+  }
+}
