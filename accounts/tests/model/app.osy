@@ -1,0 +1,63 @@
+// Everything this app says: its roles, who manages privacy and works the inbox, and one thing it holds about members.
+
+using Osysharp.Identity;
+using Osysharp.Accounts;
+using Osysharp.Inbox;
+using Osysharp.Privacy;
+using Osysharp.ServiceHours;
+
+[Role] enum AppRole { Authenticator, Member, Admin }
+
+policy IsAdmin => RoleGrant.Any(g => g.Member == user && g.Role == AppRole.Admin);
+policy ManagesPrivacy => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+
+app.Accounts = new AccountsSetup { AppName = "Member Club", SignupRole = AppRole.Member };
+app.Privacy = new PrivacySetup { Controller = "Member Club Ltd", SupervisoryAuthority = "IMY, imy.se" };
+app = new() {
+  Name = "PrivacyAccountsKitTests",
+  // Addresses are the admins' — the club's own (`Preference.Email`) and the kits' alike; the sign-in reads the code it
+  // mailed, so its role is cleared too. The kits' other levels are read through each row's own security.
+  Classifications = [
+    new Classification(Personal.Contact) { Roles = [AppRole.Admin, AppRole.Authenticator] },
+    new Classification(Personal.Content) { Open = true },
+  ],
+};
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }
+
+/// What the club holds about a member: their newsletter preference, on their address. It says whose a row is (the address
+/// itself) and why it is kept, and the platform writes its privacy holder (D-DATASUBJECT1) — counted, exported, erased.
+[PersonalData(ClubPreferences, OnErasure.DeleteRow)]
+entity Preference {
+  [DataSubject(Identifier.Email), Classification(Personal.Contact), MaxLength(320)] string Email;
+  bool Newsletter;
+  security { allow read, create, update, delete when IsAdmin; }
+}
+
+/// What the club wrote down when a member called — found through their preference, deleted with it.
+[PersonalData(ClubCalls, OnErasure.DeleteRow)]
+entity Call {
+  [DataSubject] Preference Member;
+  DateTime At;
+  [Classification(Personal.Content), MaxLength(2000)] string? Notes;
+  security { allow read, create, update, delete when IsAdmin; }
+}
+
+/// Notes from a member's calls.
+public DataCategory ClubCalls() {
+  return new DataCategory { Key = "club.calls", Label = "Notes from your calls to us", Purpose = "Helping you",
+                            SubjectKind = "members", Basis = RetentionBasis.Contract };
+}
+
+/// Why the club keeps a member's newsletter preference.
+public DataCategory ClubPreferences() {
+  return new DataCategory { Key = "club.preferences", Label = "Your newsletter preference", Purpose = "Sending you the newsletter",
+                            SubjectKind = "members", Basis = RetentionBasis.Consent, Portable = true };
+}

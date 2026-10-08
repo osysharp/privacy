@@ -1,0 +1,22 @@
+// The producer's test project for Osysharp.Privacy.Accounts — the smallest correct consumer: an app that signs people in
+// with Osysharp.Accounts and answers privacy requests with Osysharp.Privacy. A member proves it is them with a code
+// mailed to their account's address, and asks; the request is filed about their own account and that address only.
+app PrivacyAccountsKitTests {
+  model "model/**/*.osy";
+  tests "**/*.test.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Mail@0;
+  use Osysharp.Sms@0;
+  use Osysharp.EmailTemplates@0;
+  use Osysharp.Accounts@0;
+  use Osysharp.Organizations@0;
+  use Osysharp.Organizations.Accounts@0;
+  use Osysharp.Collaboration@0;
+  use Osysharp.ServiceHours;
+  use Osysharp.Inbox@0;
+  use Osysharp.Privacy@0;
+  // Osysharp.Privacy.Accounts, the package under test, is not written: it arrives by itself because this app uses
+  // Privacy and Accounts, which it completes (`osy lock` includes it and says so).
+  use Osysharp.Workflow;
+  use Osysharp.Observability;
+}
