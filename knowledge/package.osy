@@ -1,0 +1,19 @@
+// Osysharp.Privacy.Knowledge — who wrote and who reviewed a knowledge base's articles, as Osysharp.Privacy's holder: the
+// articles and versions a person wrote or published and the steps they took, found by their account, in their copy of
+// their data, their review notes kept out of use when they ask, and their name taken off everything when they ask to be
+// erased. The articles stay: what readers are told is the organisation's, not the person's.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: Knowledge does not force privacy requests on an app that only keeps
+//   a help centre, and Privacy does not force a help centre on its apps. An app using both gets it by itself —
+//   `completes` below, and `osy lock` says so — the holder is DISCOVERED, nothing is wired.
+package Osysharp.Privacy.Knowledge {
+  version     "0.1.0";
+  minPlatform "0.9.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.Knowledge — the articles and versions a person wrote or published and the review steps they took, found by their account, in their copy of their data, their review notes kept restricted on request, and their name taken off everything when they ask to be erased while the articles stay.";
+  completes   Osysharp.Privacy@0, Osysharp.Knowledge@0;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Knowledge@0;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}

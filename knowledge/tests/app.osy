@@ -1,0 +1,22 @@
+// The producer's test project for Osysharp.Privacy.Knowledge — the smallest correct consumer: a museum whose guides
+// write the visitor guide's articles and answer privacy requests. A guide who has left asks for her data, and then to be
+// erased; her name comes off what she wrote and reviewed, and the visitor guide keeps every article.
+app PrivacyKnowledgeKitTests {
+  model "model/**/*.osy";
+  tests "**/*.test.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Organizations@0;
+  use Osysharp.Organizations.Accounts@0;
+  use Osysharp.Collaboration@0;
+  use Osysharp.Inbox@0;
+  use Osysharp.ServiceHours;
+  use Osysharp.Mail@0;
+  use Osysharp.EmailTemplates@0;
+  use Osysharp.Knowledge@0;
+  use Osysharp.MarkdownEditor@1;
+  use Osysharp.Seo@0;
+  use Osysharp.Privacy@0;
+  // Osysharp.Privacy.Knowledge, the package under test, is not written: it arrives by itself because this app uses
+  // Privacy and Knowledge, which it completes (`osy lock` includes it and says so).
+  use Osysharp.Observability;
+}
