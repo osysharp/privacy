@@ -1,0 +1,47 @@
+// Everything the ferry line says: who manages privacy, who reads what passengers said, and what a question is about.
+namespace PrivacyFeedbackKitTests;
+
+using Osysharp.Identity;
+using Osysharp.Inbox;
+using Osysharp.ServiceHours;
+using Osysharp.Feedback;
+using Osysharp.Privacy;
+
+[Role] enum LineRole { Authenticator, Admin, Crew, Passenger }
+
+policy IsAdmin => RoleGrant.Any(g => g.Member == user && g.Role == LineRole.Admin);
+policy IsCrew => RoleGrant.Any(g => g.Member == user && (g.Role == LineRole.Crew || g.Role == LineRole.Admin));
+policy ManagesPrivacy => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+policy ReadsFeedback => IsCrew;
+policy ManagesFeedback => IsAdmin;
+
+/// The line's people.
+entity Person : Principal {
+  [MaxLength(200)] string CodeHash = "";
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+    deny read CodeHash when !IsAuthenticator;
+  }
+}
+
+/// A crossing somebody booked.
+entity Crossing {
+  [Required("Say which crossing it is."), MaxLength(120)] string Route;
+  security { allow read, create, update when IsCrew; }
+}
+
+app.Feedback = new FeedbackSetup { AppName = "Ferry Line" };
+
+app = new() { Classifications = [ new Classification(Personal.Contact) { Open = true },
+                                  new Classification(Personal.Content) { Open = true } ] };
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }
+partial entity FeedbackAsk { security { allow create, update when IsCrew; } }

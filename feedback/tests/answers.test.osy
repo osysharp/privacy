@@ -1,0 +1,104 @@
+// What a passenger answered, under her privacy request — reached by her account or the address she proved, and only hers.
+
+using Osysharp.Identity;
+using Osysharp.Feedback;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Feedback;
+using PrivacyFeedbackKitTests;
+
+/// The line: Ada manages privacy, Ola is crew; Mia travels with an account, Leo booked by phone. Each was asked about
+/// one crossing, and both answered.
+[TestFixture]
+void Line() {
+  var ada = new Person { Email = "ada@ferry.test", DisplayName = "Ada" };
+  new RoleGrant { Member = ada, Role = LineRole.Admin };
+  var ola = new Person { Email = "ola@ferry.test", DisplayName = "Ola" };
+  new RoleGrant { Member = ola, Role = LineRole.Crew };
+  var mia = new Person { Email = "mia@sea.test", DisplayName = "Mia" };
+  new RoleGrant { Member = mia, Role = LineRole.Passenger };
+  new Crossing { Route = "Harbour to Island, 08:15" };
+  new Crossing { Route = "Island to Harbour, 17:40" };
+}
+
+principal Ada => Person.Single(p => p.Email == "ada@ferry.test");
+principal Ola => Person.Single(p => p.Email == "ola@ferry.test");
+principal Mia => Person.Single(p => p.Email == "mia@sea.test");
+
+Guid MiasAccount() {
+  Guid id = Guid.Empty;
+  runas (Ada) { id = Person.Single(p => p.Email == "mia@sea.test").Id; }
+  return id;
+}
+
+/// Both passengers asked, and both answered — Mia signed in, Leo from his mail's link.
+void AskedAndAnswered() {
+  FeedbackLink? leos = null;
+  runas (Ola) {
+    var morning = Crossing.Single(c => c.Route.StartsWith("Harbour"));
+    var evening = Crossing.Single(c => c.Route.StartsWith("Island"));
+    AskForFeedback(morning, "Harbour to Island, 08:15", person: Person.Single(p => p.Email == "mia@sea.test"));
+    var leo = AskForFeedback(evening, "Island to Harbour, 17:40", address: "leo@sea.test");
+    UnitOfWork.Commit();
+    leos = FeedbackLink.For(leo!);
+  }
+  Background.Settle();
+  runas (Mia) { AnswerMyFeedback(MyFeedback(MorningId())!.Ask, FeedbackRating.Good, "Calm sea, kind crew."); }
+  AnswerFeedbackByLink(leos!, FeedbackRating.Bad, "The café was closed.");
+  Background.Settle();
+}
+
+Guid MorningId() {
+  Guid id = Guid.Empty;
+  runas (Ada) { id = Crossing.Single(c => c.Route.StartsWith("Harbour")).Id; }
+  return id;
+}
+
+[Test(Line)]
+void her_copy_lists_what_she_answered() {
+  AskedAndAnswered();
+  runas (Ada) {
+    var section = new FeedbackPersonalData().Export(new DataSubject { Account = MiasAccount() }, CategoryOf("feedback.answers"));
+    Assert.Equal(1, section.Items.Count);
+    Assert.Contains("Calm sea, kind crew.", section.Json);
+    Assert.DoesNotContain("café", section.Json);
+  }
+}
+
+[Test(Line)]
+void a_request_that_proved_an_address_reaches_the_answers_mailed_there() {
+  AskedAndAnswered();
+  runas (Ada) {
+    Assert.Equal(1, new FeedbackPersonalData().Count(new DataSubject { Emails = ["leo@sea.test"] }, CategoryOf("feedback.answers")));
+    Assert.Equal(0, new FeedbackPersonalData().Count(new DataSubject { Emails = ["nobody@sea.test"] }, CategoryOf("feedback.answers")));
+  }
+}
+
+[Test(Line)]
+void an_erasure_of_her_account_takes_her_answers_and_no_others() {
+  AskedAndAnswered();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, MiasAccount(), "", IdentityCheck.InPerson, "She asked at the ticket office with her ID card.");
+    Assert.Equal(1, PlanLine.Single(l => l.Request == r && l.Category == "feedback.answers").Items);
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  runas (Ola) {
+    Assert.Equal(1, FeedbackAsk.Count());
+    Assert.Equal("leo@sea.test", FeedbackAsk.Single().Address);
+    Assert.Equal(1, FeedbackReply.Count());
+  }
+}
+
+[Test(Line)]
+void a_restriction_keeps_her_answers_out_of_the_results() {
+  AskedAndAnswered();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Restriction, MiasAccount(), "", IdentityCheck.InPerson, "She asked us to stop using her data.");
+    ApproveRequest(r);
+  }
+  runas (Ola) {
+    var s = SummariseFeedback();
+    Assert.Equal(1, s.Answered);
+    Assert.Equal(1, s.Bad);
+  }
+}
