@@ -1,0 +1,45 @@
+// Osysharp.Privacy — what the app holds about a person, why it may keep it and for how long, and what a request from
+// that person does to it (D-PRIVACY1, Docs/OsySharp/privacy_kit_design.md).
+//
+// Every kit that holds personal data — and the app, for its own entities — implements ONE contract,
+// `IPersonalDataHolder`, and declares what it holds as CATEGORIES: each with a retention BASIS (consent, contract, a
+// legal obligation, legal claims, a legitimate interest), and how long a row is KEPT RESTRICTED after a request, counted
+// from an event (the end of the fiscal year's calendar year, a case closing). The tenant — the controller — sets its own
+// periods within the limits a kit declares, or applies a jurisdiction preset. A request from a person (access,
+// portability, erasure, restriction) produces a PLAN, one line per category: not held · erase now · keep restricted
+// until a date, on a stated basis · blocked until an event, for a stated reason. The plan runs as a workflow; its
+// RESPONSE tells the person what was erased, what was kept, on which basis and until when. A daily purge removes what has
+// reached the end of its period — for everyone, not only for people who asked.
+//
+// ⚑ THE APP SAYS TWO THINGS — who manages privacy (files and approves requests, sets the periods), and who places and
+//   lifts legal holds (an admin, legal counsel):
+//     policy ManagesPrivacy => IsAdmin;
+//     policy PlacesLegalHolds => IsAdmin;
+//   and implements the contract for its own entities (`class AppPersonalData : IPersonalDataHolder`). Holders are
+//   DISCOVERED (`App.Implementations<IPersonalDataHolder>()`), never wired: a holder nobody listed is still reached.
+//
+// ⚑ WHAT IS PERSONAL IS SAID ON THE FIELD — `[Classification(Personal.Contact)] string Email;` — not here. A category
+//   says WHY a row is kept and for how long; the platform keeps a restricted row out of every ordinary read, logs every
+//   purpose read of it (`[PurposeRead("<category>")]`) and never records a personal value in the audit trail.
+package Osysharp.Privacy {
+  version     "0.8.2";
+  minPlatform "0.9.0";
+  summary     "what the app holds about a person and why it may keep it — a versioned holder contract every kit implements, categories with a retention basis and a period the tenant sets within declared limits (with jurisdiction presets and a fiscal-year-aware end date), requests that plan erase / keep restricted until a date / blocked per category and run as a workflow, a response that says what was erased and what was kept and why, an access and portability export, and a daily purge.";
+  model "model/**/*.osy";
+  // The personal data its own fields hold (`[Classification(Personal.X)]`): an app maps a level onto its own
+  // classification, or leaves it to each row's own security.
+  personal Contact;
+  personal Content;
+  // Who placed a legal hold, and who lifted it.
+  use Osysharp.Identity@0;
+  // A request is inbox work: queued, held and clocked to its statutory due date like any other item.
+  use Osysharp.Inbox@0;
+  // The answer, and the notice that an export is ready, go by mail — only to an address a proof reached.
+  use Osysharp.Mail@0;
+  use Osysharp.Workflow;
+  use Osysharp.Observability;
+  use Osysharp.Storage;
+  // The settings area's contract and frame — the retention page (D-SETTINGSREG1).
+  use Osysharp.Ui;
+  tests "tests";
+}

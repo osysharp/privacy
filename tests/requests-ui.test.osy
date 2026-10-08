@@ -1,0 +1,96 @@
+// A customer's privacy page, and the request as the people managing privacy work it on the Inbox — as people use them.
+// `osy test --pixels` photographs each.
+
+using PrivacyKitTests;
+using Osysharp.Inbox;
+using Osysharp.Privacy;
+
+[Test(Desk)]
+void a_customer_asks_for_a_copy_after_proving_it_is_them_and_fetches_it_once() {
+  Ui.Viewport(1280, 900);
+  Ui.SignInAs(Ann);
+  Ui.Visit("/privacy");
+  Assert.Visible("What we keep about people, and why");
+  Assert.Visible("Your name and email address on vouchers we issued");
+  Assert.Visible("No requests yet");
+  Ui.Shot("my-privacy");
+
+  Ui.Click("A copy of your data");
+  Assert.Visible("What this will do");
+  Ui.Click("Send me a code");
+  Assert.Visible("We sent a code to ann@customer.test");
+  Ui.Fill("Code", "000000");
+  Ui.Click("Send the request");
+  Assert.Visible("That is not the code we sent.");
+  Ui.Fill("Code", "123456");
+  Ui.Shot("my-privacy-asking");
+  Ui.Click("Send the request");
+  Assert.Visible("Your request is in.");
+  Assert.Visible("Your request for a copy of your data");
+  Assert.Visible("Received — being handled");
+  Ui.Shot("my-privacy-received");
+
+  runas (Ada) { ApproveRequest(PrivacyRequest.Single()); }
+  Ui.Visit("/privacy");
+  Assert.Visible("Answered");
+  Assert.Visible("What we hold about you:");
+  Ui.Shot("my-privacy-answered");
+  Ui.Click("Download your data");
+  Assert.Visible("Downloaded on");
+  Assert.Hidden("Download your data");
+}
+
+[Test(Desk)]
+void before_erasing_a_customer_sees_what_will_go_and_what_the_law_keeps_on_a_phone_in_the_dark() {
+  Ui.Viewport(390, 844);
+  Ui.Theme("dark");
+  Ui.SignInAs(Ann);
+  Ui.Visit("/privacy");
+  Ui.Click("Erase your data");
+  Assert.Visible("What this will do");
+  Assert.Visible("Kept for 84 months from the end of the calendar year its fiscal year ended in, used for this purpose only, then deleted.");
+  Assert.Visible("Erased.");
+  Assert.NoOverflow();
+  Ui.Shot("my-privacy-erase-phone-dark");
+}
+
+[Test(Desk)]
+void the_request_is_worked_on_the_inbox_with_its_deadline_its_check_and_its_plan() {
+  runas (Ann) {
+    var proof = ProveItIsMe();
+    ConfirmItIsMe(proof.Id, "123456");
+    var ask = AskAboutMe(RequestKind.Erasure, proof.Id);
+    Workflow.Settle(ask);
+  }
+  Ui.Viewport(1440, 900);
+  Ui.SignInAs(Ada);
+  Ui.Visit("/inbox/open");
+  Assert.Visible("Erasure request");
+  Ui.Click("Erasure request");
+  Assert.Visible("Answer by");
+  Assert.Visible("Signed in, and proved it again");
+  Assert.Visible("Your name and email address on vouchers we issued");
+  Assert.Visible("Goes to ann@customer.test");
+  Ui.Shot("request-on-inbox");
+
+  Ui.Click("Extend the deadline…");
+  Ui.Click("Extend", within: "Extend the deadline");
+  Assert.Visible("An extension needs its reason");
+  Ui.Fill("Why", "Your request covers ten years of orders.");
+  Ui.Click("Extend", within: "Extend the deadline");
+  Assert.Visible("Extended — the person is told why.");
+
+  Ui.Click("Approve and run the plan");
+  Assert.Visible("Approved — the plan ran.");
+  Assert.Visible("What we erased:");
+  Ui.Shot("request-answered-on-inbox");
+}
+
+[Test(Desk)]
+void staff_who_do_not_manage_privacy_never_see_a_request_on_the_inbox() {
+  runas (Ada) { FileRequest(RequestKind.Access, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order."); }
+  Ui.Viewport(1440, 900);
+  Ui.SignInAs(Raj);
+  Ui.Visit("/inbox/open");
+  Assert.Hidden("Access request");
+}

@@ -1,0 +1,607 @@
+// The two faces of a request. "Your privacy" (`/privacy`, `MyPrivacy`): a signed-in person reads what is kept about
+// people and why, asks — for a copy, their data to take elsewhere, erasure or restriction — after proving it is them,
+// sees what asking will do BEFORE it is sent, follows their requests and fetches an export once. And the request as the
+// people managing privacy work it on the Inbox (`PrivacyRequestPane`): the statutory deadline, how identity was checked,
+// the plan line by line, approving it, extending it with a reason, and a failure that names the holder.
+//
+// ⚑ AN APP TAKES THE PAGE OVER BY NAME — a component `MyPrivacyPage` of its own replaces the kit's (to put its own shell
+//   around `MyPrivacy()`); the pane goes wherever the app opens an inbox item that is a `PrivacyRequest`.
+
+namespace Osysharp.Privacy;
+
+using Osysharp.Identity;
+using Osysharp.Inbox;
+using Osysharp.Ui;
+
+/// One of the person's requests, as their privacy page shows it.
+public class MyRequestRow {
+  public Guid Id;
+  public string Title = "";
+  public DateTime ReceivedAt;
+  public DateTime? AnswerBy;
+  /// Where it stands, in the person's words.
+  public string Stands = "";
+  public bool Answered = false;
+  public string Response = "";
+  public string Extension = "";
+  public bool CanFetch = false;
+  /// "Downloaded on 3 March", "Deleted on 10 March" — what became of an export.
+  public string ExportWords = "";
+}
+
+/// The signed-in person's requests, as their privacy page shows them.
+public List<MyRequestRow> MyRequestRows() {
+  List<MyRequestRow> rows = [];
+  foreach (var r in MyRequests()) {
+    var fetched = ExportFetch.Where(f => f.Request == r).OrderBy(f => f.At).FirstOrDefault();
+    var words = "";
+    if (fetched != null) { words = "Downloaded on " + fetched.At.ToString("d MMMM yyyy") + "."; }
+    else if ((r.Right == RequestKind.Access || r.Right == RequestKind.Portability) && r.ExportExpiresAt != null && r.ExportPath == "") {
+      words = "Not downloaded, so deleted on " + r.ExportExpiresAt!.Value.ToString("d MMMM yyyy") + ". Ask again for a new copy.";
+    }
+    rows.Add(new MyRequestRow {
+      Id = r.Id, Title = AskedFor(r.Right), ReceivedAt = r.ReceivedAt, AnswerBy = r.DueAt, Stands = StandsFor(r.State),
+      Answered = r.State == RequestState.Done, Response = r.Response,
+      Extension = r.ExtensionReason == "" ? "" : "We need more time: " + r.ExtensionReason,
+      CanFetch = ExportReady(r), ExportWords = words });
+  }
+  return rows;
+}
+
+/// What a request asked for, as the person who asked reads it — the queue's title is staff's words.
+public string AskedFor(RequestKind right) {
+  if (right == RequestKind.Access) { return "Your request for a copy of your data"; }
+  if (right == RequestKind.Portability) { return "Your request to move your data"; }
+  if (right == RequestKind.Erasure) { return "Your request to erase your data"; }
+  return "Your request to stop using your data";
+}
+
+/// Where a request stands, as the person who asked reads it.
+public string StandsFor(RequestState s) {
+  if (s == RequestState.Done) { return "Answered"; }
+  if (s == RequestState.Waiting) { return "Partly done — the rest waits"; }
+  return "Received — being handled";
+}
+
+/// Fetch one of my exports by its request's id — once; answers its two files' links, which work for a few minutes.
+public ExportLinks FetchMyExportById(Guid request) { return FetchMyExport(PrivacyRequest.Single(r => r.Id == request)); }
+
+/// Make my request, with the proof I just confirmed — answers the sentence to show: when it will be answered, or why it
+/// was not filed.
+public string AskWithProof(RequestKind right, Guid proof) {
+  var ask = AskAboutMe(right, proof);
+  var after = PrivacyAsk.Single(a => a.Id == ask.Id);
+  if (after.Request == null) { return after.Problem == "" ? "We could not file it — ask again." : after.Problem; }
+  return "";
+}
+
+/// The person's privacy page: what is kept about people and why, asking (proven first, with what it will do shown
+/// before it is sent), and their requests. In a test: `Ui.Click("A copy of your data")`, `Ui.Click("Send me a code")`,
+/// `Ui.Fill("Code", …)`, `Ui.Click("Send the request")`.
+[Composable]
+public component MyPrivacy() {
+  List<KeptCategory> kept = [];
+  List<MyRequestRow> mine = [];
+  bool canAsk = false;
+  string noSelf = "";
+  bool loaded = false;
+  string problem = "";
+  string done = "";
+  // Asking
+  RequestKind? asking = null;
+  List<KeptCategory> preview = [];
+  Guid proof = Guid.Empty;
+  string sentTo = "";
+  string code = "";
+  string askProblem = "";
+  // The export just fetched — its two files, for the few minutes their links work.
+  ExportLinks? fetched = null;
+  on mount { Load(); }
+
+  action Load() {
+    try { kept = WhatWeKeepAboutMe(); mine = MyRequestRows(); canAsk = CanAskForMyself(); noSelf = canAsk ? "" : NoSelfService(); }
+    catch (Exception ex) { problem = ex.Message; }
+    loaded = true;
+  }
+  action Choose(RequestKind right) {
+    asking = right; preview = WhatAskingDoes(right); proof = Guid.Empty; sentTo = ""; code = ""; askProblem = ""; done = "";
+  }
+  action Cancel() { asking = null; }
+  action SendCode() {
+    askProblem = "";
+    try { var p = ProveItIsMe(); proof = p.Id; sentTo = p.SentTo; }
+    catch (Exception ex) { askProblem = ex.Message; }
+  }
+  action Send() {
+    askProblem = "";
+    if (code.Trim() == "") { askProblem = "Type the code from the mail."; return; }
+    try {
+      var wrong = ConfirmItIsMe(proof, code.Trim());
+      if (wrong != "") { askProblem = wrong; return; }
+      var refused = AskWithProof(asking!.Value, proof);
+      if (refused != "") { askProblem = refused; proof = Guid.Empty; return; }
+      asking = null;
+      done = "Your request is in. We answer within one month — by mail to the address you just confirmed, and here.";
+      Load();
+    } catch (Exception ex) { askProblem = ex.Message; }
+  }
+  action Fetch(MyRequestRow r) {
+    problem = "";
+    try { fetched = FetchMyExportById(r.Id); Navigation.Open(fetched!.Readable); Load(); }
+    catch (Exception ex) { problem = ex.Message; }
+  }
+
+  render {
+    Stack(gap: 6, p: 5, maxW: "880px", w: "100%", mx: "auto") {
+      PageHead("Your privacy", subtitle: "What we keep about you, why, and for how long — and how to ask for a copy, or to have it erased.");
+      if (problem != "") { Alert(problem, tone: Tone.Warning); }
+      if (done != "") { Alert(done, tone: Tone.Success); }
+      if (fetched != null) { ExportSaved(fetched!); }
+      if (!loaded) { Skeleton(); }
+
+      Stack(gap: 3, label: "Ask us") {
+        SectionLabel("Ask us");
+        if (loaded && !canAsk) { Alert(noSelf); }
+        if (canAsk) {
+          Box(display: Display.Grid, cols: "repeat(auto-fit, minmax(190px, 1fr))", gap: 3) {
+            AskChoice("A copy of your data", "Everything we hold about you, and why we keep it.", () => Choose(RequestKind.Access), asking == RequestKind.Access);
+            AskChoice("Move your data", "What you gave us, in a file another service can read.", () => Choose(RequestKind.Portability), asking == RequestKind.Portability);
+            AskChoice("Erase your data", "We erase what we may, and tell you what the law makes us keep.", () => Choose(RequestKind.Erasure), asking == RequestKind.Erasure);
+            AskChoice("Stop using your data", "We keep it, but use it for nothing until you say so.", () => Choose(RequestKind.Restriction), asking == RequestKind.Restriction);
+          }
+        }
+        if (asking != null) {
+          Card("What this will do", subtitle: "Before anything happens, this is what your request does to each kind of data we hold.") {
+            Stack(gap: 3) {
+              if (asking == RequestKind.Access || asking == RequestKind.Portability) {
+                // A copy: what it will hold, kind by kind — the kinds held about them, with how many; the rest in one line.
+                Text(asking == RequestKind.Access ? WhatACopyIs() : WhatAMoveIs());
+                foreach (var c in preview.Where(x => HeldOf(kept, x.Key) > 0).ToList()) {
+                  Stack(gap: 0) {
+                    Text(c.Label, fontWeight: FontWeight.Semibold);
+                    Text(InTheCopy(kept, c.Key), fontSize: FontSize.Caption, color: Colors.TextMuted);
+                  }
+                }
+                if (preview.Any(x => HeldOf(kept, x.Key) == 0)) {
+                  Text("Not in your copy, because we hold none of these about you: "
+                         + string.Join(", ", preview.Where(x => HeldOf(kept, x.Key) == 0).Select(x => x.Label).ToList()) + ".",
+                       fontSize: FontSize.Caption, color: Colors.TextMuted);
+                }
+                if (preview.Any(x => HeldOf(kept, x.Key) < 0)) {
+                  Text("Not in a copy, because nobody can find it by person: "
+                         + string.Join(", ", preview.Where(x => HeldOf(kept, x.Key) < 0).Select(x => x.Label).ToList()) + ".",
+                       fontSize: FontSize.Caption, color: Colors.TextMuted);
+                }
+              } else {
+                foreach (var c in preview) {
+                  Stack(gap: 0) {
+                    Text(c.Label, fontWeight: FontWeight.Semibold);
+                    Text(c.Kept, fontSize: FontSize.Caption, color: Colors.TextMuted);
+                  }
+                }
+              }
+              Divider();
+              if (proof == Guid.Empty) {
+                Text("To be sure it is you, we mail a code to the address on your account.");
+                if (askProblem != "") { Alert(askProblem, tone: Tone.Danger); }
+                Row(gap: 3, justify: Justify.End, wrap: Wrapping.Wrap) {
+                  Button("Cancel", onPress: Cancel);
+                  Button("Send me a code", onPress: SendCode, tone: Tone.Primary);
+                }
+              } else {
+                Text("We sent a code to " + sentTo + ". It works for fifteen minutes.");
+                Stack(maxW: "240px") { Field("Code", value: code, placeholder: "123456"); }
+                if (askProblem != "") { Alert(askProblem, tone: Tone.Danger); }
+                Row(gap: 3, justify: Justify.End, wrap: Wrapping.Wrap) {
+                  Button("Cancel", onPress: Cancel);
+                  Button("Send the request", onPress: Send, tone: asking == RequestKind.Erasure ? Tone.Danger : Tone.Primary);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      Stack(gap: 3, label: "Your requests") {
+        SectionLabel("Your requests");
+        if (loaded && mine.Count == 0) {
+          EmptyState("No requests yet", body: "When you ask us for a copy of your data, or to erase it, it shows here until it is answered — and after.");
+        }
+        foreach (var r in mine) {
+          Card(r.Title, subtitle: "Received " + r.ReceivedAt.ToString("d MMMM yyyy")
+                                  + (r.Answered || r.AnswerBy == null ? "" : " · we answer by " + r.AnswerBy!.Value.ToString("d MMMM yyyy"))) {
+            Stack(gap: 3) {
+              Row(gap: 2) { Badge(r.Stands, tone: r.Answered ? Tone.Success : Tone.Primary); }
+              if (r.Extension != "") { Text(r.Extension, fontSize: FontSize.Caption); }
+              if (r.Response != "") { Text(r.Response, whiteSpace: WhiteSpace.PreWrap); }
+              if (r.CanFetch) {
+                Row(gap: 2, align: Align.Center, wrap: Wrapping.Wrap) {
+                  Button("Download your data", onPress: () => Fetch(r), tone: Tone.Primary, announceAs: "Download your data from " + r.Title);
+                  Text("Once, within seven days of the answer.", fontSize: FontSize.Caption, color: Colors.TextMuted);
+                }
+              }
+              if (r.ExportWords != "") { Text(r.ExportWords, fontSize: FontSize.Caption, color: Colors.TextMuted); }
+            }
+          }
+        }
+      }
+
+      Stack(gap: 3, label: "What we keep") {
+        Stack(gap: 1) {
+          SectionLabel("What we keep about people, and why");
+          Text("Beside each kind, how much of it we hold about you right now. Only how many — what they say is in a copy of your data.",
+               fontSize: FontSize.Caption, color: Colors.TextMuted);
+        }
+        foreach (var c in kept) {
+          Stack(gap: 0, py: 2, borderBW: 1, border: Colors.Border, label: c.Label) {
+            Text(c.Label, fontWeight: FontWeight.Semibold);
+            Text(HeldWords(c), fontSize: FontSize.Label, fontWeight: c.Held > 0 ? FontWeight.Medium : FontWeight.Regular,
+                 color: c.Held > 0 ? Colors.Primary : Colors.TextMuted);
+            Text(c.Purpose + " · " + c.Basis, fontSize: FontSize.Caption, color: Colors.TextMuted);
+            Text(c.Kept, fontSize: FontSize.Caption);
+          }
+        }
+      }
+    }
+  }
+}
+
+/// How much of a kind the person's page says is held about them: "We hold 4 of these about you."
+public string HeldWords(KeptCategory c) {
+  if (!c.Counted) { return "We cannot count these by person."; }
+  if (c.Held == 0) { return "We hold none of these about you."; }
+  return $"We hold {c.Held} of these about you.";
+}
+
+/// How many of a kind the page counted about the person — -1 when nobody can count it by person.
+public int HeldOf(List<KeptCategory> kept, string key) {
+  var k = kept.FirstOrDefault(x => x.Key == key);
+  return k == null || !k!.Counted ? -1 : k!.Held;
+}
+
+/// What a copy of one kind will carry, from the counts the page already has: "4 of these, each with its date".
+public string InTheCopy(List<KeptCategory> kept, string key) {
+  return $"In your copy: {HeldOf(kept, key)} of these, each with its date — and why we keep them, and for how long.";
+}
+
+/// What a copy of your data is, before you ask for it.
+public string WhatACopyIs() {
+  return "You get one download, once, for seven days: a page you can open in any browser, with a section for each kind of data below — what we hold, why we keep it and for how long — and the same data as a file another service can read (JSON).";
+}
+
+/// …and what moving your data is.
+public string WhatAMoveIs() {
+  return "You get one download, once, for seven days: what you gave us, as a file another service can read (JSON), and a page you can open in any browser to see what is in it.";
+}
+
+/// What a person reads once their export is fetched: the readable copy is on its way, and the data file is one more
+/// link — both for a few minutes.
+[Composable]
+public component ExportSaved(ExportLinks links) {
+  render {
+    Alert("Open your-data.html in any browser to read it — each kind of data we hold about you, with why we keep it and for how long.",
+          title: "Your copy is downloading", tone: Tone.Success) {
+      Stack(gap: 2) {
+        Row(gap: 2, wrap: Wrapping.Wrap) {
+          Link(href: links.Readable) { Text("Download the readable copy again", color: Colors.Primary, fontWeight: FontWeight.Medium); }
+          Text("·", color: Colors.TextMuted);
+          Link(href: links.Data) { Text("Download the data file another service can read (JSON)", color: Colors.Primary, fontWeight: FontWeight.Medium); }
+        }
+        Text("These links work for a few minutes, and this copy can be downloaded only now — after that, ask again for a new one.",
+             fontSize: FontSize.Caption, color: Colors.TextMuted);
+      }
+    }
+  }
+}
+
+/// One way to ask — a choice card.
+[Composable]
+public component AskChoice(string title, string body, Action onPress, bool picked) {
+  render {
+    Stack(gap: 2, p: 4, borderW: picked ? 2 : 1, border: picked ? Colors.Primary : Colors.Border, bg: Colors.Surface) {
+      Button(title, onPress: onPress, tone: picked ? Tone.Primary : Tone.Default);
+      Text(body, fontSize: FontSize.Caption, color: Colors.TextMuted);
+    }
+  }
+}
+
+[Page("/privacy")] [Authorize] [Render(CSR)] [Title("Your privacy")]
+public component MyPrivacyPage() { render { MyPrivacy(); } }
+
+/// Make my request with no account, about the address I just proved — answers the sentence to show: "" when it was
+/// filed, or why it was not.
+[AllowAnonymous]
+public string AskAboutAnAddressWithProof(RequestKind right, Guid proof) {
+  var ask = AskAboutAnAddress(right, proof);
+  var after = PrivacyAsk.Single(a => a.Id == ask.Id);
+  if (after.Request == null) { return after.Problem == "" ? "We could not file it — ask again." : after.Problem; }
+  return "";
+}
+
+/// Asking about your data WITHOUT an account — a customer who only ever wrote to the desk by mail. They give the address
+/// they wrote from, prove it with a code mailed there, choose what to ask, see what it will do before it is sent, and
+/// the answer goes to that address alone. In a test: `Ui.Fill("Your email address", …)`, `Ui.Click("Send me a code")`,
+/// `Ui.Fill("Code", …)`, `Ui.Click("Erase your data")`, `Ui.Click("Send the request")`.
+[Composable]
+public component AskWithoutAnAccount() {
+  bool loaded = false;
+  bool canAsk = false;
+  string address = "";
+  Guid proof = Guid.Empty;
+  string sentTo = "";
+  string code = "";
+  bool proven = false;
+  RequestKind? asking = null;
+  List<KeptCategory> preview = [];
+  string problem = "";
+  string done = "";
+  string noSelf = "";
+  on mount { canAsk = CanAskWithoutAnAccount(); noSelf = canAsk ? "" : NoSelfService(); loaded = true; }
+
+  action SendCode() {
+    problem = "";
+    if (!address.Contains("@")) { problem = "Give the email address you wrote to us from."; return; }
+    try { var p = ProveAnAddress(address); proof = p.Id; sentTo = p.SentTo; } catch (Exception ex) { problem = ex.Message; }
+  }
+  action Confirm() {
+    problem = "";
+    if (code.Trim() == "") { problem = "Type the code from the mail."; return; }
+    var wrong = ConfirmAnAddress(proof, code.Trim());
+    if (wrong != "") { problem = wrong; return; }
+    proven = true;
+  }
+  action Choose(RequestKind right) { asking = right; preview = WhatAskingDoes(right); problem = ""; }
+  action Send() {
+    problem = "";
+    try {
+      var refused = AskAboutAnAddressWithProof(asking!.Value, proof);
+      if (refused != "") { problem = refused; return; }
+      done = "Your request is in. We answer within one month, by mail to " + sentTo + " — and only there.";
+    } catch (Exception ex) { problem = ex.Message; }
+  }
+
+  render {
+    Stack(gap: 6, p: 5, maxW: "720px", w: "100%", mx: "auto") {
+      PageHead("Ask about your data", subtitle: "No account needed — prove the email address you wrote to us from, and ask for a copy of what we hold, or to have it erased.");
+      if (!loaded) { Skeleton(); }
+      if (loaded && !canAsk) { Alert(noSelf); }
+      if (done != "") { Alert(done, tone: Tone.Success); }
+      if (loaded && canAsk && done == "") {
+        if (proof == Guid.Empty) {
+          Card("1. Your email address", subtitle: "We mail a code there. Only that address gets the answer.") {
+            Stack(gap: 3) {
+              Field("Your email address", value: address, placeholder: "you@example.com", type: "email");
+              if (problem != "") { Alert(problem, tone: Tone.Danger); }
+              Row(justify: Justify.End) { Button("Send me a code", onPress: SendCode, tone: Tone.Primary); }
+            }
+          }
+        }
+        if (proof != Guid.Empty && !proven) {
+          Card("2. The code", subtitle: "We sent a code to " + sentTo + ". It works for fifteen minutes.") {
+            Stack(gap: 3) {
+              Stack(maxW: "240px") { Field("Code", value: code, placeholder: "123456"); }
+              if (problem != "") { Alert(problem, tone: Tone.Danger); }
+              Row(justify: Justify.End) { Button("Confirm", onPress: Confirm, tone: Tone.Primary); }
+            }
+          }
+        }
+        if (proven) {
+          Card("3. What you ask for", subtitle: "About " + sentTo + ", and nothing else.") {
+            Stack(gap: 4) {
+              Box(display: Display.Grid, cols: "repeat(auto-fit, minmax(190px, 1fr))", gap: 3) {
+                AskChoice("A copy of your data", "Everything we hold about you, and why we keep it.", () => Choose(RequestKind.Access), asking == RequestKind.Access);
+                AskChoice("Erase your data", "We erase what we may, and tell you what the law makes us keep.", () => Choose(RequestKind.Erasure), asking == RequestKind.Erasure);
+              }
+              if (asking != null) {
+                Stack(gap: 3, label: "What this will do") {
+                  SectionLabel("What this will do");
+                  foreach (var c in preview) {
+                    Stack(gap: 0) {
+                      Text(c.Label, fontWeight: FontWeight.Semibold);
+                      Text(c.Kept, fontSize: FontSize.Caption, color: Colors.TextMuted);
+                    }
+                  }
+                  if (problem != "") { Alert(problem, tone: Tone.Danger); }
+                  Row(justify: Justify.End) {
+                    Button("Send the request", onPress: Send, tone: asking == RequestKind.Erasure ? Tone.Danger : Tone.Primary);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+[Page("/privacy/ask")] [AllowAnonymous] [Render(CSR)] [Title("Ask about your data")]
+public component AskWithoutAnAccountPage() { render { AskWithoutAnAccount(); } }
+
+/// The page an export link opens — a person with no account downloads their data once.
+[Page("/privacy/export/{link}")] [AllowAnonymous] [Render(CSR)] [Title("Your data")]
+public component ExportByLinkPage(ExportLink link) {
+  string problem = "";
+  ExportLinks? fetched = null;
+  action Fetch() {
+    problem = "";
+    try { fetched = FetchExportByLink(link); Navigation.Open(fetched!.Readable); } catch (Exception ex) { problem = ex.Message; }
+  }
+  render {
+    Stack(gap: 5, p: 5, maxW: "600px", w: "100%", mx: "auto") {
+      PageHead("Your data", subtitle: "A copy of what we hold about you. It can be downloaded once; after that, or after seven days, it is deleted.");
+      if (problem != "") { Alert(problem, tone: Tone.Warning); }
+      if (fetched != null) { ExportSaved(fetched!); }
+      if (fetched == null) { Button("Download your data", onPress: Fetch, tone: Tone.Primary); }
+    }
+  }
+}
+
+// ── the request as the people managing privacy work it, on the Inbox ──────────────────────────────────────────────
+
+/// One plan line as the pane shows it.
+public class PlanRow {
+  public Guid Id;
+  public string Category = "";
+  public string Label = "";
+  public PlanOutcome Outcome = PlanOutcome.NotHeld;
+  public int Items = 0;
+  public string Detail = "";
+  public bool Done = false;
+  public bool CanKeep = false;
+}
+
+/// What the pane shows of a request — read by the people managing privacy.
+public class RequestFacts {
+  public Guid Id;
+  public string Title = "";
+  public RequestState State = RequestState.Received;
+  public string Asker = "";
+  public string Check = "";
+  public string Note = "";
+  public DateTime ReceivedAt = DateTime.UtcNow;
+  public DateTime? DueAt;
+  public string Extension = "";
+  public string Problem = "";
+  public string Response = "";
+  public string Delivery = "";
+  public List<PlanRow> Plan = [];
+}
+
+[Authorize(ManagesPrivacy)]
+[SuppressWarning("cost-unbounded-read")]   // one request's plan lines — one per category the app declares
+public RequestFacts FactsOf(Guid request) {
+  var r = PrivacyRequest.Single(x => x.Id == request);
+  List<PlanRow> plan = [];
+  var order = AllCategories().Select(c => c.Key).ToList();
+  foreach (var l in PlanLine.Where(l => l.Request == r).ToList().OrderBy(l => order.IndexOf(l.Category)).ToList()) {
+    var c = AllCategories().FirstOrDefault(x => x.Key == l.Category);
+    var detail = l.Outcome == PlanOutcome.Restrict && l.Until != null ? "Kept, restricted, through " + KeptThrough(l.Until!.Value).ToString("d MMMM yyyy")
+      // Kept only beside another kept category (`KeptWith`): its period is that one's, and its line says why.
+      : l.Outcome == PlanOutcome.Restrict && c != null && !IsKept(c!) && l.Reason != "" ? "Kept, restricted — " + l.Reason
+      : l.Outcome == PlanOutcome.Restrict && c != null ? "Kept, restricted, " + PeriodWords(RetentionOf(c!))
+      : l.Reason;
+    plan.Add(new PlanRow { Id = l.Id, Category = l.Category, Label = c == null ? l.Category : c!.Label, Outcome = l.Outcome,
+      Items = l.Items, Detail = detail, Done = l.DoneAt != null,
+      CanKeep = r.State == RequestState.Review && c != null && c!.Basis == RetentionBasis.LegitimateInterest && l.Outcome == PlanOutcome.Erase });
+  }
+  return new RequestFacts {
+    Id = r.Id, Title = r.Title, State = r.State,
+    Asker = r.SubjectEmail ?? (r.SubjectKey == "" ? "" : "an erased person (kept as a fingerprint)"),
+    Check = r.Check.Label, Note = r.Note, ReceivedAt = r.ReceivedAt, DueAt = r.DueAt, Extension = r.ExtensionReason,
+    Problem = r.Problem, Response = r.Response,
+    Delivery = r.DeliveredAt != null ? "Sent to the proven address on " + r.DeliveredAt!.Value.ToString("d MMMM yyyy") + "."
+      : r.DeliverTo != "" ? "Goes to " + r.DeliverTo + " — the address the person proved — when it is answered."
+      : "Filed by staff: send the answer yourself, through a channel you proved. Nothing is mailed to the address typed in.",
+    Plan = plan };
+}
+
+/// A privacy request, as the people managing privacy work it on the Inbox: the deadline, how identity was checked, the
+/// plan line by line — approve it, keep a legitimate-interest line on written grounds, extend the deadline with its
+/// reason, run it again after a failure — and what the person is told.
+[Composable]
+public component PrivacyRequestPane(Guid request) {
+  RequestFacts f = new RequestFacts();
+  bool loaded = false;
+  string problem = "";
+  string done = "";
+  bool extending = false;
+  int months = 1;
+  string why = "";
+  string extendProblem = "";
+  on mount { Load(); }
+
+  action Load() {
+    try { f = FactsOf(request); }
+    catch (Exception ex) { problem = ex.Message; }
+    loaded = true;
+  }
+  action Approve() {
+    problem = ""; done = "";
+    try { ApproveRequest(PrivacyRequest.Single(r => r.Id == request)); done = "Approved — the plan ran."; Load(); }
+    catch (Exception ex) { problem = ex.Message; }
+  }
+  action Retry() {
+    problem = ""; done = "";
+    try { RetryRequest(PrivacyRequest.Single(r => r.Id == request)); Load(); }
+    catch (Exception ex) { problem = ex.Message; }
+  }
+  action OpenExtend() { extending = true; months = 1; why = ""; extendProblem = ""; }
+  action CloseExtend() { extending = false; }
+  action Extend() {
+    extendProblem = "";
+    try { ExtendRequest(PrivacyRequest.Single(r => r.Id == request), months, why); extending = false; done = "Extended — the person is told why."; Load(); }
+    catch (Exception ex) { extendProblem = ex.Message; }
+  }
+
+  render {
+    Stack(gap: 4, px: 5, py: 4, label: "Privacy request") {
+      if (!loaded) { Skeleton(); }
+      if (problem != "") { Alert(problem, tone: Tone.Warning); }
+      if (done != "") { Alert(done, tone: Tone.Success); }
+      if (loaded && problem == "") {
+        Row(gap: 2, align: Align.Center, wrap: Wrapping.Wrap) {
+          Badge(f.State.Label, tone: f.State == RequestState.Failed ? Tone.Danger : f.State == RequestState.Done ? Tone.Success : Tone.Primary);
+          if (f.DueAt != null && f.State != RequestState.Done) {
+            Text("Answer by " + f.DueAt!.Value.ToString("d MMMM yyyy"), fontWeight: FontWeight.Semibold);
+          }
+          Text("received " + f.ReceivedAt.ToString("d MMMM yyyy"), fontSize: FontSize.Caption, color: Colors.TextMuted);
+        }
+        Stack(gap: 0) {
+          SectionLabel("Who, and how we know");
+          Text(f.Asker);
+          Text(f.Check + (f.Note == "" ? "" : " — " + f.Note), fontSize: FontSize.Caption, color: Colors.TextMuted);
+        }
+        if (f.Extension != "") { Text("Extended: " + f.Extension, fontSize: FontSize.Caption); }
+        if (f.Problem != "") {
+          Alert(f.Problem, title: "It could not be done", tone: Tone.Danger);
+        }
+        Stack(gap: 2, label: "The plan") {
+          SectionLabel("The plan");
+          foreach (var l in f.Plan.Where(x => x.Outcome != PlanOutcome.NotHeld).ToList()) {
+            Row(gap: 3, align: Align.Start, py: 2, borderBW: 1, border: Colors.Border) {
+              Stack(gap: 0, grow: 1, minW: "0") {
+                Text(l.Label);
+                if (l.Detail != "") { Text(l.Detail, fontSize: FontSize.Caption, color: Colors.TextMuted); }
+              }
+              // One line: on a phone the label column is narrow, and "2 rows" broke into "2" over "rows" beside it.
+              Text(l.Items + (l.Items == 1 ? " row" : " rows"), fontSize: FontSize.Caption, color: Colors.TextMuted,
+                   whiteSpace: WhiteSpace.Nowrap);
+              Badge(l.Outcome.Label, tone: l.Outcome == PlanOutcome.Erase ? Tone.Danger : l.Outcome == PlanOutcome.Blocked ? Tone.Warning : Tone.Default);
+            }
+          }
+          if (f.Plan.Any(x => x.Outcome == PlanOutcome.NotHeld)) {
+            Text("Not held: " + string.Join(", ", f.Plan.Where(x => x.Outcome == PlanOutcome.NotHeld).Select(x => x.Label).ToList()) + ".",
+                 fontSize: FontSize.Caption, color: Colors.TextMuted);
+          }
+        }
+        if (f.Response != "") {
+          Stack(gap: 1) {
+            SectionLabel("What the person is told");
+            Text(f.Response, whiteSpace: WhiteSpace.PreWrap);
+          }
+        }
+        Text(f.Delivery, fontSize: FontSize.Caption, color: Colors.TextMuted);
+        Row(gap: 2, wrap: Wrapping.Wrap) {
+          if (f.State == RequestState.Review) { Button("Approve and run the plan", onPress: Approve, tone: Tone.Primary); }
+          if (f.State == RequestState.Failed) { Button("Run it again", onPress: Retry, tone: Tone.Primary); }
+          if (f.State != RequestState.Done && f.Extension == "") { Button("Extend the deadline…", onPress: OpenExtend, tone: Tone.Ghost); }
+        }
+      }
+    }
+    if (extending) {
+      Dialog("Extend the deadline", onDismiss: CloseExtend,
+             subtitle: "By one or two months, only within the first month, and only with the reason — the person is told it.") {
+        Stack(gap: 4) {
+          Stack(w: "160px") { NumberField("Months", value: months, min: 1, max: 2); }
+          Field("Why", value: why, placeholder: "Your request covers ten years of orders.");
+          if (extendProblem != "") { Alert(extendProblem, tone: Tone.Danger); }
+          Row(gap: 3, justify: Justify.End) {
+            Button("Cancel", onPress: CloseExtend);
+            Button("Extend", onPress: Extend, tone: Tone.Primary);
+          }
+        }
+      }
+    }
+  }
+}

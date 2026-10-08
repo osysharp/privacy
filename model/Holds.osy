@@ -1,0 +1,322 @@
+namespace Osysharp.Privacy;
+
+using Osysharp.Identity;
+using Osysharp.Workflow;
+
+// ── legal holds: nothing a dispute needs is erased or purged while it lasts ────────────────────────────────────────
+//
+// A HOLD is placed on a PERSON (every category about them) or on a CASE (one row the app names — an order, a
+// conversation, a candidacy). While it stands:
+//   · an erasure plan does not erase what it covers — the line WAITS, "kept for the establishment, exercise or defence
+//     of legal claims" (the matter is never named to the person, owner Q13), and runs the day the hold is lifted;
+//   · the daily purge does not delete it — every holder is asked to keep the held rows out of the purge first
+//     (`IPersonalDataHolder.Hold`), and a category whose holder cannot say which rows the hold covers is not purged AT
+//     ALL while the hold stands, recorded every day (never a silent gap).
+// Lifting gives every row back its period: what was due is purged by the next run, and every waiting erasure finishes.
+//
+// ⚑ A HOLD IS NOT FOREVER. It has a review date (Art. 5(1)(e) — storage limitation): on that date it is marked for
+//   review, and somebody who places holds either keeps it, with the next date, or lifts it.
+// ⚑ ONLY THE PEOPLE WHO PLACE HOLDS PLACE OR LIFT ONE, and a lift needs a reason — both recorded. An organisation may
+//   require a SECOND person to confirm a lift (`PrivacySetup.HoldLiftNeedsSecondPerson`).
+
+/// Who may place and lift legal holds — the app's to say: `policy PlacesLegalHolds => IsAdmin;`.
+policy PlacesLegalHolds;
+
+/// Where a hold stands — tracked by `LegalHoldRun`. ⚠ Appended, never inserted: stored by position.
+public enum HoldState {
+  /// In force.
+  [Label("Holding")] Holding,
+  /// In force, and past its review date: keep it (with the next date) or lift it.
+  [Label("Review due")] ReviewDue,
+  /// In force: a lift was asked for, and waits for a second person to confirm it.
+  [Label("Lift waiting for a second person")] LiftPending,
+  /// No longer in force. Its record is kept for `privacy.records`' period, then forgotten.
+  [Label("Lifted")] Lifted,
+  /// Lifted long enough ago that only the fact of it is kept — no person, no matter, no reasons.
+  [Label("Expired")] Expired,
+}
+
+/// A legal hold — on a person, or on a case. Placed with `PlaceHold`/`PlaceCaseHold`; changed ONLY by its run's events.
+public entity LegalHold {
+  /// What it is for, in the words of whoever placed it: "Dispute with Acme AB, 2026". Never shown to the person.
+  [Required("Name the matter the hold is for."), Classification(Personal.Content), MaxLength(200)] string Matter;
+  /// Why the data must be kept — read by whoever reviews or lifts it.
+  [Required("Say why the data must be kept."), Classification(Personal.Content), MaxLength(1000)] string Reason;
+  /// A PERSON: the address they are known by (normalised) — every category about them.
+  [Classification(Personal.Contact), MaxLength(320)] string? SubjectEmail;
+  /// …and the principal they sign in as, when they have one.
+  Guid? SubjectAccount;
+  /// The keyed fingerprint of `SubjectEmail` — what a request about the same address matches, after its address is gone.
+  [MaxLength(64)] string SubjectKey = "";
+  /// A CASE: the entity and the row — `"Order"`, its id. The holder that keeps that row honours it (`IsHeld`).
+  [MaxLength(200)] string CaseEntity = "";
+  Guid? CaseRow;
+  /// The case as people read it — "Order 1042".
+  [Classification(Personal.Content), MaxLength(200)] string CaseLabel = "";
+  /// Who placed it, and when — stamped by `PlaceHold`, never written by anyone else.
+  Principal? PlacedBy;
+  DateTime PlacedAt;
+  /// When somebody must look at it again. A hold past it is marked `ReviewDue`.
+  DateTime ReviewBy;
+  /// Who asked to lift it, when and why. With a second person required, the lift waits for them.
+  Principal? LiftRequestedBy;
+  DateTime? LiftRequestedAt;
+  [Classification(Personal.Content), MaxLength(1000)] string LiftReason = "";
+  /// Who lifted it (the second person, when one is required), and when.
+  Principal? LiftedBy;
+  DateTime? LiftedAt;
+  HoldState State;                                   // no default — LegalHoldRun owns it
+  security {
+    allow read, create when PlacesLegalHolds;
+    // The people managing privacy see THAT a person or a case is held — a plan they approve waits on it — never why.
+    allow read when ManagesPrivacy;
+    deny read Matter, Reason, LiftReason, CaseLabel when !PlacesLegalHolds;
+    // SECURITY-INVARIANT(privacy-a-legal-hold-is-lifted-only-by-an-admin-with-a-reason): a hold changes ONLY through
+    // LegalHoldRun's events — placed by somebody who places holds, as themselves, in force; lifted only by the `Lift`
+    // event, whose gate is `PlacesLegalHolds` and whose arm refuses an empty reason (`AskToLift`). No page, function,
+    // import or script writes or deletes a hold row, so the next purge can never delete evidence a dispute needs because
+    // somebody cleared a flag. Guarded by tests/holds.test.osy `a_hold_cannot_be_lifted_without_a_reason`,
+    // `a_person_who_does_not_place_holds_cannot_lift_one` and `a_hold_cannot_be_written_or_deleted_directly`.
+    deny create where PlacedBy != user || LiftRequestedBy != null || LiftRequestedAt != null || LiftedBy != null
+      || LiftedAt != null || LiftReason != "";
+    deny update;
+    deny delete;
+  }
+}
+
+/// The sentence a person reads for what a hold keeps — the basis, never the matter (owner, Q13).
+public string HeldSentence() { return "kept for the establishment, exercise or defence of legal claims"; }
+
+/// Place a hold on a person — every category about them — until it is lifted. `reviewBy`: when somebody must look at
+/// it again. Answers the hold.
+[Authorize(PlacesLegalHolds)]
+public LegalHold PlaceHold(string email, Guid? account, string matter, string reason, DateTime reviewBy) {
+  var address = email.Trim().ToLower();
+  if (address == "" && account == null) {
+    throw new ValidationException("Say who the hold is on — their email address, or their account.");
+  }
+  var h = NewHold(matter, reason, reviewBy);
+  if (address != "") { h.SubjectEmail = address; h.SubjectKey = Security.Fingerprint(address); }
+  h.SubjectAccount = account;
+  UnitOfWork.Commit();
+  return h;
+}
+
+/// Place a hold on one case — the row `row` of `entity`, as people read it `label` ("Order 1042") — until it is lifted.
+[Authorize(PlacesLegalHolds)]
+public LegalHold PlaceCaseHold(string entity, Guid row, string label, string matter, string reason, DateTime reviewBy) {
+  if (entity.Trim() == "") { throw new ValidationException("Say what kind of record the case is."); }
+  var h = NewHold(matter, reason, reviewBy);
+  h.CaseEntity = entity.Trim();
+  h.CaseRow = row;
+  h.CaseLabel = label.Trim() == "" ? entity.Trim() : label.Trim();
+  UnitOfWork.Commit();
+  return h;
+}
+
+// What both kinds of hold check and stamp.
+internal LegalHold NewHold(string matter, string reason, DateTime reviewBy) {
+  if (matter.Trim() == "") { throw new ValidationException("Name the matter the hold is for — it is what a reviewer reads."); }
+  if (reason.Trim() == "") { throw new ValidationException("Say why the data must be kept — a hold without a reason cannot be reviewed."); }
+  var now = DateTime.UtcNow;
+  if (reviewBy <= now) {
+    throw new ValidationException("A hold needs a review date in the future — a hold is reviewed, so it never becomes keeping for ever.");
+  }
+  return new LegalHold { Matter = matter.Trim(), Reason = reason.Trim(), PlacedBy = Session.CurrentUser, PlacedAt = now,
+                         ReviewBy = reviewBy };
+}
+
+/// Lift a hold, saying why. With a second person required, it waits for them (`ConfirmHoldLift`).
+[Authorize(PlacesLegalHolds)]
+public void LiftHold(LegalHold hold, string reason) { LegalHoldRun.RaiseLift(hold, reason); }
+
+/// Confirm somebody else's lift — the second person.
+[Authorize(PlacesLegalHolds)]
+public void ConfirmHoldLift(LegalHold hold) { LegalHoldRun.RaiseConfirmLift(hold); }
+
+/// Keep holding: withdraw a lift that waits for a second person.
+[Authorize(PlacesLegalHolds)]
+public void KeepHolding(LegalHold hold) { LegalHoldRun.RaiseKeep(hold); }
+
+/// Reviewed: the hold stays, and is looked at again on `next`.
+[Authorize(PlacesLegalHolds)]
+public void ReviewHold(LegalHold hold, DateTime next) { LegalHoldRun.RaiseReviewed(hold, next); }
+
+/// Whether a lift needs a second person — the app's setting (an organisation's policy may set it).
+public bool HoldLiftNeedsSecondPerson() { return App.Setting<PrivacySetup>().HoldLiftNeedsSecondPerson; }
+
+/// The holds in force — holding, due for review, or waiting for a second person to lift.
+[SuppressWarning("cost-unbounded-read")]   // the legal holds in force — placed by hand, a few a year
+public List<LegalHold> HoldsInForce() {
+  return LegalHold.Where(h => h.State == HoldState.Holding || h.State == HoldState.ReviewDue
+                              || h.State == HoldState.LiftPending).ToList();
+}
+
+/// Whether `hold` covers the person `subject` — by their account, or by a proven address's fingerprint.
+public bool Covers(LegalHold hold, DataSubject subject) {
+  if (hold.CaseRow != null) { return false; }
+  if (hold.SubjectAccount != null && subject.Account != null && hold.SubjectAccount == subject.Account) { return true; }
+  if (hold.SubjectKey == "") { return false; }
+  foreach (var e in subject.Emails) {
+    if (Security.Fingerprint(e.Trim().ToLower()) == hold.SubjectKey) { return true; }
+  }
+  return false;
+}
+
+/// Whether a hold in force covers the person `subject`.
+public bool IsHeld(DataSubject subject) {
+  foreach (var h in HoldsInForce()) { if (Covers(h, subject)) { return true; } }
+  return false;
+}
+
+/// Whether a hold in force covers the case `row` — what a holder asks before it erases or purges that row.
+public bool IsCaseHeld(Guid row) {
+  return LegalHold.Any(h => h.CaseRow == row && (h.State == HoldState.Holding || h.State == HoldState.ReviewDue
+                                                 || h.State == HoldState.LiftPending));
+}
+
+/// The rows held as cases in force — for a holder that purges ordinary rows in sets (`Where(… && !held.Contains(x.Id))`).
+public List<Guid> HeldCaseRows() {
+  return HoldsInForce().Where(h => h.CaseRow != null).Select(h => h.CaseRow!.Value).ToList();
+}
+
+/// Whether a request about the fingerprint `subjectKey` (or the account `account`) is held — its own records are
+/// evidence, and are not purged while a hold covers the person.
+public bool IsKeyHeld(string subjectKey, Guid? account) {
+  foreach (var h in HoldsInForce()) {
+    if (h.CaseRow != null) { continue; }
+    if (subjectKey != "" && h.SubjectKey == subjectKey) { return true; }
+    if (account != null && h.SubjectAccount == account) { return true; }
+  }
+  return false;
+}
+
+/// The person a hold is on, as a request would name them.
+public DataSubject SubjectOfHold(LegalHold hold) {
+  var s = new DataSubject { Account = hold.SubjectAccount };
+  if (hold.SubjectEmail != null && hold.SubjectEmail != "") { s.Emails.Add(hold.SubjectEmail!); }
+  return s;
+}
+
+// The lift asked for — refused without a reason, recorded with who and when.
+internal void AskToLift(LegalHold hold, Principal? by, string reason) {
+  // SECURITY-INVARIANT(privacy-a-legal-hold-is-lifted-only-by-an-admin-with-a-reason) — see LegalHold: the reason is
+  // checked HERE, in the run, so no path to `Lift` (a page, a function, a raise from a test or a script) skips it.
+  if (reason.Trim() == "") {
+    throw new ValidationException("Lifting a legal hold needs a reason — it is recorded, and it is what shows the hold "
+      + "was ended on purpose.");
+  }
+  if (hold.State == HoldState.LiftPending) {
+    throw new ValidationException("A lift is already waiting for a second person.");
+  }
+  hold.LiftRequestedBy = by;
+  hold.LiftRequestedAt = DateTime.UtcNow;
+  hold.LiftReason = reason.Trim();
+}
+
+// The hold is no longer in force: every holder gives the rows it kept from the purge their period back, and every
+// erasure waiting on it is asked again. A holder that cannot fails the lift — loudly, with nothing changed — because a
+// row left without its period would be kept for ever.
+internal void Release(LegalHold hold, Principal? by) {
+  hold.LiftedBy = by;
+  hold.LiftedAt = DateTime.UtcNow;
+  foreach (var h in Holders()) {
+    foreach (var c in h.Categories()) {
+      if (!h.Hold(hold, c, false)) {
+        throw new ValidationException($"{h.Key()} cannot give '{c.Key}' its period back, so the hold is not lifted — "
+          + "its rows would otherwise be kept for ever.");
+      }
+    }
+  }
+}
+
+// After privacy.records' period, a lifted hold keeps only the fact of it: no person, no matter, no reasons.
+internal void Forget(LegalHold hold) {
+  hold.SubjectEmail = null;
+  hold.SubjectAccount = null;
+  hold.SubjectKey = "";
+  hold.CaseRow = null;
+  hold.CaseLabel = "";
+  hold.Matter = "(expired)";
+  hold.Reason = "(expired)";
+  hold.LiftReason = "";
+}
+
+/// How long until a hold's review date, from now — never negative.
+internal TimeSpan ReviewIn(LegalHold hold) {
+  var left = hold.ReviewBy - DateTime.UtcNow;
+  return left < TimeSpan.Zero ? TimeSpan.Zero : left;
+}
+
+/// How long a lifted hold's record is still kept whole — `privacy.records`' period from the lift.
+internal TimeSpan RecordKeptFor(LegalHold hold) {
+  var lifted = hold.LiftedAt == null ? DateTime.UtcNow : hold.LiftedAt!.Value;
+  var left = KeepUntil(CategoryOf("privacy.records"), lifted) - DateTime.UtcNow;
+  return left < TimeSpan.Zero ? TimeSpan.Zero : left;
+}
+
+/// A hold's life: in force until lifted — reviewed on its date, lifted only with a reason by somebody who places
+/// holds, and confirmed by a second person when the app requires one.
+public workflow LegalHoldRun {
+  Tracks    = LegalHold.State;
+  Autostart = true;
+  Initial   = Holding;
+
+  [Authorize(u => PlacesLegalHolds)]
+  event Lift(string reason);
+  /// The second person — never the one who asked.
+  [Authorize(u => PlacesLegalHolds && u != this.Item.LiftRequestedBy)]
+  event ConfirmLift();
+  [Authorize(u => PlacesLegalHolds)]
+  event Keep();
+  [Authorize(u => PlacesLegalHolds)]
+  event Reviewed(DateTime next);
+
+  on Lift(string reason) {
+    when (this.Item.State == HoldState.Lifted || this.Item.State == HoldState.Expired) { RefuseLifted(); }
+    when (HoldLiftNeedsSecondPerson()) { AskToLift(this.Item, actor, reason); SettleHoldReview(this.Item); goto LiftPending; }
+    default { AskToLift(this.Item, actor, reason); Release(this.Item, actor); SettleHoldReview(this.Item); goto Lifted; }
+  }
+
+  on Reviewed(DateTime next) {
+    when (this.Item.State == HoldState.Lifted || this.Item.State == HoldState.Expired) { RefuseLifted(); }
+    when (next <= DateTime.UtcNow) { RefusePastReview(); }
+    when (this.Item.State == HoldState.LiftPending) { this.Item.ReviewBy = next; }
+    default { this.Item.ReviewBy = next; SettleHoldReview(this.Item); goto Holding; }
+  }
+
+  /// In force. On its review date it is marked for review — still in force.
+  state Holding {
+    Expire { Within = ReviewIn(this.Item); Accrues = false; }
+    on Expire { goto ReviewDue; }
+  }
+
+  /// In force, past its review date — and a review item on the Inbox for the people who place holds (HoldReview.osy).
+  state ReviewDue {
+    enter { OpenHoldReview(this.Item); }
+  }
+
+  /// In force; a lift waits for a second person.
+  state LiftPending {
+    on ConfirmLift { Release(this.Item, actor); goto Lifted; }
+    on Keep {
+      this.Item.LiftRequestedBy = null;
+      this.Item.LiftRequestedAt = null;
+      this.Item.LiftReason = "";
+      goto Holding;
+    }
+  }
+
+  /// No longer in force. What waited on it runs now; its record is kept whole for `privacy.records`' period.
+  state Lifted {
+    enter { RecheckWaiting(); }
+    Expire { Within = RecordKeptFor(this.Item); Accrues = false; }
+    on Expire { Forget(this.Item); goto Expired; }
+  }
+
+  terminal success Expired { }
+}
+
+internal void RefuseLifted() { throw new ValidationException("This hold is no longer in force."); }
+
+internal void RefusePastReview() { throw new ValidationException("The next review date must be in the future."); }

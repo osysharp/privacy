@@ -1,0 +1,209 @@
+namespace Osysharp.Privacy;
+
+// ── the contract every holder of personal data implements ──────────────────────────────────────────────────────────
+//
+// ⚑ VERSIONED (D-CONTRACTS1): a member added later carries a default body, so a holder written against 0.1.0 keeps
+//   compiling. Removing or re-signing a member is a MAJOR version.
+
+/// The legal basis a category is held on (GDPR Art. 6(1), 17(3)). ⚠ Appended, never inserted: stored by position.
+public enum RetentionBasis {
+  /// Nothing allows keeping it once the person asks: erased on request.
+  [Label("None — erased on request")] None,
+  /// Art. 6(1)(a). Withdrawing consent erases it.
+  [Label("Consent")] Consent,
+  /// Art. 6(1)(b) — performing a contract, or steps before one. Erased once the relationship is over.
+  [Label("Contract")] Contract,
+  /// Art. 6(1)(c) + 17(3)(b) — a law requires keeping it (the books). KEPT RESTRICTED after a request, until its period ends.
+  [Label("Legal obligation")] LegalObligation,
+  /// Art. 17(3)(e) — the establishment, exercise or defence of legal claims. Kept restricted until its period ends.
+  [Label("Legal claims")] LegalClaims,
+  /// Art. 6(1)(f). An erasure or objection stops it unless the controller records compelling grounds.
+  [Label("Legitimate interest")] LegitimateInterest,
+}
+
+/// When a category's kept period starts counting. ⚠ Appended, never inserted.
+public enum RetentionStart {
+  /// The date of the row itself (when it was collected, issued, sent).
+  [Label("When it was collected")] Collected,
+  /// The end of the calendar year of the row's date.
+  [Label("End of the calendar year")] EndOfCalendarYear,
+  /// The end of the CALENDAR year in which the row's FISCAL year ended — Sweden's Bokföringslagen 7 kap. 2 §.
+  [Label("End of the calendar year the fiscal year ended in")] EndOfFiscalYearCalendarYear,
+  /// The end of the row's fiscal year itself — Denmark, Finland.
+  [Label("End of the fiscal year")] EndOfFiscalYear,
+}
+
+/// What kind of record a category is — what a jurisdiction preset applies to. ⚠ Appended, never inserted.
+public enum RecordKind {
+  [Label("Ordinary")] Ordinary,
+  /// Accounting records — invoices, receipts, vouchers. The bookkeeping presets set these.
+  [Label("Bookkeeping")] Bookkeeping,
+}
+
+/// What a holder holds about a person, under one basis and period. Declared by the holder (`Categories()`); the tenant
+/// changes the period within `MinMonths`..`MaxMonths` (`SetRetention`). Which FIELDS are personal is not said here —
+/// it is said on each field, `[Classification(Personal.X)]`.
+public class DataCategory {
+  /// Stable and namespaced, versioned with the kit — a rename is a breaking change: "shop.invoiced-buyer".
+  public string Key = "";
+  /// What the person reads: "Your name and address on invoices we issued".
+  public string Label = "";
+  /// Why it is kept — the records of processing' purposes column.
+  public string Purpose = "";
+  /// Whose data it is: "customers", "employees", "candidates".
+  public string SubjectKind = "";
+  public RetentionBasis Basis = RetentionBasis.None;
+  /// The kit's suggested statement of the basis; the tenant's own words replace it (`SetRetention`).
+  public string BasisDetail = "";
+  public RecordKind Kind = RecordKind.Ordinary;
+  /// How long a row is kept RESTRICTED after a request (or after its ordinary life), in months, counted from
+  /// `RetainedFrom`. 0: not kept — erased.
+  public int RetainedMonths = 0;
+  public RetentionStart RetainedFrom = RetentionStart.Collected;
+  /// The limits the tenant may set within without stating a jurisdiction and a reason. 0 MaxMonths: no upper limit.
+  public int MinMonths = 0;
+  public int MaxMonths = 0;
+  /// GDPR Art. 20: provided by the person, on consent or contract — carried by a portability export.
+  public bool Portable = false;
+  /// GDPR Art. 9 data.
+  public bool Special = false;
+  /// No safe legal default exists: the tenant must confirm the period before it is relied on (`ConfirmCategory`).
+  public bool RequiresConfirmation = false;
+  /// Art. 15(1)(h) — said in an access response when any decision about the person is automated.
+  public string AutomatedDecisions = "";
+  /// When the kept period starts, in the person's words — "from the last message in it". Empty: the start event's own
+  /// words ("from when it was collected"), which are true for most rows and wrong for some: a conversation is kept from
+  /// its LAST message, not its first. (0.4.0 — defaulted, so a holder written before keeps compiling.)
+  public string RetainedFromWords = "";
+  /// What an erasure request does to it, in the person's words, when "Erased." is not the truth — a copy the platform
+  /// clears by itself and cannot find by person. Empty: "Erased." (0.4.0.)
+  public string OnErasureWords = "";
+  /// The person's own identifiers — their addresses, numbers, the link to their account: how every OTHER holder finds
+  /// their rows (a generated holder reaches a ticket through the party the address belongs to). Erased LAST in a
+  /// request, after every other category, so no holder loses track of them before it has done its part. (0.6.0 —
+  /// defaulted, so a holder written before keeps compiling.)
+  public bool Identifies = false;
+  /// False when its rows cannot be found by person at all (a copy the platform clears by itself): a plan says it is not
+  /// held, and the person's privacy page says it cannot be counted rather than "none". (0.7.0 — defaulted.)
+  public bool FoundByPerson = true;
+}
+
+/// Who a request is about — the identifiers that were PROVEN to belong to them. A holder finds its rows by whichever it
+/// keys on; an identifier it finds through its own data is never added here (that is how one person's request could
+/// reach another's data).
+public class DataSubject {
+  /// The principal the person signs in as, when they have one.
+  public Guid? Account;
+  public List<string> Emails = [];
+  public List<string> Phones = [];
+}
+
+/// One category's part of an access or portability export — what the holder hands over, as JSON.
+public class ExportSection {
+  public string Category = "";
+  /// The same data as `Json`, for a PERSON to read — one item per row (a message, a mail, a ticket's notes), each with
+  /// its date and its fields by name. The readable copy in the download is made from these; a section with none shows
+  /// its JSON there instead. (0.7.0 — defaulted, so a holder written before keeps compiling.)
+  public List<ExportItem> Items = [];
+  /// The person's data in this category, as a JSON document (`JsonSerializer.Serialize(...)`).
+  public string Json = "";
+}
+
+/// One row of a person's data, as the readable copy of their export shows it: "3 October 2026 — You wrote: …".
+public class ExportItem {
+  public DateTime? At;
+  /// What the row is, in a few words: "Mail we sent you", "A message from you".
+  public string Title = "";
+  /// Its words, when it has some (a message's text).
+  public string Body = "";
+  /// Its other values, by name: "Subject: Your refund".
+  public List<ExportField> Fields = [];
+}
+
+/// One named value of an `ExportItem`.
+public class ExportField {
+  public string Name = "";
+  public string Value = "";
+}
+
+/// Something that holds personal data. Every kit holding any implements one, and the app implements one for its own
+/// entities. ⚑ DISCOVERED, NOT WIRED: every implementation in the app is a holder (`Holders()`).
+public interface IPersonalDataHolder {
+  /// Stable key — the package name for a kit (`Osysharp.Shop`), the app's own name for its holder.
+  string Key();
+  /// What it holds, by category.
+  List<DataCategory> Categories();
+  /// How many of its rows of `category` are about `subject` — what a plan says, never what they contain.
+  int Count(DataSubject subject, DataCategory category);
+  /// Why erasing `category` for `subject` must wait now ("order 1042 is on its way"), or "" when it need not. The
+  /// request WAITS on it and runs when it clears; it is never refused.
+  string BlockedBy(DataSubject subject, DataCategory category) => "";
+  /// Why `category` — erased on request in itself — must be KEPT RESTRICTED for `subject` now, beside another category
+  /// this holder keeps ("needed to know who you are in a conversation kept for legal claims"), or "" when it need not.
+  /// The plan then keeps it restricted rather than erasing it (`Restrict`), and the person is told this reason. A
+  /// complaint kept for legal claims is a complaint BY somebody: their name and address are kept with it, restricted,
+  /// and erased when it is. (0.5.0 — defaulted, so a holder written before keeps compiling.)
+  string KeptWith(DataSubject subject, DataCategory category) => "";
+  /// Erase what it holds of `category` about `subject` — the rows, and every copy THIS holder owns (its files written
+  /// `about:` a row go with the row). Throws when it cannot; a throw fails the whole request, naming this holder.
+  void Erase(DataSubject subject, DataCategory category);
+  /// Keep its rows of `category` about `subject` RESTRICTED — `Restriction.Restrict(row, category.Key, until)` with
+  /// `KeepUntil(category, <the row's date>)`, or with `null` when `untilLifted` (an Art. 18 restriction at the person's
+  /// request). Answers the latest end it set, or null. The default refuses: a holder that declares a kept category
+  /// says how its rows are kept.
+  DateTime? Restrict(DataSubject subject, DataCategory category, bool untilLifted) {
+    throw new Exception(
+      $"{Key()} declares '{category.Key}' as kept ({category.Basis}) but does not say how its rows are kept — implement Restrict.");
+  }
+  /// What the person gets under access or portability for `category`.
+  ExportSection Export(DataSubject subject, DataCategory category);
+  /// Erase every row of `category` whose kept period ended before `now`. Answers how many. The default purges the
+  /// rows restricted for the category (`Restriction.Purge`), which is every kept row a holder restricted.
+  /// ⚑ A holder that purges ORDINARY rows (a conversation past its period) leaves out what a legal hold covers:
+  ///   `IsHeld(subject)` for a person, `IsCaseHeld(row)` / `HeldCaseRows()` for a case.
+  int Purge(DataCategory category, DateTime now) => Restriction.Purge(category.Key, now);
+  /// Keep the rows of `category` a legal hold covers — the held person's, or the held case — out of the purge while
+  /// the hold stands (`held`), or give them back their period when it is lifted (`!held`). Asked before every purge
+  /// and once when a hold is lifted. Only RESTRICTED rows need it (an ordinary row is purged by the holder's own
+  /// `Purge`, which leaves held rows out): a restricted row is read only for its purpose, so a holder keeping a category
+  /// implements this with a `[PurposeRead("<category>")]` function that re-stamps each covered row —
+  /// `Restriction.Restrict(row, category.Key, held ? null : KeepUntil(category, <the row's date>))`.
+  /// Answers whether it could. The default answers true where there is nothing restricted to keep (the category is
+  /// erased on request, or holds no restricted row), and false otherwise — and while a hold stands, a category whose
+  /// holder answers false is NOT PURGED AT ALL, recorded every day, rather than risk deleting what the hold covers.
+  /// (0.2.0 — defaulted, so a holder written against 0.1.0 keeps compiling.)
+  bool Hold(LegalHold hold, DataCategory category, bool held) => !IsKept(category) || Restriction.Count(category.Key) == 0;
+  /// True for the holder the platform writes from `[PersonalData]` entities, whose erasure is generic: it blanks every
+  /// personal field of its rows (or deletes them) and says nothing in their place. A request runs it BEFORE every
+  /// hand-written holder in the same phase, so a hand-written erasure that writes what stands where the person's words
+  /// were ("Erased conversation", over the ticket title that was their subject) has the last word instead of being
+  /// blanked after it. Leave it false in a holder you write. (0.8.2 — defaulted, so a holder written before keeps
+  /// compiling.)
+  bool Declared() => false;
+}
+
+// ── declared personal data: the platform writes the holder (D-DATASUBJECT1) ─────────────────────────────────────────
+//
+//   DataCategory TicketNotes() => new DataCategory { Key = "app.tickets", Label = "…", Basis = RetentionBasis.Contract };
+//   [PersonalData(TicketNotes)] entity Ticket { [DataSubject] Customer Customer; [Classification(Personal.Content)] string? Notes; }
+//
+// An entity that says WHOSE data a row is (`[DataSubject]` on one field) and which category it is held under
+// (`[PersonalData(Category)]`) needs no hand-written holder: the compiler writes one — Count, Erase, Restrict, Export,
+// and a row held as a case waits — discovered like any other. A hand-written `IPersonalDataHolder` is still the way to
+// say anything more (a reason to wait, what is kept with what, files).
+
+/// What an erasure request does to a `[PersonalData]` entity's rows. ⚠ Appended, never inserted.
+public enum OnErasure {
+  /// The row stays — it is the app's own record (a ticket, an order) — and its `Personal.*` fields are blanked.
+  ClearPersonalFields,
+  /// The row is wholly the person's, and goes.
+  DeleteRow,
+}
+
+/// Which of a person's proven identifiers a `[DataSubject]` text field holds. ⚠ Appended, never inserted.
+public enum Identifier {
+  /// An email address — matched against the addresses the request proved.
+  Email,
+  /// A phone number, as the request proved it (E.164).
+  Phone,
+}

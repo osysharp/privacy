@@ -1,0 +1,62 @@
+// WHAT A REQUEST COSTS AS A PERSON'S RECORDS GROW — the holder the platform writes from `[PersonalData]` asks whether a
+// case hold blocks a person's rows by reading the holds in force once, never once per row the person has.
+
+using PrivacyKitTests;
+using Osysharp.Identity;
+using Osysharp.Inbox;
+using Osysharp.Privacy;
+
+[TestFixture]
+void Visitors() {
+  var ada = new Person { Email = "ada@desk.test", DisplayName = "Ada", CodeHash = Security.HashPassword("1111") };
+  new RoleGrant { Member = ada, Role = DeskRole.Admin };
+  new RoleGrant { Member = ada, Role = DeskRole.Legal };
+  var cy = new Customer { Number = "C-1", Name = "Cy Cole", Email = "cy@customer.test" };
+  new Visit { Customer = cy, Subject = "A first visit" };
+  var ann = new Customer { Number = "C-2", Name = "Ann Archer", Email = "ann@customer.test" };
+  new Visit { Customer = ann, Subject = "One visit" };
+  var bo = new Customer { Number = "C-3", Name = "Bo Baker", Email = "bo@customer.test" };
+  for (var i = 1; i <= 12; i++) { new Visit { Customer = bo, Subject = "Visit " + i }; }
+}
+
+principal Ada => Person.Single(p => p.Email == "ada@desk.test");
+
+/// What the declared holder answers for `email`'s visits — "" when nothing blocks an erasure.
+string VisitsBlockedFor(string email) {
+  var holder = Holders().Single(h => h.Key() == "PrivacyKitTests");
+  var visits = holder.Categories().Single(c => c.Key == "app.visits");
+  var s = new DataSubject();
+  s.Emails.Add(email);
+  return holder.BlockedBy(s, visits);
+}
+
+/// ⭐ WHETHER A CASE HOLD BLOCKS A PERSON'S ROWS COSTS THE SAME FOR ONE ROW AND FOR TWELVE — the holds in force are read
+/// once and every row is tested against them, so a person with more visits is not a read more per visit.
+[Test(Visitors)]
+[runas(Ada)]
+void whether_a_hold_blocks_a_persons_rows_reads_the_same_however_many_rows_they_have() {
+  // A hold in force on someone else's case, so the rows ARE tested against something.
+  PlaceCaseHold("Customer", Customer.Single(c => c.Number == "C-1").Id, "Customer C-1", "Chargeback dispute",
+                "The card issuer's chargeback is open.", DateTime.UtcNow.AddDays(30));
+  // The first question sets up what every later one reuses — it is not what this compares.
+  Assert.Equal("", VisitsBlockedFor("cy@customer.test"));
+  var mark = Cost.Mark();
+  Assert.Equal("", VisitsBlockedFor("ann@customer.test"));
+  var one = Cost.StatementsSince(mark);
+  mark = Cost.Mark();
+  Assert.Equal("", VisitsBlockedFor("bo@customer.test"));
+  var twelve = Cost.StatementsSince(mark);
+  Log.Information("Blocked by a case hold: " + one + " statements for one visit, " + twelve + " for twelve");
+  Assert.Equal(one, twelve);
+}
+
+/// …and it still finds the hold: a case hold on one of the person's own visits blocks the erasure of all of them.
+[Test(Visitors)]
+[runas(Ada)]
+void a_case_hold_on_one_of_a_persons_rows_still_blocks_them() {
+  var visit = Visit.Where(v => v.Subject == "Visit 7").Single();
+  PlaceCaseHold("Visit", visit.Id, "Visit 7", "Insurance claim", "The insurer asked for the visit record.",
+                DateTime.UtcNow.AddDays(30));
+  Assert.Equal(HeldSentence(), VisitsBlockedFor("bo@customer.test"));
+  Assert.Equal("", VisitsBlockedFor("ann@customer.test"));
+}

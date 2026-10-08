@@ -1,0 +1,74 @@
+namespace Osysharp.Privacy;
+
+using Osysharp.Identity;
+using Osysharp.Inbox;
+
+// ── a hold due for review is WORK on the Inbox ─────────────────────────────────────────────────────────────────────
+//
+// A legal hold is never kept for ever unseen: on its review date it is marked for review (`LegalHoldRun`), and somebody
+// who places holds either keeps it, with the next date, or lifts it. Marking it was not enough — nobody looks at a
+// settings page by chance — so the review is an Inbox item like a privacy request: queued, clocked (two weeks to look at
+// it, counted from the review date), and settled from the item's own pane. Keeping it or lifting it closes the item.
+
+/// The review a legal hold is due — an Inbox item, read only by the people who place holds.
+public entity HoldReview : WorkItem {
+  [Required] LegalHold Hold;
+  security {
+    allow read when PlacesLegalHolds;
+    allow create, update when PlacesLegalHolds;
+  }
+}
+
+/// How long the people who place holds have to look at one, from its review date.
+public TimeSpan HoldReviewWithin() { return TimeSpan.FromDays(14); }
+
+/// What the review item is called on the Inbox — the case it holds, never the matter or the person.
+public string HoldReviewTitle(LegalHold hold) {
+  return hold.CaseRow != null ? "Review the legal hold on " + hold.CaseLabel : "Review a legal hold on a person";
+}
+
+// The hold reached its review date: the review goes on the Inbox, due two weeks from that date. Once per review — a hold
+// kept and reviewed again gets a new item on its next date.
+internal void OpenHoldReview(LegalHold hold) {
+  var now = DateTime.UtcNow;
+  if (HoldReview.Any(r => r.Hold == hold && r.DoneAt == null)) { return; }
+  new HoldReview { Hold = hold, Title = HoldReviewTitle(hold), Kind = "privacy", Channel = "privacy",
+                   Reference = "Legal hold", ArrivedAt = now, DueAt = now + HoldReviewWithin() };
+}
+
+// The hold left its review: kept with a next date, or a lift was asked for. The item is done, and closed.
+[SuppressWarning("cost-unbounded-read")]   // one hold's open review — one at a time
+internal void SettleHoldReview(LegalHold hold) {
+  foreach (var r in HoldReview.Where(r => r.Hold == hold && r.DoneAt == null).ToList()) {
+    WorkDone(r);
+    CloseWork(r);
+  }
+}
+
+/// A review item, as its pane shows it.
+public class HoldReviewFacts {
+  public Guid Hold = Guid.Empty;
+  public string On = "";
+  public bool IsCase = false;
+  public string Matter = "";
+  public string Reason = "";
+  public string PlacedBy = "";
+  public DateTime PlacedAt = DateTime.MinValue;
+  public DateTime ReviewBy = DateTime.MinValue;
+  public HoldState State = HoldState.Holding;
+  public bool Settled = false;
+}
+
+/// What a review item is about — the hold behind it.
+[Authorize(PlacesLegalHolds)]
+public HoldReviewFacts HoldReviewOf(Guid item) {
+  var r = HoldReview.Single(x => x.Id == item);
+  var h = r.Hold;
+  return new HoldReviewFacts {
+    Hold = h.Id, On = h.CaseRow != null ? h.CaseLabel : (h.SubjectEmail ?? "an account"), IsCase = h.CaseRow != null,
+    Matter = h.Matter, Reason = h.Reason, PlacedBy = h.PlacedBy == null ? "" : h.PlacedBy.DisplayName,
+    PlacedAt = h.PlacedAt, ReviewBy = h.ReviewBy, State = h.State, Settled = r.DoneAt != null };
+}
+
+/// Whether `item` is a hold's review — what an app's Inbox routes to the review pane.
+public bool IsHoldReview(Guid item) { return HoldReview.Any(r => r.Id == item); }

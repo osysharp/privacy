@@ -1,0 +1,82 @@
+// The retention page through the screen (D-SETTINGSSWEEP1): every change waits for the page's Save bar, a period
+// outside the kit's limits asks for the jurisdiction and the reason its copy promises, and a category with no period
+// offers nothing to change.
+
+using PrivacyKitTests;
+using Osysharp.Privacy;
+
+[Test(Desk)]
+void a_category_with_no_period_offers_nothing_to_change() {
+  Ui.Viewport(1440, 900);
+  Ui.SignInAs(Ada);
+  Ui.Visit("/settings/privacy");
+  Assert.Visible("Erased on request", within: "What our staff wrote about your requests");
+  Assert.Hidden("Change", within: "What our staff wrote about your requests");
+  Assert.Visible("Change", within: "Your name and email address on vouchers we issued");
+}
+
+[Test(Desk)]
+void a_period_is_changed_on_the_page_and_kept_only_when_the_save_bar_saves_it() {
+  Ui.Viewport(1440, 900);
+  Ui.SignInAs(Ada);
+  Ui.Visit("/settings/privacy");
+  // Opening a period that follows the kit's default makes it the app's own, staged — and Close, untouched, gives it back.
+  Ui.Click("Change Your name and email address on vouchers we issued");
+  Ui.Click("Close Your name and email address on vouchers we issued");
+  Assert.Hidden("Unsaved changes");
+  Ui.Click("Change Your name and email address on vouchers we issued");
+  Ui.Fill("Months kept", "96");
+  Assert.Visible("Unsaved changes");
+  Assert.Hidden("Save Your name and email address on vouchers we issued");   // no Save of its own: the page's bar saves
+  runas (Ada) { Assert.Equal(84, RetentionOf(CategoryOf("app.vouchers")).RetainedMonths); }
+  Ui.Shot("retention-change-unsaved");
+  Ui.Click("Save");
+  Assert.Visible("Retention saved.");
+  Assert.Visible("Kept 96 months", within: "Your name and email address on vouchers we issued");
+  runas (Ada) { Assert.Equal(96, RetentionOf(CategoryOf("app.vouchers")).RetainedMonths); }
+}
+
+[Test(Desk)]
+void a_period_outside_the_limits_needs_the_jurisdiction_and_the_reason_on_the_page() {
+  Ui.Viewport(1440, 900);
+  Ui.SignInAs(Ada);
+  Ui.Visit("/settings/privacy");
+  Ui.Click("Change Your name and email address on vouchers we issued");
+  Ui.Fill("Months kept", "12");
+  Assert.Visible("Jurisdiction");
+  // The bar says why it cannot save, and its Save is held back until the page says why.
+  Assert.Visible("a period is saved only with the jurisdiction that allows it and the reason", within: "Unsaved changes");
+  Assert.Visible("36–132 months without a stated reason", within: "Your name and email address on vouchers we issued");
+  Assert.Disabled("Save");
+  Ui.Fill("Jurisdiction", "XX");
+  Assert.Disabled("Save");                                            // a jurisdiction alone is not a reason
+  runas (Ada) { Assert.Equal(84, RetentionOf(CategoryOf("app.vouchers")).RetainedMonths); }
+  Ui.Fill("Why", "Our accountant's written advice");
+  Assert.Hidden("a period is saved only with the jurisdiction");
+  Ui.Shot("retention-outside-the-limits");
+  Ui.Click("Save");
+  Assert.Visible("Retention saved.");
+  Assert.Visible("Outside the kit's limits for XX: Our accountant's written advice");
+  runas (Ada) {
+    var vouchers = RetentionOf(CategoryOf("app.vouchers"));
+    Assert.Equal(12, vouchers.RetainedMonths);
+    Assert.Equal("XX", vouchers.Jurisdiction);
+  }
+}
+
+[Test(Desk)]
+void a_preset_is_staged_like_any_change_and_saved_with_the_bar() {
+  Ui.Viewport(1440, 900);
+  Ui.SignInAs(Ada);
+  Ui.Visit("/settings/privacy");
+  Ui.Click("Apply DE");
+  Assert.Visible("Unsaved changes");
+  runas (Ada) { Assert.Equal(84, RetentionOf(CategoryOf("app.vouchers")).RetainedMonths); }
+  Ui.Click("Save");
+  Assert.Visible("Retention saved.");
+  runas (Ada) {
+    var vouchers = RetentionOf(CategoryOf("app.vouchers"));
+    Assert.Equal(120, vouchers.RetainedMonths);
+    Assert.Equal("DE", vouchers.Jurisdiction);
+  }
+}

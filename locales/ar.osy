@@ -1,0 +1,1419 @@
+// ar (العربية): the words of Osysharp.Privacy, translated.
+// Written and kept in step with the source by `osy translate`: a new text arrives as `=> null`, a text
+// whose source changed keeps its old translation in a `was` clause. The words are yours to edit.
+// Source language: en.
+
+translations ar {
+  // ── AskAboutAnAddress ──
+  /// AskAboutAnAddress · an error message
+  /// shown through ValidationException
+  error "This browser cannot keep your request — let it keep cookies for this site and ask again." => "لا يمكن لهذا المتصفح الاحتفاظ بطلبك. اسمح له بحفظ ملفات تعريف الارتباط لهذا الموقع واطلب مجددًا.";
+
+  // ── AskToLift ──
+  /// AskToLift · an error message
+  /// shown through ValidationException
+  error "A lift is already waiting for a second person." => "يوجد طلب رفع بانتظار شخص ثانٍ بالفعل.";
+  /// AskToLift · an error message
+  /// shown through ValidationException
+  error "Lifting a legal hold needs a reason — it is recorded, and it is what shows the hold was ended on purpose." => "رفع التجميد القانوني يتطلب سببًا، فهو يُسجَّل، وهو ما يثبت أن التجميد أُنهي عن قصد.";
+
+  // ── AskWithProof ──
+  /// AskWithProof · message
+  /// shown through AskWithProof()
+  /// also in AskAboutAnAddressWithProof
+  message "We could not file it — ask again." => "تعذّر تقديمه، اطلب مجددًا.";
+
+  // ── AskWithoutAnAccount ──
+  /// AskWithoutAnAccount · a control's name for screen readers
+  accessibleName "What this will do" => "ما الذي سيفعله هذا";
+  /// AskWithoutAnAccount · a button's label · at most ~13 characters
+  /// shown through Button.label
+  /// also in RetentionEditor
+  button "Confirm" => "تأكيد";
+  /// AskWithoutAnAccount · a label (a field, a list item, a menu entry) · at most ~26 characters
+  /// shown through Field.label
+  /// beside: "Send me a code"
+  label "Your email address" => "عنوان بريدك الإلكتروني";
+  /// AskWithoutAnAccount · placeholder text inside an empty field · at most ~21 characters
+  /// shown through Field.placeholder
+  /// beside: "Send me a code"
+  placeholder "you@example.com" => "you@example.com";
+  /// AskWithoutAnAccount · a subtitle
+  /// placeholders: {sentTo} = sentTo (string)
+  /// shown through Card.subtitle
+  subtitle "About {sentTo}, and nothing else." => "بخصوص {sentTo}، ولا شيء غيره.";
+  /// AskWithoutAnAccount · a subtitle
+  /// shown through PageHead.subtitle
+  subtitle "No account needed — prove the email address you wrote to us from, and ask for a copy of what we hold, or to have it erased." => "لا حاجة إلى حساب: أثبت عنوان البريد الإلكتروني الذي راسلتنا منه، واطلب نسخة مما نحتفظ به، أو محوه.";
+  /// AskWithoutAnAccount · a subtitle
+  /// shown through Card.subtitle
+  subtitle "We mail a code there. Only that address gets the answer." => "سنرسل رمزًا إليه. ولن يصل الرد إلا إلى ذلك العنوان.";
+  /// AskWithoutAnAccount · a subtitle
+  /// placeholders: {sentTo} = sentTo (string)
+  /// shown through Card.subtitle
+  subtitle "We sent a code to {sentTo}. It works for fifteen minutes." => "أرسلنا رمزًا إلى {sentTo}. صالح لمدة خمس عشرة دقيقة.";
+  /// AskWithoutAnAccount · text on the page
+  /// shown through problem
+  text "Give the email address you wrote to us from." => "أدخل عنوان البريد الإلكتروني الذي راسلتنا منه.";
+  /// AskWithoutAnAccount · text on the page
+  /// shown through SectionLabel.text
+  /// beside: "Send the request"
+  text "What this will do" => "ما الذي سيفعله هذا";
+  /// AskWithoutAnAccount · text on the page
+  /// placeholders: {sentTo} = sentTo (string)
+  /// shown through done
+  text "Your request is in. We answer within one month, by mail to {sentTo} — and only there." => "تم استلام طلبك. سنرد خلال شهر واحد، عبر البريد إلى {sentTo}، وهناك فقط.";
+  /// AskWithoutAnAccount · a title
+  /// shown through Card.title
+  title "1. Your email address" => "1. عنوان بريدك الإلكتروني";
+  /// AskWithoutAnAccount · a title
+  /// shown through Card.title
+  title "2. The code" => "2. الرمز";
+  /// AskWithoutAnAccount · a title
+  /// shown through Card.title
+  title "3. What you ask for" => "3. ما تطلبه";
+  /// AskWithoutAnAccount · a title
+  /// shown through PageHead.title
+  /// also in AskWithoutAnAccountPage /privacy/ask
+  title "Ask about your data" => "اسأل عن بياناتك";
+
+  // ── AskedFor ──
+  /// AskedFor · a title
+  /// shown through AskedFor()
+  title "Your request for a copy of your data" => "طلبك للحصول على نسخة من بياناتك";
+  /// AskedFor · a title
+  /// shown through AskedFor()
+  title "Your request to erase your data" => "طلبك لمحو بياناتك";
+  /// AskedFor · a title
+  /// shown through AskedFor()
+  title "Your request to move your data" => "طلبك لنقل بياناتك";
+  /// AskedFor · a title
+  /// shown through AskedFor()
+  title "Your request to stop using your data" => "طلبك لإيقاف استخدام بياناتك";
+
+  // ── CategoryOf ──
+  /// CategoryOf · an error message
+  /// placeholders: {key} = key (string), {Join} = string.Join(…) (string)
+  /// shown through ValidationException
+  error "No holder declares the category '{key}'. The categories are: {Join}." => "لا يعلن أي حائز للبيانات عن الفئة '{key}'. الفئات المتاحة: {Join}.";
+
+  // ── ControllerEditor ──
+  /// ControllerEditor · a control's name for screen readers
+  accessibleName "Who is responsible" => "الجهة المسؤولة";
+  /// ControllerEditor · a button's label · at most ~27 characters
+  /// shown through Button.label
+  button "Name the controller" => "تحديد المتحكّم";
+  /// ControllerEditor · a description
+  /// shown through SettingsSection.description
+  description "Named in every answer, set by the app." => "يُذكر في كل رد، ويحدده التطبيق.";
+  /// ControllerEditor · a description
+  /// shown through SettingsSection.description
+  /// beside: "Saved."
+  description "The legal entity that decides why and how people's data is used here — usually the company running the app. Every answer to a privacy request names it, and so do the records of processing." => "الكيان القانوني الذي يقرر لماذا وكيف تُستخدم بيانات الأشخاص هنا، وهو عادةً الشركة التي تشغّل التطبيق. يُذكر اسمه في كل رد على طلب خصوصية، وفي سجلات المعالجة كذلك.";
+  /// ControllerEditor · a hint under a field
+  /// shown through Field.hint
+  hint "Its registered name — what a person would look up." => "اسمه المسجَّل، وهو ما سيبحث عنه الشخص.";
+  /// ControllerEditor · a label (a field, a list item, a menu entry) · at most ~16 characters
+  /// shown through Field.label
+  label "Legal name" => "الاسم القانوني";
+  /// ControllerEditor · placeholder text inside an empty field · at most ~45 characters
+  /// shown through Field.placeholder
+  placeholder "As on the company's registration" => "كما في سجل الشركة";
+  /// ControllerEditor · text on the page
+  /// beside: "Name the controller"
+  text "Name it here to say it in your own words." => "حدّده هنا لتكتبه بكلماتك.";
+  /// ControllerEditor · text on the page
+  /// placeholders: {fallback} = fallback (string)
+  /// beside: "Name the controller"
+  text "Named by the app as {fallback}." => "حدّده التطبيق باسم {fallback}.";
+  /// ControllerEditor · text on the page
+  /// beside: "Name the controller"
+  text "Not named yet." => "لم يُحدَّد بعد.";
+  /// ControllerEditor · text on the page
+  /// beside: "Name the controller"
+  text "Until it is, an answer says it comes from \"the people who run it\" — a person asking about their data is owed a name." => "وإلى أن يُحدَّد، يقول الرد إنه صادر عن «القائمين على التطبيق»، ومن حق من يسأل عن بياناته أن يعرف اسمًا.";
+  /// ControllerEditor · text on the page
+  /// shown through SaveBar.blockedBy
+  /// beside: "The controller"
+  text "Write the controller's legal name." => "اكتب الاسم القانوني للمتحكّم في البيانات.";
+  /// ControllerEditor · a title
+  /// shown through SettingsSection.title
+  /// beside: "Saved."
+  title "The controller" => "المتحكّم في البيانات";
+  /// ControllerEditor · a title
+  /// shown through SettingsSection.title
+  title "Where a person can complain" => "أين يمكن للشخص تقديم شكوى";
+
+  // ── ControllerSettings (/settings/privacy/controller) ──
+  /// ControllerSettings · /settings/privacy/controller · a title
+  /// shown through [Title]
+  title "Who is responsible" => "الجهة المسؤولة";
+
+  // ── ExportByLinkPage (/privacy/export/{link}) ──
+  /// ExportByLinkPage · /privacy/export/{link} · a subtitle
+  /// shown through PageHead.subtitle
+  subtitle "A copy of what we hold about you. It can be downloaded once; after that, or after seven days, it is deleted." => "نسخة مما نحتفظ به عنك. يمكن تنزيلها مرة واحدة؛ وبعد ذلك، أو بعد سبعة أيام، تُحذف.";
+  /// ExportByLinkPage · /privacy/export/{link} · a title
+  /// shown through PageHead.title
+  /// also in ExportByLinkPage /privacy/export/{link}
+  title "Your data" => "بياناتك";
+
+  // ── ExportSaved ──
+  /// ExportSaved · message
+  /// shown through Alert.message
+  message "Open your-data.html in any browser to read it — each kind of data we hold about you, with why we keep it and for how long." => "افتح your-data.html في أي متصفح لقراءته: كل نوع من البيانات التي نحتفظ بها عنك، مع سبب الاحتفاظ بها ومدته.";
+  /// ExportSaved · text on the page
+  text "Download the data file another service can read (JSON)" => "تنزيل ملف البيانات الذي يمكن لخدمة أخرى قراءته (JSON)";
+  /// ExportSaved · text on the page
+  text "Download the readable copy again" => "تنزيل النسخة المقروءة مرة أخرى";
+  /// ExportSaved · text on the page
+  /// beside: "Download the readable copy again"
+  text "These links work for a few minutes, and this copy can be downloaded only now — after that, ask again for a new one." => "تعمل هذه الروابط لبضع دقائق، ولا يمكن تنزيل هذه النسخة إلا الآن. بعد ذلك، اطلب نسخة جديدة.";
+  /// ExportSaved · a title
+  /// shown through Alert.title
+  title "Your copy is downloading" => "جارٍ تنزيل نسختك";
+
+  // ── ExtendDeadline ──
+  /// ExtendDeadline · an error message
+  /// shown through ValidationException
+  error "A deadline may be extended by one or two months, no more." => "يمكن تمديد المهلة شهرًا أو شهرين، لا أكثر.";
+  /// ExtendDeadline · an error message
+  /// shown through ValidationException
+  error "An extension needs its reason — the person is told it." => "يتطلب التمديد ذكر سببه، فسيتم إبلاغ الشخص به.";
+  /// ExtendDeadline · an error message
+  /// shown through ValidationException
+  error "The first month is over — an extension must be decided, and told, within it." => "انقضى الشهر الأول، ويجب أن يُقرَّر التمديد ويُبلَّغ به خلاله.";
+  /// ExtendDeadline · an error message
+  /// shown through ValidationException
+  error "This request is answered." => "تم الرد على هذا الطلب.";
+  /// ExtendDeadline · an error message
+  /// shown through ValidationException
+  error "This request was already extended." => "تم تمديد هذا الطلب بالفعل.";
+
+  // ── FactsOf ──
+  /// FactsOf · text on the page
+  /// shown through RequestFacts.Delivery
+  text "Filed by staff: send the answer yourself, through a channel you proved. Nothing is mailed to the address typed in." => "قدّمه الفريق: أرسل الرد بنفسك، عبر قناة أثبتّها. لا يُرسل أي شيء بالبريد إلى العنوان المكتوب.";
+  /// FactsOf · text on the page
+  /// placeholders: {r.DeliverTo} = r.DeliverTo (string)
+  /// shown through RequestFacts.Delivery
+  text "Goes to {r.DeliverTo} — the address the person proved — when it is answered." => "يُرسل إلى {r.DeliverTo}، العنوان الذي أثبته الشخص، عند الرد عليه.";
+  /// FactsOf · text on the page
+  /// placeholders: {l.Reason} = l.Reason (string)
+  /// shown through PlanRow.Detail
+  text "Kept, restricted — {l.Reason}" => "محفوظة ومقيّدة: {l.Reason}";
+  /// FactsOf · text on the page
+  /// placeholders: {ToString} = ….ToString(…) (DateTime)
+  /// shown through PlanRow.Detail
+  text "Kept, restricted, through {ToString}" => "محفوظة، مع تقييد المعالجة، حتى {ToString}";
+  /// FactsOf · text on the page
+  /// placeholders: {PeriodWords} = PeriodWords(…) (string)
+  /// shown through PlanRow.Detail
+  text "Kept, restricted, {PeriodWords}" => "محفوظة، مع تقييد المعالجة، {PeriodWords}";
+  /// FactsOf · text on the page
+  /// placeholders: {ToString} = r.DeliveredAt.Value.ToString(…) (DateTime)
+  /// shown through RequestFacts.Delivery
+  text "Sent to the proven address on {ToString}." => "أُرسل إلى العنوان المُثبَت في {ToString}.";
+  /// FactsOf · text on the page
+  /// shown through RequestFacts.Asker
+  text "an erased person (kept as a fingerprint)" => "شخص مُحيت بياناته (محفوظ كبصمة)";
+
+  // ── FetchMyExport ──
+  /// FetchMyExport · an error message
+  /// shown through ValidationException
+  /// also in FetchExportByLink
+  error "That export has expired and was deleted — ask again for a new one." => "انتهت صلاحية هذا التصدير وحُذف. اطلبه مجددًا للحصول على تصدير جديد.";
+  /// FetchMyExport · an error message
+  /// shown through ValidationException
+  /// also in FetchExportByLink
+  error "That export was already downloaded — ask again for a new one." => "تم تنزيل هذا التصدير بالفعل. اطلبه مجددًا للحصول على تصدير جديد.";
+  /// FetchMyExport · an error message
+  /// shown through ValidationException
+  error "That is not your request." => "هذا ليس طلبك.";
+
+  // ── FileRequest ──
+  /// FileRequest · an error message
+  /// shown through ValidationException
+  error "A step-up is the person's own proof on their privacy page — say how YOU checked it is them." => "التحقق الإضافي هو إثبات الشخص بنفسه في صفحة الخصوصية الخاصة به. اذكر كيف تحققت أنت من أنه هو.";
+  /// FileRequest · an error message
+  /// shown through ValidationException
+  error "Say how you checked it is them — a fraudulent request is a known way to steal someone's data." => "اذكر كيف تحققت من أنه هو، فالطلب الاحتيالي أسلوب معروف لسرقة بيانات شخص ما.";
+  /// FileRequest · an error message
+  /// shown through ValidationException
+  error "Say who the request is about — their address, their number, or their account." => "حدّد من يخصه الطلب: عنوانه، أو رقمه، أو حسابه.";
+
+  // ── FromPhrase ──
+  /// FromPhrase · text on the page
+  text "from the end of its calendar year" => "من نهاية سنتها الميلادية";
+  /// FromPhrase · text on the page
+  text "from the end of its fiscal year" => "من نهاية سنتها المالية";
+  /// FromPhrase · text on the page
+  text "from the end of the calendar year its fiscal year ended in" => "من نهاية السنة الميلادية التي انتهت فيها سنتها المالية";
+  /// FromPhrase · text on the page
+  text "from when it was collected" => "من وقت جمعها";
+
+  // ── HeldSentence ──
+  /// HeldSentence · text on the page
+  /// shown through HeldSentence()
+  text "kept for the establishment, exercise or defence of legal claims" => null;
+
+  // ── HeldWords ──
+  /// HeldWords · text on the page
+  /// shown through HeldWords()
+  text "We cannot count these by person." => "لا يمكننا عدّ هذه حسب الشخص.";
+  /// HeldWords · text on the page
+  /// shown through HeldWords()
+  text "We hold none of these about you." => "لا نحتفظ بأي منها عنك.";
+  /// HeldWords · text on the page
+  /// placeholders: {c.Held} = c.Held (int) — {c.Held} is a count: give one text per plural form
+  /// shown through HeldWords()
+  text "We hold {c.Held} of these about you." => { zero: "لا نحتفظ بأي منها عنك.", one: "نحتفظ بواحد منها عنك.", two: "نحتفظ باثنين منها عنك.", few: "نحتفظ بـ {c.Held} منها عنك.", many: "نحتفظ بـ {c.Held} منها عنك.", other: "نحتفظ بـ {c.Held} منها عنك." };
+
+  // ── HoldControl ──
+  /// HoldControl · a control's name for screen readers
+  accessibleName "Legal hold" => "حجز قانوني";
+  /// HoldControl · a button's label · at most ~33 characters
+  /// shown through Button.label
+  button "Lift it on Legal holds…" => "رفعه من صفحة الحجوزات القانونية…";
+  /// HoldControl · a button's label · at most ~27 characters
+  /// shown through Button.label
+  button "Place a legal hold…" => "وضع حجز قانوني…";
+  /// HoldControl · a button's label · at most ~20 characters
+  /// shown through Button.label
+  /// beside: "Cancel"
+  /// also in LegalHoldsEditor
+  button "Place the hold" => "فرض التجميد";
+  /// HoldControl · a hint under a field
+  /// shown through Field.hint
+  /// beside: "Why it must be kept", "Review by", "Cancel"
+  hint "Never shown to the customer." => "لا يُعرض على العميل أبدًا.";
+  /// HoldControl · a hint under a field
+  /// shown through DatePicker.hint
+  /// beside: "Matter", "Why it must be kept", "Cancel"
+  /// also in LegalHoldsEditor
+  hint "When somebody looks at it again — a hold is never kept for ever unseen." => "موعد إعادة النظر فيه، فالتجميد لا يُبقى إلى الأبد دون مراجعة.";
+  /// HoldControl · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through Field.label
+  /// beside: "Why it must be kept", "Review by", "Cancel"
+  /// also in LegalHoldsEditor
+  label "Matter" => "القضية";
+  /// HoldControl · a label (a field, a list item, a menu entry) · at most ~15 characters
+  /// shown through DatePicker.label
+  /// beside: "Matter", "Why it must be kept", "Cancel"
+  /// also in LegalHoldsEditor
+  label "Review by" => "المراجعة بحلول";
+  /// HoldControl · a label (a field, a list item, a menu entry) · at most ~27 characters
+  /// shown through Field.label
+  /// beside: "Matter", "Review by", "Cancel"
+  /// also in LegalHoldsEditor
+  label "Why it must be kept" => "سبب وجوب الاحتفاظ بها";
+  /// HoldControl · placeholder text inside an empty field · at most ~40 characters
+  /// shown through Field.placeholder
+  /// beside: "Why it must be kept", "Review by", "Cancel"
+  placeholder "Dispute about a refund, 2026" => "نزاع حول استرداد مبلغ، 2026";
+  /// HoldControl · placeholder text inside an empty field · at most ~69 characters
+  /// shown through Field.placeholder
+  /// beside: "Matter", "Review by", "Cancel"
+  placeholder "The customer has said they will take it to court." => "قال العميل إنه سيرفع الأمر إلى المحكمة.";
+  /// HoldControl · a subtitle
+  /// shown through Dialog.subtitle
+  subtitle "Nothing on it is erased on request or purged until the hold is lifted. The customer is told only that it is kept for legal claims." => "لا يُمحى شيء منه بناءً على طلب ولا يُحذف حتى يُرفع الحجز. ولا يُبلَّغ العميل إلا بأنه محفوظ لأغراض المطالبات القانونية.";
+  /// HoldControl · text on the page
+  /// placeholders: {ToString} = facts.ReviewBy.Value.ToString(…) (DateTime)
+  /// beside: "Lift it on Legal holds…"
+  text " — reviewed by {ToString}" => "، وتُراجَع قبل {ToString}";
+  /// HoldControl · text on the page
+  /// placeholders: {value} = … (string)
+  /// beside: "Lift it on Legal holds…"
+  text "Nothing on it is erased or purged until the hold is lifted{value}." => "لا يُمحى ولا يُحذف شيء منه حتى يُرفع الحجز{value}.";
+  /// HoldControl · text on the page
+  /// placeholders: {facts.Matter} = facts.Matter (string)
+  text "On legal hold: {facts.Matter}" => "تحت حجز قانوني: {facts.Matter}";
+  /// HoldControl · text on the page
+  /// shown through problem
+  text "Pick the date the hold is reviewed — a hold is never kept for ever unseen." => "اختر تاريخ مراجعة الحجز، فلا يبقى أي حجز إلى الأبد دون أن يراه أحد.";
+  /// HoldControl · a title
+  /// placeholders: {label} = label (string)
+  /// shown through Dialog.title
+  title "Place a legal hold on {label}" => "وضع حجز قانوني على {label}";
+
+  // ── HoldReviewOf ──
+  /// HoldReviewOf · text on the page
+  /// shown through HoldReviewFacts.On
+  /// also in HoldRows
+  text "an account" => "حساب";
+
+  // ── HoldReviewPane ──
+  /// HoldReviewPane · a control's name for screen readers
+  accessibleName "Legal hold review" => "مراجعة الحجز القانوني";
+  /// HoldReviewPane · a control's name for screen readers
+  accessibleName "What it is for" => "الغرض منه";
+  /// HoldReviewPane · a button's label · at most ~20 characters
+  /// shown through Button.label
+  /// beside: "Cancel"
+  /// also in LegalHoldsEditor
+  button "Ask to lift it" => "طلب رفعه";
+  /// HoldReviewPane · a button's label · at most ~12 characters
+  /// shown through Button.label
+  /// beside: "Keep it"
+  /// also in HoldControl
+  /// also in LegalHoldsEditor
+  button "Cancel" => "إلغاء";
+  /// HoldReviewPane · a button's label · at most ~13 characters
+  /// shown through Button.label
+  /// beside: "Cancel"
+  /// also in LegalHoldsEditor
+  button "Keep it" => "إبقاؤه";
+  /// HoldReviewPane · a button's label · at most ~37 characters
+  /// shown through Button.label
+  /// beside: "Lift the hold…"
+  button "Keep it, and review again…" => "إبقاؤه ومراجعته لاحقًا…";
+  /// HoldReviewPane · a button's label · at most ~19 characters
+  /// shown through Button.label
+  /// beside: "Cancel"
+  /// also in LegalHoldsEditor
+  button "Lift the hold" => "رفع التجميد";
+  /// HoldReviewPane · a button's label · at most ~20 characters
+  /// shown through Button.label
+  /// beside: "Keep it, and review again…"
+  button "Lift the hold…" => "رفع الحجز…";
+  /// HoldReviewPane · a hint under a field
+  /// shown through Field.hint
+  /// beside: "Cancel"
+  /// also in LegalHoldsEditor
+  hint "Recorded with your name." => "يُسجَّل باسمك.";
+  /// HoldReviewPane · a label (a field, a list item, a menu entry) · at most ~10 characters
+  /// shown through Badge.label
+  /// also in LegalHoldsEditor
+  label "Case" => "قضية";
+  /// HoldReviewPane · a label (a field, a list item, a menu entry) · at most ~17 characters
+  /// shown through DatePicker.label
+  /// beside: "Cancel"
+  /// also in LegalHoldsEditor
+  label "Next review" => "المراجعة التالية";
+  /// HoldReviewPane · a label (a field, a list item, a menu entry) · at most ~28 characters
+  /// shown through Field.label
+  /// beside: "Cancel"
+  /// also in LegalHoldsEditor
+  label "Why it can be lifted" => "سبب إمكانية رفعه";
+  /// HoldReviewPane · placeholder text inside an empty field · at most ~45 characters
+  /// shown through Field.placeholder
+  /// beside: "Cancel"
+  /// also in LegalHoldsEditor
+  placeholder "Settled out of court on 3 March." => "تمت التسوية خارج المحكمة في 3 مارس.";
+  /// HoldReviewPane · a subtitle
+  /// shown through Dialog.subtitle
+  /// also in LegalHoldsEditor
+  subtitle "A second person confirms the lift. Until then it stays in force." => "يؤكد شخص ثانٍ الرفع. وحتى ذلك الحين يبقى التجميد ساريًا.";
+  /// HoldReviewPane · a subtitle
+  /// shown through Dialog.subtitle
+  /// also in LegalHoldsEditor
+  subtitle "Erasures that waited on it run, and anything past its period is purged at the next run." => "تُنفَّذ عمليات المحو التي كانت تنتظره، ويُحذف كل ما تجاوز مدته في التشغيل التالي.";
+  /// HoldReviewPane · a subtitle
+  /// shown through Dialog.subtitle
+  subtitle "It stays in force; this review closes, and a new one opens on the date you pick." => "يبقى ساريًا، وتُغلق هذه المراجعة، وتُفتح مراجعة جديدة في التاريخ الذي تختاره.";
+  /// HoldReviewPane · text on the page
+  /// placeholders: {facts.On} = facts.On (string)
+  text "A legal hold on {facts.On}" => "حجز قانوني على {facts.On}";
+  /// HoldReviewPane · text on the page
+  /// placeholders: {ToString} = next.Value.ToString(…) (DateOnly)
+  /// shown through done
+  text "Kept. Somebody looks at it again on {ToString}." => "أُبقي عليه. سيراجعه أحدهم مجددًا في {ToString}.";
+  /// HoldReviewPane · text on the page
+  /// shown through done
+  /// also in LegalHoldsEditor
+  text "Lifted. What waited on it — an erasure, a purge — runs now." => "تم الرفع. ما كان ينتظره، من محو أو حذف، يُنفَّذ الآن.";
+  /// HoldReviewPane · text on the page
+  /// beside: "Why it is kept"
+  text "Matter" => "القضية";
+  /// HoldReviewPane · text on the page
+  /// shown through problem
+  /// also in LegalHoldsEditor
+  text "Pick the next review date." => "اختر تاريخ المراجعة التالي.";
+  /// HoldReviewPane · text on the page
+  /// placeholders: {facts.PlacedBy} = facts.PlacedBy (string), {ToString} = facts.PlacedAt.ToString(…) (DateTime)
+  /// beside: "Matter", "Why it is kept"
+  text "Placed by {facts.PlacedBy} on {ToString}." => "وضعه {facts.PlacedBy} في {ToString}.";
+  /// HoldReviewPane · text on the page
+  text "Settled — this review is closed." => "تمّت التسوية، وأُغلقت هذه المراجعة.";
+  /// HoldReviewPane · text on the page
+  /// shown through done
+  text "The lift waits for a second person to confirm it on the legal holds page — the hold stays in force until then." => "ينتظر الرفع أن يؤكده شخص ثانٍ في صفحة الحجوزات القانونية، ويبقى الحجز ساريًا حتى ذلك الحين.";
+  /// HoldReviewPane · text on the page
+  /// beside: "Matter"
+  text "Why it is kept" => "سبب الاحتفاظ به";
+  /// HoldReviewPane · text on the page
+  /// placeholders: {value} = … (string)
+  text "{value}. While it stands nothing it covers is erased or purged — keep it only as long as the matter needs it." => "{value}. ما دام قائمًا لا يُمحى ولا يُحذف شيء مما يشمله، فأبقِه فقط ما دامت القضية تحتاج إليه.";
+  /// HoldReviewPane · a title
+  /// shown through Dialog.title
+  title "Keep the hold" => "إبقاء الحجز";
+  /// HoldReviewPane · a title
+  /// placeholders: {facts.On} = facts.On (string)
+  /// shown through Dialog.title
+  title "Lift the hold on {facts.On}" => "رفع الحجز عن {facts.On}";
+
+  // ── HowLongWords ──
+  /// HowLongWords · text on the page
+  /// placeholders: {PeriodWords} = PeriodWords(…) (string)
+  /// also in KeptOf
+  text "If you ask us to erase it, it is kept {PeriodWords}, used for this purpose only, then deleted." => "إذا طلبت منا محوها، نحتفظ بها {PeriodWords}، ولا تُستخدم إلا لهذا الغرض، ثم تُحذف.";
+  /// HowLongWords · text on the page
+  text "Until you ask us to erase it." => "إلى أن تطلب منا محوها.";
+
+  // ── InTheCopy ──
+  /// InTheCopy · text on the page
+  /// placeholders: {HeldOf} = HeldOf(…) (int) — {HeldOf} is a count: give one text per plural form
+  /// shown through InTheCopy()
+  text "In your copy: {HeldOf} of these, each with its date — and why we keep them, and for how long." => { zero: "في نسختك: لا شيء منها، لكل منها تاريخه، مع سبب الاحتفاظ بها ومدته.", one: "في نسختك: واحد منها، لكل منها تاريخه، مع سبب الاحتفاظ بها ومدته.", two: "في نسختك: اثنان منها، لكل منها تاريخه، مع سبب الاحتفاظ بها ومدته.", few: "في نسختك: {HeldOf} منها، لكل منها تاريخه، مع سبب الاحتفاظ بها ومدته.", many: "في نسختك: {HeldOf} منها، لكل منها تاريخه، مع سبب الاحتفاظ بها ومدته.", other: "في نسختك: {HeldOf} منها، لكل منها تاريخه، مع سبب الاحتفاظ بها ومدته." };
+
+  // ── KeepOnCompellingGrounds ──
+  /// KeepOnCompellingGrounds · an error message
+  /// placeholders: {line.Category} = line.Category (string)
+  /// shown through ValidationException
+  error "'{line.Category}' is not held on a legitimate interest, so there are no grounds to weigh." => "لا تُحفظ '{line.Category}' على أساس مصلحة مشروعة، فلا توجد مبررات للموازنة بينها.";
+  /// KeepOnCompellingGrounds · an error message
+  /// shown through ValidationException
+  error "Keeping data a person asked to have erased needs the compelling grounds written down — they are told to the person." => "الاحتفاظ ببيانات طلب صاحبها محوها يتطلب تدوين المبررات القاهرة، وسيتم إبلاغ الشخص بها.";
+  /// KeepOnCompellingGrounds · an error message
+  /// shown through ValidationException
+  error "Only a plan waiting for approval can be changed." => "لا يمكن تغيير إلا خطة بانتظار الموافقة.";
+
+  // ── KeptOf ──
+  /// KeptOf · text on the page
+  text "Erased when you ask us to." => "تُمحى عندما تطلب منا ذلك.";
+
+  // ── LegalHoldsEditor ──
+  /// LegalHoldsEditor · a button's label · at most ~33 characters
+  /// shown through Button.label
+  button "Change the review date…" => "تغيير تاريخ المراجعة…";
+  /// LegalHoldsEditor · a button's label · at most ~23 characters
+  /// shown through Button.label
+  button "Confirm the lift" => "تأكيد الرفع";
+  /// LegalHoldsEditor · a button's label · at most ~37 characters
+  /// placeholders: {r.On} = r.On (string)
+  /// shown through Button.announceAs
+  button "Confirm the lift on {r.On}" => "تأكيد رفع التجميد عن {r.On}";
+  /// LegalHoldsEditor · a button's label · at most ~18 characters
+  /// shown through Button.label
+  button "Keep holding" => "الإبقاء على التجميد";
+  /// LegalHoldsEditor · a button's label · at most ~27 characters
+  /// placeholders: {r.On} = r.On (string)
+  /// shown through Button.announceAs
+  button "Keep holding {r.On}" => "الإبقاء على تجميد {r.On}";
+  /// LegalHoldsEditor · a button's label · at most ~33 characters
+  /// shown through Button.label
+  button "Keep, and review again…" => "الإبقاء والمراجعة لاحقًا…";
+  /// LegalHoldsEditor · a button's label · at most ~33 characters
+  /// placeholders: {r.On} = r.On (string)
+  /// shown through Button.announceAs
+  button "Lift the hold on {r.On}" => "رفع التجميد عن {r.On}";
+  /// LegalHoldsEditor · a button's label · at most ~11 characters
+  /// shown through Button.label
+  button "Lift…" => "رفع…";
+  /// LegalHoldsEditor · a button's label · at most ~18 characters
+  /// shown through Button.label
+  button "Place a hold" => "فرض تجميد";
+  /// LegalHoldsEditor · a button's label · at most ~35 characters
+  /// placeholders: {r.On} = r.On (string)
+  /// shown through Button.announceAs
+  button "Review the hold on {r.On}" => "مراجعة التجميد على {r.On}";
+  /// LegalHoldsEditor · a description
+  /// shown through SettingsPage.description
+  description "A hold keeps everything about a person — or one case — from being erased or purged while a dispute, a claim or an audit needs it. A request to erase it waits, and the person is told only that it is kept for legal claims." => "يحمي التجميد كل ما يخص شخصًا، أو قضية واحدة، من المحو أو الحذف ما دام نزاع أو مطالبة أو تدقيق يحتاج إليه. ينتظر طلب المحو، ولا يُبلَّغ الشخص إلا بأن بياناته محفوظة لأغراض المطالبات القانونية.";
+  /// LegalHoldsEditor · a description
+  /// shown through SettingsSection.description
+  description "Kept as a record — who lifted each hold, when and why — then forgotten after the period the kit's own records are kept." => "تُحفظ كسجل، يبيّن من رفع كل تجميد ومتى ولماذا، ثم تُنسى بعد المدة التي تُحفظ فيها سجلات الأداة نفسها.";
+  /// LegalHoldsEditor · a hint under a field
+  /// shown through Field.hint
+  /// beside: "Their email address", "Why it must be kept", "Review by", "Cancel"
+  hint "Never shown to the person." => "لا يُعرض على الشخص أبدًا.";
+  /// LegalHoldsEditor · a label (a field, a list item, a menu entry) · at most ~23 characters
+  /// shown through Badge.label
+  label "No second person" => "بلا شخص ثانٍ";
+  /// LegalHoldsEditor · a label (a field, a list item, a menu entry) · at most ~31 characters
+  /// shown through Badge.label
+  label "Second person required" => "يتطلب شخصًا ثانيًا";
+  /// LegalHoldsEditor · a label (a field, a list item, a menu entry) · at most ~27 characters
+  /// shown through Field.label
+  /// beside: "Matter", "Why it must be kept", "Review by", "Cancel"
+  label "Their email address" => "عنوان بريده الإلكتروني";
+  /// LegalHoldsEditor · message
+  /// shown through Alert.message
+  message "Pick the date the hold is reviewed — a hold is never kept for ever unseen." => "اختر تاريخ مراجعة التجميد، فالتجميد لا يُبقى إلى الأبد دون مراجعة.";
+  /// LegalHoldsEditor · placeholder text inside an empty field · at most ~37 characters
+  /// shown through Field.placeholder
+  /// beside: "Their email address", "Why it must be kept", "Review by", "Cancel"
+  placeholder "Dispute with Acme AB, 2026" => "نزاع مع Acme AB، 2026";
+  /// LegalHoldsEditor · placeholder text inside an empty field · at most ~42 characters
+  /// shown through Field.placeholder
+  /// beside: "Their email address", "Matter", "Review by", "Cancel"
+  placeholder "The complaint may go to court." => "قد تُرفع الشكوى إلى المحكمة.";
+  /// LegalHoldsEditor · placeholder text inside an empty field · at most ~21 characters
+  /// shown through Field.placeholder
+  /// beside: "Matter", "Why it must be kept", "Review by", "Cancel"
+  placeholder "ann@example.com" => "ann@example.com";
+  /// LegalHoldsEditor · a subtitle
+  /// shown through Dialog.subtitle
+  subtitle "Everything held about this person is kept — not erased on request, not purged — until the hold is lifted." => "يُحتفظ بكل ما يخص هذا الشخص، فلا يُمحى عند الطلب ولا يُحذف، حتى يُرفع التجميد.";
+  /// LegalHoldsEditor · a subtitle
+  /// shown through Dialog.subtitle
+  subtitle "It stays in force; somebody looks at it again on the date you pick." => "يبقى ساريًا؛ وسيعيد أحدهم النظر فيه في التاريخ الذي تختاره.";
+  /// LegalHoldsEditor · text on the page
+  /// placeholders: {ToString} = r.LiftedAt.Value.ToString(…) (DateTime)
+  text " on {ToString}" => " في {ToString}";
+  /// LegalHoldsEditor · text on the page
+  /// placeholders: {ToLower} = ….ToLower(…) (string)
+  /// shown through done
+  text "Holding everything about {ToLower}. Nothing about them is erased or purged until the hold is lifted." => "يُحتفظ بكل ما يخص {ToLower}. لن يُمحى أو يُحذف أي شيء عنه حتى يُرفع التجميد.";
+  /// LegalHoldsEditor · text on the page
+  /// placeholders: {ToString} = nextReview.Value.ToString(…) (DateOnly)
+  /// shown through done
+  text "Kept, and reviewed again on {ToString}." => "تم الإبقاء عليه، وستتم مراجعته مجددًا في {ToString}.";
+  /// LegalHoldsEditor · text on the page
+  /// placeholders: {r.LiftedBy} = r.LiftedBy (string), {value} = … (string), {r.LiftReason} = r.LiftReason (string)
+  text "Lifted by {r.LiftedBy}{value}: “{r.LiftReason}”" => "رفعه {r.LiftedBy}{value}: «{r.LiftReason}»";
+  /// LegalHoldsEditor · text on the page
+  /// shown through done
+  text "Lifted. What waited on it runs now." => "تم الرفع. ما كان ينتظره يُنفَّذ الآن.";
+  /// LegalHoldsEditor · text on the page
+  /// shown through EmptyState.body
+  text "Nothing is held now. When a dispute, a claim or an audit needs a person's data kept, place a hold here — or on a case from its own page." => "لا يوجد شيء مجمّد الآن. عندما يحتاج نزاع أو مطالبة أو تدقيق إلى الاحتفاظ ببيانات شخص، افرض تجميدًا هنا، أو على قضية من صفحتها.";
+  /// LegalHoldsEditor · text on the page
+  /// placeholders: {r.PlacedBy} = r.PlacedBy (string), {ToString} = r.PlacedAt.ToString(…) (DateTime), {ToString2} = r.ReviewBy.ToString(…) (DateTime)
+  text "Placed by {r.PlacedBy} on {ToString} · review by {ToString2}" => "فرضه {r.PlacedBy} في {ToString} · المراجعة بحلول {ToString2}";
+  /// LegalHoldsEditor · text on the page
+  /// shown through done
+  text "The lift waits for a second person to confirm it — the hold stays in force until then." => "ينتظر الرفع تأكيد شخص ثانٍ، ويبقى التجميد ساريًا حتى ذلك الحين.";
+  /// LegalHoldsEditor · text on the page
+  /// shown through done
+  text "The lift was withdrawn — the hold stays in force." => "سُحب طلب الرفع، ويبقى التجميد ساريًا.";
+  /// LegalHoldsEditor · text on the page
+  /// placeholders: {r.LiftRequestedBy} = r.LiftRequestedBy (string), {r.LiftReason} = r.LiftReason (string)
+  text "{r.LiftRequestedBy} asked to lift it: “{r.LiftReason}”" => "طلب {r.LiftRequestedBy} رفعه: «{r.LiftReason}»";
+  /// LegalHoldsEditor · a title
+  /// shown through SettingsPage.title
+  /// also in LegalHoldsSettings /settings/privacy/holds
+  title "Legal holds" => "التجميد القانوني";
+  /// LegalHoldsEditor · a title
+  /// placeholders: {liftOn} = liftOn (string)
+  /// shown through Dialog.title
+  title "Lift the hold on {liftOn}" => "رفع التجميد عن {liftOn}";
+  /// LegalHoldsEditor · a title
+  /// shown through SettingsSection.title
+  title "Lifted" => "المرفوعة";
+  /// LegalHoldsEditor · a title
+  /// shown through SettingsSection.title
+  /// beside: "Place a hold"
+  title "Lifting a hold" => "رفع التجميد";
+  /// LegalHoldsEditor · a title
+  /// shown through EmptyState.title
+  title "No legal holds in force" => "لا يوجد تجميد قانوني سارٍ";
+  /// LegalHoldsEditor · a title
+  /// shown through Dialog.title
+  title "Place a legal hold" => "فرض تجميد قانوني";
+  /// LegalHoldsEditor · a title
+  /// shown through Dialog.title
+  title "Review the hold" => "مراجعة التجميد";
+
+  // ── MyPrivacy ──
+  /// MyPrivacy · a control's name for screen readers
+  /// beside: "Your privacy", "Your requests", "What we keep"
+  accessibleName "Ask us" => "اسألنا";
+  /// MyPrivacy · a control's name for screen readers
+  /// beside: "Your privacy", "Ask us", "Your requests"
+  accessibleName "What we keep" => "ما نحتفظ به";
+  /// MyPrivacy · a control's name for screen readers
+  /// beside: "Your privacy", "Ask us", "What we keep"
+  accessibleName "Your requests" => "طلباتك";
+  /// MyPrivacy · a button's label · at most ~27 characters
+  /// shown through AskChoice.title
+  /// beside: "Move your data", "Erase your data", "Stop using your data"
+  /// also in AskWithoutAnAccount
+  button "A copy of your data" => "نسخة من بياناتك";
+  /// MyPrivacy · a button's label · at most ~26 characters
+  /// shown through Button.label
+  /// beside: "Once, within seven days of the answer."
+  /// also in ExportByLinkPage /privacy/export/{link}
+  button "Download your data" => "تنزيل بياناتك";
+  /// MyPrivacy · a button's label · at most ~47 characters
+  /// placeholders: {r.Title} = r.Title (string)
+  /// shown through Button.announceAs
+  /// beside: "Once, within seven days of the answer."
+  button "Download your data from {r.Title}" => "تنزيل بياناتك من {r.Title}";
+  /// MyPrivacy · a button's label · at most ~21 characters
+  /// shown through AskChoice.title
+  /// beside: "A copy of your data", "Move your data", "Stop using your data"
+  /// also in AskWithoutAnAccount
+  button "Erase your data" => "محو بياناتك";
+  /// MyPrivacy · a button's label · at most ~20 characters
+  /// shown through AskChoice.title
+  /// beside: "A copy of your data", "Erase your data", "Stop using your data"
+  button "Move your data" => "نقل بياناتك";
+  /// MyPrivacy · a button's label · at most ~20 characters
+  /// shown through Button.label
+  /// beside: "Cancel"
+  /// also in AskWithoutAnAccount
+  button "Send me a code" => "أرسل لي رمزًا";
+  /// MyPrivacy · a button's label · at most ~23 characters
+  /// shown through Button.label
+  /// beside: "Cancel"
+  /// also in AskWithoutAnAccount
+  button "Send the request" => "إرسال الطلب";
+  /// MyPrivacy · a button's label · at most ~28 characters
+  /// shown through AskChoice.title
+  /// beside: "A copy of your data", "Move your data", "Erase your data"
+  button "Stop using your data" => "إيقاف استخدام بياناتك";
+  /// MyPrivacy · a label (a field, a list item, a menu entry) · at most ~10 characters
+  /// shown through Field.label
+  /// also in AskWithoutAnAccount
+  label "Code" => "الرمز";
+  /// MyPrivacy · a subtitle
+  /// placeholders: {ToString} = r.AnswerBy.Value.ToString(…) (DateTime)
+  /// shown through Card.subtitle
+  subtitle " · we answer by {ToString}" => " · سنرد بحلول {ToString}";
+  /// MyPrivacy · a subtitle
+  /// shown through Card.subtitle
+  subtitle "Before anything happens, this is what your request does to each kind of data we hold." => "قبل أن يحدث أي شيء، هذا ما سيفعله طلبك بكل نوع من البيانات التي نحتفظ بها.";
+  /// MyPrivacy · a subtitle
+  /// placeholders: {ToString} = r.ReceivedAt.ToString(…) (DateTime), {value} = … (string)
+  /// shown through Card.subtitle
+  subtitle "Received {ToString}{value}" => "تم الاستلام {ToString}{value}";
+  /// MyPrivacy · a subtitle
+  /// shown through PageHead.subtitle
+  /// beside: "Ask us", "Your requests", "What we keep"
+  subtitle "What we keep about you, why, and for how long — and how to ask for a copy, or to have it erased." => "ما نحتفظ به عنك، ولماذا، وإلى متى، وكيف تطلب نسخة منه أو محوه.";
+  /// MyPrivacy · text on the page
+  /// shown through SectionLabel.text
+  text "Ask us" => "اسألنا";
+  /// MyPrivacy · text on the page
+  /// beside: "What we keep about people, and why"
+  text "Beside each kind, how much of it we hold about you right now. Only how many — what they say is in a copy of your data." => "بجانب كل نوع، مقدار ما نحتفظ به منه عنك الآن. العدد فقط، أما محتواه ففي نسخة من بياناتك.";
+  /// MyPrivacy · text on the page
+  /// shown through AskChoice.body
+  /// beside: "Move your data", "Erase your data", "Stop using your data"
+  /// also in AskWithoutAnAccount
+  text "Everything we hold about you, and why we keep it." => "كل ما نحتفظ به عنك، وسبب احتفاظنا به.";
+  /// MyPrivacy · text on the page
+  /// placeholders: {Join} = string.Join(…) (string)
+  text "Not in a copy, because nobody can find it by person: {Join}." => "ليست في أي نسخة، لأنه لا يمكن لأحد العثور عليها حسب الشخص: {Join}.";
+  /// MyPrivacy · text on the page
+  /// placeholders: {Join} = string.Join(…) (string)
+  text "Not in your copy, because we hold none of these about you: {Join}." => "ليست في نسختك، لأننا لا نحتفظ بأي منها عنك: {Join}.";
+  /// MyPrivacy · text on the page
+  /// beside: "Download your data"
+  text "Once, within seven days of the answer." => "مرة واحدة، خلال سبعة أيام من الرد.";
+  /// MyPrivacy · text on the page
+  /// beside: "Cancel"
+  text "To be sure it is you, we mail a code to the address on your account." => "للتأكد من أنك أنت، نرسل رمزًا إلى العنوان المسجّل في حسابك.";
+  /// MyPrivacy · text on the page
+  /// shown through askProblem
+  /// also in AskWithoutAnAccount
+  text "Type the code from the mail." => "اكتب الرمز من رسالة البريد.";
+  /// MyPrivacy · text on the page
+  /// shown through AskChoice.body
+  /// beside: "A copy of your data", "Move your data", "Stop using your data"
+  /// also in AskWithoutAnAccount
+  text "We erase what we may, and tell you what the law makes us keep." => "نمحو ما يجوز لنا محوه، ونخبرك بما يُلزمنا القانون بالاحتفاظ به.";
+  /// MyPrivacy · text on the page
+  /// shown through AskChoice.body
+  /// beside: "A copy of your data", "Move your data", "Erase your data"
+  text "We keep it, but use it for nothing until you say so." => "نحتفظ بها، لكن لا نستخدمها في أي شيء حتى تأذن بذلك.";
+  /// MyPrivacy · text on the page
+  /// placeholders: {sentTo} = sentTo (string)
+  /// beside: "240px", "Cancel"
+  text "We sent a code to {sentTo}. It works for fifteen minutes." => "أرسلنا رمزًا إلى {sentTo}. صالح لمدة خمس عشرة دقيقة.";
+  /// MyPrivacy · text on the page
+  /// shown through SectionLabel.text
+  /// beside: "Beside each kind, how much of it we hold about you right now. Only how many — what they say is in a copy of your data."
+  text "What we keep about people, and why" => "ما نحتفظ به عن الأشخاص، ولماذا";
+  /// MyPrivacy · text on the page
+  /// shown through AskChoice.body
+  /// beside: "A copy of your data", "Erase your data", "Stop using your data"
+  text "What you gave us, in a file another service can read." => "ما قدّمته لنا، في ملف يمكن لخدمة أخرى قراءته.";
+  /// MyPrivacy · text on the page
+  /// shown through EmptyState.body
+  text "When you ask us for a copy of your data, or to erase it, it shows here until it is answered — and after." => "عندما تطلب منا نسخة من بياناتك، أو محوها، يظهر الطلب هنا حتى يتم الرد عليه، وبعد ذلك أيضًا.";
+  /// MyPrivacy · text on the page
+  /// shown through done
+  text "Your request is in. We answer within one month — by mail to the address you just confirmed, and here." => "تم استلام طلبك. سنرد خلال شهر واحد، عبر البريد إلى العنوان الذي أكدته للتو، وهنا.";
+  /// MyPrivacy · text on the page
+  /// shown through SectionLabel.text
+  text "Your requests" => "طلباتك";
+  /// MyPrivacy · a title
+  /// shown through EmptyState.title
+  title "No requests yet" => "لا توجد طلبات بعد";
+  /// MyPrivacy · a title
+  /// shown through Card.title
+  title "What this will do" => "ما الذي سيفعله هذا";
+  /// MyPrivacy · a title
+  /// shown through PageHead.title
+  /// beside: "Ask us", "Your requests", "What we keep"
+  /// also in MyPrivacyPage /privacy
+  title "Your privacy" => "خصوصيتك";
+
+  // ── MyRequestRows ──
+  /// MyRequestRows · text on the page
+  /// placeholders: {ToString} = fetched.At.ToString(…) (DateTime)
+  /// shown through MyRequestRow.ExportWords
+  text "Downloaded on {ToString}." => "تم التنزيل في {ToString}.";
+  /// MyRequestRows · text on the page
+  /// placeholders: {ToString} = r.ExportExpiresAt.Value.ToString(…) (DateTime)
+  /// shown through MyRequestRow.ExportWords
+  text "Not downloaded, so deleted on {ToString}. Ask again for a new copy." => "لم يتم التنزيل، لذا حُذف في {ToString}. اطلب نسخة جديدة مرة أخرى.";
+  /// MyRequestRows · text on the page
+  /// placeholders: {r.ExtensionReason} = r.ExtensionReason (string)
+  /// shown through MyRequestRow.Extension
+  text "We need more time: {r.ExtensionReason}" => "نحتاج إلى مزيد من الوقت: {r.ExtensionReason}";
+
+  // ── NewHold ──
+  /// NewHold · an error message
+  /// shown through ValidationException
+  error "A hold needs a review date in the future — a hold is reviewed, so it never becomes keeping for ever." => "يحتاج التجميد إلى تاريخ مراجعة في المستقبل، فالتجميد يُراجَع حتى لا يصبح احتفاظًا إلى الأبد.";
+  /// NewHold · an error message
+  /// shown through ValidationException
+  error "Name the matter the hold is for — it is what a reviewer reads." => "سمِّ القضية التي يخصها التجميد، فهذا ما يقرؤه المراجع.";
+  /// NewHold · an error message
+  /// shown through ValidationException
+  error "Say why the data must be kept — a hold without a reason cannot be reviewed." => "اذكر سبب وجوب الاحتفاظ بالبيانات، فالتجميد بلا سبب لا يمكن مراجعته.";
+
+  // ── NoSelfService ──
+  /// NoSelfService · message
+  /// placeholders: {value} = … (string)
+  /// shown through NoSelfService()
+  message "This app cannot confirm it is you yet, so a request is made by writing to {value} — they will check it is you." => "لا يمكن لهذا التطبيق التأكد من هويتك بعد، لذا يُقدَّم الطلب بالكتابة إلى {value}، وسيتحققون من أنك أنت.";
+  /// NoSelfService · message
+  /// shown through NoSelfService()
+  message "the people who run it" => "القائمين عليه";
+
+  // ── Osysharp.Privacy.AskState ──
+  /// Osysharp.Privacy.AskState · a label (a field, a list item, a menu entry) · at most ~26 characters
+  /// shown through Osysharp.Privacy.AskState.Checking
+  /// beside: "Filed", "Not filed"
+  label "Checking it is you" => "جارٍ التحقق من هويتك";
+  /// Osysharp.Privacy.AskState · a label (a field, a list item, a menu entry) · at most ~11 characters
+  /// shown through Osysharp.Privacy.AskState.Filed
+  /// beside: "Checking it is you", "Not filed"
+  label "Filed" => "مُقدَّم";
+  /// Osysharp.Privacy.AskState · a label (a field, a list item, a menu entry) · at most ~15 characters
+  /// shown through Osysharp.Privacy.AskState.Refused
+  /// beside: "Checking it is you", "Filed"
+  label "Not filed" => "غير مُقدَّم";
+
+  // ── Osysharp.Privacy.ControllerSettingsSections.Sections ──
+  /// Osysharp.Privacy.ControllerSettingsSections.Sections · a heading
+  /// shown through SettingsLink.Group
+  /// also in Osysharp.Privacy.LegalHoldSettingsSections.Sections
+  /// also in Osysharp.Privacy.PrivacySettingsSections.Sections
+  heading "Privacy" => "الخصوصية";
+  /// Osysharp.Privacy.ControllerSettingsSections.Sections · a hint under a field
+  /// shown through SettingsLink.Hint
+  hint "The legal entity every privacy answer, and the records of processing, name." => "الكيان القانوني الذي يُذكر في كل رد يخص الخصوصية وفي سجلات المعالجة.";
+  /// Osysharp.Privacy.ControllerSettingsSections.Sections · a label (a field, a list item, a menu entry) · at most ~26 characters
+  /// shown through SettingsLink.Label
+  label "Who is responsible" => "الجهة المسؤولة";
+
+  // ── Osysharp.Privacy.HoldState ──
+  /// Osysharp.Privacy.HoldState · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.Privacy.HoldState.Expired
+  /// beside: "Holding", "Review due", "Lift waiting for a second person", "Lifted"
+  label "Expired" => "منتهية";
+  /// Osysharp.Privacy.HoldState · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.Privacy.HoldState.Holding
+  /// beside: "Review due", "Lift waiting for a second person", "Lifted", "Expired"
+  /// also in LegalHoldsEditor
+  label "Holding" => "سارٍ";
+  /// Osysharp.Privacy.HoldState · a label (a field, a list item, a menu entry) · at most ~45 characters
+  /// shown through Osysharp.Privacy.HoldState.LiftPending
+  /// beside: "Holding", "Review due", "Lifted", "Expired"
+  /// also in LegalHoldsEditor
+  label "Lift waiting for a second person" => "الرفع بانتظار شخص ثانٍ";
+  /// Osysharp.Privacy.HoldState · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through Osysharp.Privacy.HoldState.Lifted
+  /// beside: "Holding", "Review due", "Lift waiting for a second person", "Expired"
+  label "Lifted" => "مرفوع";
+  /// Osysharp.Privacy.HoldState · a label (a field, a list item, a menu entry) · at most ~16 characters
+  /// shown through Osysharp.Privacy.HoldState.ReviewDue
+  /// beside: "Holding", "Lift waiting for a second person", "Lifted", "Expired"
+  /// also in LegalHoldsEditor
+  label "Review due" => "حان موعد المراجعة";
+
+  // ── Osysharp.Privacy.IPersonalDataHolder.Restrict ──
+  /// Osysharp.Privacy.IPersonalDataHolder.Restrict · an error message
+  /// placeholders: {Key} = Key(…) (string), {category.Key} = category.Key (string), {category.Basis} = category.Basis (string)
+  /// shown through Exception
+  error "{Key} declares '{category.Key}' as kept ({category.Basis}) but does not say how its rows are kept — implement Restrict." => "يعلن {Key} أن '{category.Key}' محفوظة ({category.Basis}) لكنه لا يحدد كيف تُحفظ صفوفها. نفّذ Restrict.";
+
+  // ── Osysharp.Privacy.IdentityCheck ──
+  /// Osysharp.Privacy.IdentityCheck · a label (a field, a list item, a menu entry) · at most ~40 characters
+  /// shown through Osysharp.Privacy.IdentityCheck.CodeToKnownAddress
+  /// beside: "Signed in, and proved it again", "Details only they would know", "An identity document", "BankID", "In person", "A code to the address they asked about"
+  label "A code to an address on file" => "رمز إلى عنوان مسجّل لدينا";
+  /// Osysharp.Privacy.IdentityCheck · a label (a field, a list item, a menu entry) · at most ~54 characters
+  /// shown through Osysharp.Privacy.IdentityCheck.CodeToTheirAddress
+  /// beside: "Signed in, and proved it again", "A code to an address on file", "Details only they would know", "An identity document", "BankID", "In person"
+  label "A code to the address they asked about" => "رمز إلى العنوان الذي يسأل عنه";
+  /// Osysharp.Privacy.IdentityCheck · a label (a field, a list item, a menu entry) · at most ~28 characters
+  /// shown through Osysharp.Privacy.IdentityCheck.Document
+  /// beside: "Signed in, and proved it again", "A code to an address on file", "Details only they would know", "BankID", "In person", "A code to the address they asked about"
+  label "An identity document" => "وثيقة هوية";
+  /// Osysharp.Privacy.IdentityCheck · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through Osysharp.Privacy.IdentityCheck.BankId
+  /// beside: "Signed in, and proved it again", "A code to an address on file", "Details only they would know", "An identity document", "In person", "A code to the address they asked about"
+  label "BankID" => "BankID";
+  /// Osysharp.Privacy.IdentityCheck · a label (a field, a list item, a menu entry) · at most ~40 characters
+  /// shown through Osysharp.Privacy.IdentityCheck.KnownDetails
+  /// beside: "Signed in, and proved it again", "A code to an address on file", "An identity document", "BankID", "In person", "A code to the address they asked about"
+  label "Details only they would know" => "تفاصيل لا يعرفها سواه";
+  /// Osysharp.Privacy.IdentityCheck · a label (a field, a list item, a menu entry) · at most ~15 characters
+  /// shown through Osysharp.Privacy.IdentityCheck.InPerson
+  /// beside: "Signed in, and proved it again", "A code to an address on file", "Details only they would know", "An identity document", "BankID", "A code to the address they asked about"
+  label "In person" => "حضوريًا";
+  /// Osysharp.Privacy.IdentityCheck · a label (a field, a list item, a menu entry) · at most ~42 characters
+  /// shown through Osysharp.Privacy.IdentityCheck.StepUp
+  /// beside: "A code to an address on file", "Details only they would know", "An identity document", "BankID", "In person", "A code to the address they asked about"
+  label "Signed in, and proved it again" => "سجّل الدخول وأثبت هويته مجددًا";
+
+  // ── Osysharp.Privacy.LegalHold ──
+  /// Osysharp.Privacy.LegalHold · validation
+  /// shown through Osysharp.Privacy.LegalHold.Matter [Required]
+  validation "Name the matter the hold is for." => "سمِّ القضية التي يخصها التجميد.";
+  /// Osysharp.Privacy.LegalHold · validation
+  /// shown through Osysharp.Privacy.LegalHold.Reason [Required]
+  validation "Say why the data must be kept." => "اذكر سبب وجوب الاحتفاظ بالبيانات.";
+
+  // ── Osysharp.Privacy.LegalHoldSettingsSections.Sections ──
+  /// Osysharp.Privacy.LegalHoldSettingsSections.Sections · a hint under a field
+  /// shown through SettingsLink.Hint
+  hint "Keep what a dispute or an audit needs from being erased or purged." => "احمِ ما يحتاجه نزاع أو تدقيق من المحو أو الحذف.";
+  /// Osysharp.Privacy.LegalHoldSettingsSections.Sections · a label (a field, a list item, a menu entry) · at most ~17 characters
+  /// shown through SettingsLink.Label
+  label "Legal holds" => "التجميد القانوني";
+
+  // ── Osysharp.Privacy.MailPersonalData.Categories ──
+  /// Osysharp.Privacy.MailPersonalData.Categories · a label (a field, a list item, a menu entry) · at most ~23 characters
+  /// shown through DataCategory.Label
+  label "Mail we sent you" => "رسائل البريد التي أرسلناها إليك";
+  /// Osysharp.Privacy.MailPersonalData.Categories · text on the page
+  text "Telling you what you asked us to, and what we must" => "إبلاغك بما طلبته منا، وبما يجب علينا";
+
+  // ── Osysharp.Privacy.MailPersonalData.Export ──
+  /// Osysharp.Privacy.MailPersonalData.Export · text on the page
+  text "Mail we sent you" => "رسائل البريد التي أرسلناها إليك";
+  /// Osysharp.Privacy.MailPersonalData.Export · text on the page
+  text "Subject" => "الموضوع";
+
+  // ── Osysharp.Privacy.PlanOutcome ──
+  /// Osysharp.Privacy.PlanOutcome · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.Privacy.PlanOutcome.Blocked
+  /// beside: "Not held", "Erase", "Keep restricted", "Keep", "Export"
+  label "Blocked" => "محظور";
+  /// Osysharp.Privacy.PlanOutcome · a label (a field, a list item, a menu entry) · at most ~11 characters
+  /// shown through Osysharp.Privacy.PlanOutcome.Erase
+  /// beside: "Not held", "Keep restricted", "Blocked", "Keep", "Export"
+  label "Erase" => "محو";
+  /// Osysharp.Privacy.PlanOutcome · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through Osysharp.Privacy.PlanOutcome.Export
+  /// beside: "Not held", "Erase", "Keep restricted", "Blocked", "Keep"
+  label "Export" => "تصدير";
+  /// Osysharp.Privacy.PlanOutcome · a label (a field, a list item, a menu entry) · at most ~10 characters
+  /// shown through Osysharp.Privacy.PlanOutcome.Keep
+  /// beside: "Not held", "Erase", "Keep restricted", "Blocked", "Export"
+  label "Keep" => "احتفاظ";
+  /// Osysharp.Privacy.PlanOutcome · a label (a field, a list item, a menu entry) · at most ~21 characters
+  /// shown through Osysharp.Privacy.PlanOutcome.Restrict
+  /// beside: "Not held", "Erase", "Blocked", "Keep", "Export"
+  label "Keep restricted" => "الاحتفاظ مع التقييد";
+  /// Osysharp.Privacy.PlanOutcome · a label (a field, a list item, a menu entry) · at most ~14 characters
+  /// shown through Osysharp.Privacy.PlanOutcome.NotHeld
+  /// beside: "Erase", "Keep restricted", "Blocked", "Keep", "Export"
+  label "Not held" => "غير محفوظة";
+
+  // ── Osysharp.Privacy.PlatformPersonalData.Categories ──
+  /// Osysharp.Privacy.PlatformPersonalData.Categories · a label (a field, a list item, a menu entry) · at most ~55 characters
+  /// shown through DataCategory.Label
+  label "Text sent to an AI model on your behalf" => "نص أُرسل إلى نموذج ذكاء اصطناعي نيابةً عنك";
+  /// Osysharp.Privacy.PlatformPersonalData.Categories · a label (a field, a list item, a menu entry) · at most ~89 characters
+  /// shown through DataCategory.Label
+  label "Your requests to us about your data, and what we did about them" => "طلباتك إلينا بشأن بياناتك، وما فعلناه بشأنها";
+  /// Osysharp.Privacy.PlatformPersonalData.Categories · text on the page
+  text "Cleared by the platform within 30 days of being sent — it cannot be found by person." => "تمحوها المنصة خلال 30 يومًا من إرسالها، ولا يمكن العثور عليها حسب الشخص.";
+  /// Osysharp.Privacy.PlatformPersonalData.Categories · text on the page
+  text "Running and auditing the app's AI features" => "تشغيل ميزات الذكاء الاصطناعي في التطبيق وتدقيقها";
+  /// Osysharp.Privacy.PlatformPersonalData.Categories · text on the page
+  text "Showing that we answered your requests (GDPR Art. 5(2))" => "إثبات أننا أجبنا عن طلباتك (المادة 5(2) من اللائحة العامة لحماية البيانات)";
+  /// Osysharp.Privacy.PlatformPersonalData.Categories · text on the page
+  text "from when you asked" => "من وقت طلبك";
+
+  // ── Osysharp.Privacy.PrivacySettingsSections.Sections ──
+  /// Osysharp.Privacy.PrivacySettingsSections.Sections · a hint under a field
+  /// shown through SettingsLink.Hint
+  hint "How long each kind of personal data is kept, and on what basis." => "مدة الاحتفاظ بكل نوع من البيانات الشخصية، وعلى أي أساس.";
+  /// Osysharp.Privacy.PrivacySettingsSections.Sections · a label (a field, a list item, a menu entry) · at most ~20 characters
+  /// shown through SettingsLink.Label
+  label "Data retention" => "الاحتفاظ بالبيانات";
+
+  // ── Osysharp.Privacy.PurgeAskState ──
+  /// Osysharp.Privacy.PurgeAskState · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through Osysharp.Privacy.PurgeAskState.Purged
+  /// beside: "Purging"
+  label "Purged" => "حُذفت نهائيًا";
+  /// Osysharp.Privacy.PurgeAskState · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.Privacy.PurgeAskState.Purging
+  /// beside: "Purged"
+  label "Purging" => "جارٍ الحذف";
+
+  // ── Osysharp.Privacy.RecordKind ──
+  /// Osysharp.Privacy.RecordKind · a label (a field, a list item, a menu entry) · at most ~17 characters
+  /// shown through Osysharp.Privacy.RecordKind.Bookkeeping
+  /// beside: "Ordinary"
+  label "Bookkeeping" => "المحاسبة";
+  /// Osysharp.Privacy.RecordKind · a label (a field, a list item, a menu entry) · at most ~14 characters
+  /// shown through Osysharp.Privacy.RecordKind.Ordinary
+  /// beside: "Bookkeeping"
+  label "Ordinary" => "عادي";
+
+  // ── Osysharp.Privacy.RequestKind ──
+  /// Osysharp.Privacy.RequestKind · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through Osysharp.Privacy.RequestKind.Access
+  /// beside: "Portability", "Erasure", "Restriction"
+  label "Access" => "الاطّلاع";
+  /// Osysharp.Privacy.RequestKind · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.Privacy.RequestKind.Erasure
+  /// beside: "Access", "Portability", "Restriction"
+  label "Erasure" => "محو البيانات";
+  /// Osysharp.Privacy.RequestKind · a label (a field, a list item, a menu entry) · at most ~17 characters
+  /// shown through Osysharp.Privacy.RequestKind.Portability
+  /// beside: "Access", "Erasure", "Restriction"
+  label "Portability" => "قابلية النقل";
+  /// Osysharp.Privacy.RequestKind · a label (a field, a list item, a menu entry) · at most ~17 characters
+  /// shown through Osysharp.Privacy.RequestKind.Restriction
+  /// beside: "Access", "Portability", "Erasure"
+  label "Restriction" => "تقييد المعالجة";
+
+  // ── Osysharp.Privacy.RequestState ──
+  /// Osysharp.Privacy.RequestState · a label (a field, a list item, a menu entry) · at most ~10 characters
+  /// shown through Osysharp.Privacy.RequestState.Done
+  /// beside: "Received", "Waiting for approval", "Running", "Waiting for a block to clear", "Failed"
+  label "Done" => "منتهية";
+  /// Osysharp.Privacy.RequestState · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through Osysharp.Privacy.RequestState.Failed
+  /// beside: "Received", "Waiting for approval", "Running", "Waiting for a block to clear", "Done"
+  label "Failed" => "فشلت";
+  /// Osysharp.Privacy.RequestState · a label (a field, a list item, a menu entry) · at most ~14 characters
+  /// shown through Osysharp.Privacy.RequestState.Received
+  /// beside: "Waiting for approval", "Running", "Waiting for a block to clear", "Done", "Failed"
+  label "Received" => "مستلَمة";
+  /// Osysharp.Privacy.RequestState · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.Privacy.RequestState.Running
+  /// beside: "Received", "Waiting for approval", "Waiting for a block to clear", "Done", "Failed"
+  label "Running" => "جارية";
+  /// Osysharp.Privacy.RequestState · a label (a field, a list item, a menu entry) · at most ~40 characters
+  /// shown through Osysharp.Privacy.RequestState.Waiting
+  /// beside: "Received", "Waiting for approval", "Running", "Done", "Failed"
+  label "Waiting for a block to clear" => "بانتظار زوال المانع";
+  /// Osysharp.Privacy.RequestState · a label (a field, a list item, a menu entry) · at most ~28 characters
+  /// shown through Osysharp.Privacy.RequestState.Review
+  /// beside: "Received", "Running", "Waiting for a block to clear", "Done", "Failed"
+  label "Waiting for approval" => "بانتظار الموافقة";
+
+  // ── Osysharp.Privacy.RetentionBasis ──
+  /// Osysharp.Privacy.RetentionBasis · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.Privacy.RetentionBasis.Consent
+  /// beside: "None — erased on request", "Contract", "Legal obligation", "Legal claims", "Legitimate interest"
+  label "Consent" => "الموافقة";
+  /// Osysharp.Privacy.RetentionBasis · a label (a field, a list item, a menu entry) · at most ~14 characters
+  /// shown through Osysharp.Privacy.RetentionBasis.Contract
+  /// beside: "None — erased on request", "Consent", "Legal obligation", "Legal claims", "Legitimate interest"
+  label "Contract" => "العقد";
+  /// Osysharp.Privacy.RetentionBasis · a label (a field, a list item, a menu entry) · at most ~18 characters
+  /// shown through Osysharp.Privacy.RetentionBasis.LegalClaims
+  /// beside: "None — erased on request", "Consent", "Contract", "Legal obligation", "Legitimate interest"
+  label "Legal claims" => "مطالبات قانونية";
+  /// Osysharp.Privacy.RetentionBasis · a label (a field, a list item, a menu entry) · at most ~23 characters
+  /// shown through Osysharp.Privacy.RetentionBasis.LegalObligation
+  /// beside: "None — erased on request", "Consent", "Contract", "Legal claims", "Legitimate interest"
+  label "Legal obligation" => "التزام قانوني";
+  /// Osysharp.Privacy.RetentionBasis · a label (a field, a list item, a menu entry) · at most ~27 characters
+  /// shown through Osysharp.Privacy.RetentionBasis.LegitimateInterest
+  /// beside: "None — erased on request", "Consent", "Contract", "Legal obligation", "Legal claims"
+  label "Legitimate interest" => "مصلحة مشروعة";
+  /// Osysharp.Privacy.RetentionBasis · a label (a field, a list item, a menu entry) · at most ~34 characters
+  /// shown through Osysharp.Privacy.RetentionBasis.None
+  /// beside: "Consent", "Contract", "Legal obligation", "Legal claims", "Legitimate interest"
+  label "None — erased on request" => "لا شيء، تُمحى عند الطلب";
+
+  // ── Osysharp.Privacy.RetentionStart ──
+  /// Osysharp.Privacy.RetentionStart · a label (a field, a list item, a menu entry) · at most ~34 characters
+  /// shown through Osysharp.Privacy.RetentionStart.EndOfCalendarYear
+  /// beside: "When it was collected", "End of the calendar year the fiscal year ended in", "End of the fiscal year"
+  label "End of the calendar year" => "نهاية السنة الميلادية";
+  /// Osysharp.Privacy.RetentionStart · a label (a field, a list item, a menu entry) · at most ~69 characters
+  /// shown through Osysharp.Privacy.RetentionStart.EndOfFiscalYearCalendarYear
+  /// beside: "When it was collected", "End of the calendar year", "End of the fiscal year"
+  label "End of the calendar year the fiscal year ended in" => "نهاية السنة الميلادية التي انتهت فيها السنة المالية";
+  /// Osysharp.Privacy.RetentionStart · a label (a field, a list item, a menu entry) · at most ~31 characters
+  /// shown through Osysharp.Privacy.RetentionStart.EndOfFiscalYear
+  /// beside: "When it was collected", "End of the calendar year", "End of the calendar year the fiscal year ended in"
+  label "End of the fiscal year" => "نهاية السنة المالية";
+  /// Osysharp.Privacy.RetentionStart · a label (a field, a list item, a menu entry) · at most ~30 characters
+  /// shown through Osysharp.Privacy.RetentionStart.Collected
+  /// beside: "End of the calendar year", "End of the calendar year the fiscal year ended in", "End of the fiscal year"
+  label "When it was collected" => "وقت جمعها";
+
+  // ── Osysharp.Privacy.RetentionWatchState ──
+  /// Osysharp.Privacy.RetentionWatchState · a label (a field, a list item, a menu entry) · at most ~19 characters
+  /// shown through Osysharp.Privacy.RetentionWatchState.Watching
+  /// beside: "Stopped"
+  label "Purging daily" => "حذف يومي";
+  /// Osysharp.Privacy.RetentionWatchState · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.Privacy.RetentionWatchState.Stopped
+  /// beside: "Purging daily"
+  label "Stopped" => "متوقف";
+
+  // ── Osysharp.Privacy.TallyState ──
+  /// Osysharp.Privacy.TallyState · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.Privacy.TallyState.Counted
+  /// beside: "Counting"
+  label "Counted" => "تمّ العدّ";
+  /// Osysharp.Privacy.TallyState · a label (a field, a list item, a menu entry) · at most ~14 characters
+  /// shown through Osysharp.Privacy.TallyState.Counting
+  /// beside: "Counted"
+  label "Counting" => "جارٍ العدّ";
+
+  // ── PeriodWords ──
+  /// PeriodWords · text on the page
+  text "erased on request" => "تُمحى عند الطلب";
+  /// PeriodWords · text on the page
+  /// placeholders: {r.RetainedMonths} = r.RetainedMonths (int), {FromPhrase} = FromPhrase(…) (string) — {r.RetainedMonths} is a count: give one text per plural form
+  text "for {r.RetainedMonths} months {FromPhrase}" => { zero: "{FromPhrase}", one: "لمدة شهر واحد {FromPhrase}", two: "لمدة شهرين {FromPhrase}", few: "لمدة {r.RetainedMonths} أشهر {FromPhrase}", many: "لمدة {r.RetainedMonths} شهرًا {FromPhrase}", other: "لمدة {r.RetainedMonths} شهر {FromPhrase}" };
+
+  // ── PlaceCaseHold ──
+  /// PlaceCaseHold · an error message
+  /// shown through ValidationException
+  error "Say what kind of record the case is." => "حدّد نوع السجل الذي تمثله القضية.";
+
+  // ── PlaceHold ──
+  /// PlaceHold · an error message
+  /// shown through ValidationException
+  error "Say who the hold is on — their email address, or their account." => "حدّد على من يُفرض التجميد: عنوان بريده الإلكتروني، أو حسابه.";
+
+  // ── PlanReviewNow ──
+  /// PlanReviewNow · text on the page
+  /// shown through PlanReviewFacts.Words
+  text "A plan runs at once when it follows wholly from the declarations; one with a judgement in it, or filed by staff, waits for approval." => "تُنفَّذ الخطة فورًا عندما تنتج بالكامل عن الإعلانات؛ أما الخطة التي تتضمن تقديرًا، أو التي قدّمها الفريق، فتنتظر الموافقة.";
+  /// PlanReviewNow · text on the page
+  /// shown through PlanReviewFacts.Words
+  text "Every plan waits for somebody managing privacy to approve it before it runs." => "تنتظر كل خطة موافقة أحد مسؤولي الخصوصية قبل تنفيذها.";
+
+  // ── PresetChanges ──
+  /// PresetChanges · an error message
+  /// placeholders: {jurisdiction} = jurisdiction (string), {Join} = string.Join(…) (string)
+  /// shown through ValidationException
+  error "There is no preset for '{jurisdiction}'. The presets are {Join}." => "لا يوجد إعداد مسبق لـ '{jurisdiction}'. الإعدادات المسبقة المتاحة: {Join}.";
+  /// PresetChanges · text on the page
+  /// placeholders: {preset.Statute} = preset.Statute (string)
+  /// shown through RetentionChange.Reason
+  text "Preset: {preset.Statute} — verify with your adviser." => null;
+
+  // ── PrivacyRequestPane ──
+  /// PrivacyRequestPane · a control's name for screen readers
+  accessibleName "Privacy request" => "طلب خصوصية";
+  /// PrivacyRequestPane · a control's name for screen readers
+  /// beside: "Who, and how we know"
+  accessibleName "The plan" => "الخطة";
+  /// PrivacyRequestPane · a button's label · at most ~34 characters
+  /// shown through Button.label
+  button "Approve and run the plan" => "الموافقة على الخطة وتنفيذها";
+  /// PrivacyRequestPane · a button's label · at most ~12 characters
+  /// shown through Button.label
+  /// beside: "Cancel"
+  button "Extend" => "تمديد";
+  /// PrivacyRequestPane · a button's label · at most ~28 characters
+  /// shown through Button.label
+  button "Extend the deadline…" => "تمديد المهلة…";
+  /// PrivacyRequestPane · a button's label · at most ~18 characters
+  /// shown through Button.label
+  button "Run it again" => "التشغيل مجددًا";
+  /// PrivacyRequestPane · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through NumberField.label
+  label "Months" => "الأشهر";
+  /// PrivacyRequestPane · a label (a field, a list item, a menu entry) · at most ~9 characters
+  /// shown through Field.label
+  /// beside: "160px", "Cancel"
+  /// also in RetentionEditor
+  label "Why" => "السبب";
+  /// PrivacyRequestPane · placeholder text inside an empty field · at most ~56 characters
+  /// shown through Field.placeholder
+  /// beside: "160px", "Cancel"
+  placeholder "Your request covers ten years of orders." => "يشمل طلبك طلبات عشر سنوات.";
+  /// PrivacyRequestPane · a subtitle
+  /// shown through Dialog.subtitle
+  subtitle "By one or two months, only within the first month, and only with the reason — the person is told it." => "شهرًا أو شهرين، خلال الشهر الأول فقط، ومع ذكر السبب، إذ يُبلَّغ به الشخص.";
+  /// PrivacyRequestPane · text on the page
+  /// placeholders: {ToString} = f.DueAt.Value.ToString(…) (DateTime)
+  text "Answer by {ToString}" => "الرد بحلول {ToString}";
+  /// PrivacyRequestPane · text on the page
+  /// shown through done
+  text "Approved — the plan ran." => "تمت الموافقة، ونُفّذت الخطة.";
+  /// PrivacyRequestPane · text on the page
+  /// shown through done
+  text "Extended — the person is told why." => "تم التمديد، وأُبلغ الشخص بالسبب.";
+  /// PrivacyRequestPane · text on the page
+  /// placeholders: {f.Extension} = f.Extension (string)
+  text "Extended: {f.Extension}" => "تم التمديد: {f.Extension}";
+  /// PrivacyRequestPane · text on the page
+  /// placeholders: {Join} = string.Join(…) (string)
+  text "Not held: {Join}." => "غير محفوظة: {Join}.";
+  /// PrivacyRequestPane · text on the page
+  /// shown through SectionLabel.text
+  text "The plan" => "الخطة";
+  /// PrivacyRequestPane · text on the page
+  /// shown through SectionLabel.text
+  text "What the person is told" => "ما يُبلَّغ به الشخص";
+  /// PrivacyRequestPane · text on the page
+  /// shown through SectionLabel.text
+  text "Who, and how we know" => "من هو، وكيف نعرف ذلك";
+  /// PrivacyRequestPane · text on the page
+  /// placeholders: {ToString} = f.ReceivedAt.ToString(…) (DateTime)
+  text "received {ToString}" => "استُلم {ToString}";
+  /// PrivacyRequestPane · a title
+  /// shown through Dialog.title
+  title "Extend the deadline" => "تمديد المهلة";
+  /// PrivacyRequestPane · a title
+  /// shown through Alert.title
+  title "It could not be done" => "تعذّر التنفيذ";
+
+  // ── ProveItIsMe ──
+  /// ProveItIsMe · an error message
+  /// shown through ValidationException
+  /// also in AskAboutMe
+  /// also in MySubject
+  /// also in WhatWeKeepAboutMe
+  error "Sign in first." => "سجّل الدخول أولًا.";
+
+  // ── ReadableExportCopy ──
+  /// ReadableExportCopy · an email's subject line
+  mailSubject "The data you gave us" => "البيانات التي قدّمتها لنا";
+  /// ReadableExportCopy · an email's subject line
+  mailSubject "What we hold about you" => "ما نحتفظ به عنك";
+  /// ReadableExportCopy · text in an email
+  /// placeholders: {doc.Controller} = doc.Controller (string)
+  mailText " {doc.Controller} is responsible for it." => " {doc.Controller} هي الجهة المسؤولة عنها.";
+  /// ReadableExportCopy · text in an email
+  /// beside: "ui-monospace, Menlo, Consolas, monospace"
+  mailText "As written for another service to read:" => "كما كُتبت لتقرأها خدمة أخرى:";
+  /// ReadableExportCopy · text in an email
+  mailText "Below is each kind of data we hold about you, with why we keep it and for how long. The same data is in the file your-data.json, which another service can read." => "فيما يلي كل نوع من البيانات التي نحتفظ بها عنك، مع سبب الاحتفاظ بها ومدته. والبيانات نفسها موجودة في الملف your-data.json، الذي يمكن لخدمة أخرى قراءته.";
+  /// ReadableExportCopy · text in an email
+  mailText "Below is each kind of data you gave us. The same data is in the file your-data.json, which another service can read." => "فيما يلي كل نوع من البيانات التي قدّمتها لنا. والبيانات نفسها موجودة في الملف your-data.json، الذي يمكن لخدمة أخرى قراءته.";
+  /// ReadableExportCopy · text in an email
+  /// placeholders: {part.Automated} = part.Automated (string)
+  mailText "Decisions made automatically: {part.Automated}" => "قرارات تُتخذ آليًا: {part.Automated}";
+  /// ReadableExportCopy · text in an email
+  /// placeholders: {part.Retention} = part.Retention (string)
+  mailText "How long: {part.Retention}" => "المدة: {part.Retention}";
+  /// ReadableExportCopy · text in an email
+  /// placeholders: {ToString} = doc.At.ToString(…) (DateTime), {value} = … (string)
+  mailText "Made on {ToString}, at your request.{value}" => "أُعدّت في {ToString}، بناءً على طلبك.{value}";
+  /// ReadableExportCopy · text in an email
+  mailText "Nothing of this kind." => "لا شيء من هذا النوع.";
+  /// ReadableExportCopy · text in an email
+  /// placeholders: {part.Basis} = part.Basis (string)
+  mailText "On what grounds: {part.Basis}" => "الأساس القانوني: {part.Basis}";
+  /// ReadableExportCopy · text in an email
+  mailText "The data you gave us" => "البيانات التي قدّمتها لنا";
+  /// ReadableExportCopy · text in an email
+  mailText "We hold nothing about you." => "لا نحتفظ بأي شيء عنك.";
+  /// ReadableExportCopy · text in an email
+  mailText "What we hold about you" => "ما نحتفظ به عنك";
+  /// ReadableExportCopy · text in an email
+  /// placeholders: {part.Purpose} = part.Purpose (string)
+  mailText "Why we keep it: {part.Purpose}" => "سبب الاحتفاظ بها: {part.Purpose}";
+
+  // ── RefuseLifted ──
+  /// RefuseLifted · an error message
+  /// shown through ValidationException
+  error "This hold is no longer in force." => "لم يعد هذا التجميد ساريًا.";
+
+  // ── RefusePastReview ──
+  /// RefusePastReview · an error message
+  /// shown through ValidationException
+  error "The next review date must be in the future." => "يجب أن يكون تاريخ المراجعة التالي في المستقبل.";
+
+  // ── Release ──
+  /// Release · an error message
+  /// placeholders: {Key} = h.Key(…) (string), {c.Key} = c.Key (string)
+  /// shown through ValidationException
+  error "{Key} cannot give '{c.Key}' its period back, so the hold is not lifted — its rows would otherwise be kept for ever." => "لا يستطيع {Key} إعادة مدة الاحتفاظ إلى '{c.Key}'، لذا لم يُرفع التجميد، وإلا لاحتُفظ بصفوفها إلى الأبد.";
+
+  // ── RetentionEditor ──
+  /// RetentionEditor · a button's label · at most ~31 characters
+  /// placeholders: {p.Jurisdiction} = p.Jurisdiction (string)
+  /// shown through Button.label
+  button "Apply {p.Jurisdiction}" => "تطبيق {p.Jurisdiction}";
+  /// RetentionEditor · a button's label · at most ~12 characters
+  /// shown through Button.label
+  button "Change" => "تغيير";
+  /// RetentionEditor · a button's label · at most ~24 characters
+  /// placeholders: {r.Label} = r.Label (string)
+  /// shown through Button.announceAs
+  /// beside: "Needs your decision"
+  button "Confirm {r.Label}" => "تأكيد {r.Label}";
+  /// RetentionEditor · a description
+  /// shown through SettingsSection.description
+  /// beside: "Bookkeeping preset", "Retention saved."
+  description " Set in the app's own code." => " يُضبط في كود التطبيق نفسه.";
+  /// RetentionEditor · a description
+  /// shown through SettingsPage.description
+  description "How long each kind of personal data is kept after its purpose ends, and on what basis. A request to erase keeps what the law still needs, restricted, until its period ends — then the daily purge removes it." => "مدة الاحتفاظ بكل نوع من البيانات الشخصية بعد انتهاء الغرض منه، وعلى أي أساس. طلب المحو يُبقي ما لا يزال القانون يحتاجه، مع تقييد معالجته، حتى تنتهي مدته، ثم يزيله الحذف اليومي.";
+  /// RetentionEditor · a description
+  /// shown through SettingsSection.description
+  /// beside: "Plan review", "Retention saved."
+  description "Set every bookkeeping category to a country's statutory period at once — recorded, and yours to verify with your adviser." => "اضبط كل فئات المحاسبة على المدة القانونية لبلد ما دفعة واحدة. يُسجَّل ذلك، وعليك التحقق منه مع مستشارك.";
+  /// RetentionEditor · a description
+  /// placeholders: {value} = … (string)
+  /// shown through SettingsSection.description
+  /// beside: "Bookkeeping preset", "Retention saved."
+  description "Which privacy-request plans wait for approval before they run.{value}" => "أي خطط طلبات الخصوصية تنتظر الموافقة قبل تنفيذها.{value}";
+  /// RetentionEditor · a label (a field, a list item, a menu entry) · at most ~18 characters
+  /// shown through Field.label
+  label "Jurisdiction" => "الولاية القضائية";
+  /// RetentionEditor · a label (a field, a list item, a menu entry) · at most ~17 characters
+  /// shown through NumberField.label
+  label "Months kept" => "أشهر الاحتفاظ";
+  /// RetentionEditor · a label (a field, a list item, a menu entry) · at most ~27 characters
+  /// shown through Badge.label
+  /// beside: "Confirm"
+  label "Needs your decision" => "يحتاج إلى قرارك";
+  /// RetentionEditor · placeholder text inside an empty field · at most ~8 characters
+  /// shown through Field.placeholder
+  placeholder "SE" => "SE";
+  /// RetentionEditor · placeholder text inside an empty field · at most ~54 characters
+  /// shown through Field.placeholder
+  placeholder "The statute or decision that allows it" => "القانون أو القرار الذي يسمح بذلك";
+  /// RetentionEditor · text on the page
+  /// shown through done
+  text " categories" => " فئات";
+  /// RetentionEditor · text on the page
+  /// shown through done
+  text " category" => " فئة";
+  /// RetentionEditor · text on the page
+  /// placeholders: {r.MinMonths} = r.MinMonths (int) — {r.MinMonths} is a count: give one text per plural form
+  /// shown through Limits()
+  text "At least {r.MinMonths} months without a stated reason" => "{r.MinMonths} شهرًا على الأقل دون ذكر سبب";
+  /// RetentionEditor · text on the page
+  /// placeholders: {s.Jurisdiction} = s.Jurisdiction (string), {s.Reason} = s.Reason (string)
+  text "Outside the kit's limits for {s.Jurisdiction}: {s.Reason}" => "خارج حدود الحزمة في {s.Jurisdiction}: {s.Reason}";
+  /// RetentionEditor · text on the page
+  /// beside: "160px"
+  text "Outside the kit's limits only for a jurisdiction that allows it — say which, and why. Both are recorded." => "خارج حدود الحزمة فقط لولاية قضائية تسمح بذلك: اذكر أيّها ولماذا. يُسجَّل الأمران كلاهما.";
+  /// RetentionEditor · text on the page
+  /// shown through Refusal()
+  text "Outside the kit's limits, a period is saved only with the jurisdiction that allows it and the reason." => "خارج حدود الحزمة، لا تُحفظ المدة إلا مع الولاية القضائية التي تسمح بها والسبب.";
+  /// RetentionEditor · text on the page
+  /// shown through SaveBar.saved
+  /// beside: "Bookkeeping preset", "Plan review"
+  text "Retention saved." => "تم حفظ مدة الاحتفاظ.";
+  /// RetentionEditor · text on the page
+  /// shown through EmptyState.body
+  text "The app and its kits declare what personal data they hold; each kind appears here with its period." => "يعلن التطبيق وأدواته عن البيانات الشخصية التي يحتفظون بها؛ ويظهر كل نوع هنا مع مدته.";
+  /// RetentionEditor · text on the page
+  /// placeholders: {p.Jurisdiction} = p.Jurisdiction (string), {changes.Count} = changes.Count (int), {value} = … (string) — {changes.Count} is a count: give one text per plural form
+  /// shown through done
+  text "{p.Jurisdiction} preset set on {changes.Count}{value} — Save keeps it." => "طُبّق إعداد {p.Jurisdiction} المسبق على {changes.Count}{value}. يحفظه زر الحفظ.";
+  /// RetentionEditor · text on the page
+  /// placeholders: {r.MinMonths} = r.MinMonths (int), {r.MaxMonths} = r.MaxMonths (int) — {r.MinMonths} is a count: give one text per plural form
+  /// shown through Limits()
+  text "{r.MinMonths}–{r.MaxMonths} months without a stated reason" => "{r.MinMonths}–{r.MaxMonths} شهرًا دون ذكر سبب";
+  /// RetentionEditor · a title
+  /// shown through SettingsSection.title
+  /// beside: "Plan review", "Retention saved."
+  title "Bookkeeping preset" => "الإعداد المسبق للمحاسبة";
+  /// RetentionEditor · a title
+  /// shown through SettingsPage.title
+  /// also in PrivacySettings /settings/privacy
+  title "Data retention" => "الاحتفاظ بالبيانات";
+  /// RetentionEditor · a title
+  /// shown through EmptyState.title
+  title "Nothing declared yet" => "لم يُعلَن عن شيء بعد";
+  /// RetentionEditor · a title
+  /// shown through SettingsSection.title
+  /// beside: "Bookkeeping preset", "Retention saved."
+  title "Plan review" => "مراجعة الخطط";
+
+  // ── RetentionLimitRefusal ──
+  /// RetentionLimitRefusal · text on the page
+  /// placeholders: {label} = label (string), {limit} = limit (string), {minMonths} = minMonths (int), {maxMonths} = maxMonths (int) — {minMonths} is a count: give one text per plural form
+  /// shown through RetentionLimitRefusal()
+  text "'{label}' cannot be kept {limit} without saying why: the kit declares {minMonths}–{maxMonths} months as the range no law it knows of asks you to leave. Set it outside only for a jurisdiction that allows it — state the jurisdiction and the reason, and both are recorded." => { zero: "لا يمكن الاحتفاظ بـ '{label}' {limit} دون ذكر السبب: تحدّد الحزمة {minMonths}–{maxMonths} شهرًا نطاقًا لا يطلب منك أي قانون تعرفه الخروج عنه. اضبطه خارجه فقط لولاية قضائية تسمح بذلك، واذكر الولاية والسبب، فيُسجَّل الأمران كلاهما.", one: "لا يمكن الاحتفاظ بـ '{label}' {limit} دون ذكر السبب: تحدّد الحزمة {minMonths}–{maxMonths} شهرًا نطاقًا لا يطلب منك أي قانون تعرفه الخروج عنه. اضبطه خارجه فقط لولاية قضائية تسمح بذلك، واذكر الولاية والسبب، فيُسجَّل الأمران كلاهما.", two: "لا يمكن الاحتفاظ بـ '{label}' {limit} دون ذكر السبب: تحدّد الحزمة {minMonths}–{maxMonths} شهرًا نطاقًا لا يطلب منك أي قانون تعرفه الخروج عنه. اضبطه خارجه فقط لولاية قضائية تسمح بذلك، واذكر الولاية والسبب، فيُسجَّل الأمران كلاهما.", few: "لا يمكن الاحتفاظ بـ '{label}' {limit} دون ذكر السبب: تحدّد الحزمة {minMonths}–{maxMonths} شهرًا نطاقًا لا يطلب منك أي قانون تعرفه الخروج عنه. اضبطه خارجه فقط لولاية قضائية تسمح بذلك، واذكر الولاية والسبب، فيُسجَّل الأمران كلاهما.", many: "لا يمكن الاحتفاظ بـ '{label}' {limit} دون ذكر السبب: تحدّد الحزمة {minMonths}–{maxMonths} شهرًا نطاقًا لا يطلب منك أي قانون تعرفه الخروج عنه. اضبطه خارجه فقط لولاية قضائية تسمح بذلك، واذكر الولاية والسبب، فيُسجَّل الأمران كلاهما.", other: "لا يمكن الاحتفاظ بـ '{label}' {limit} دون ذكر السبب: تحدّد الحزمة {minMonths}–{maxMonths} شهرًا نطاقًا لا يطلب منك أي قانون تعرفه الخروج عنه. اضبطه خارجه فقط لولاية قضائية تسمح بذلك، واذكر الولاية والسبب، فيُسجَّل الأمران كلاهما." };
+  /// RetentionLimitRefusal · text on the page
+  /// shown through RetentionLimitRefusal()
+  text "A period is a number of months, 0 or more." => "المدة عدد من الأشهر، صفر أو أكثر.";
+
+  // ── RetentionPresets ──
+  /// RetentionPresets · text on the page
+  /// shown through RetentionPreset.Statute
+  text "AWR art. 52" => null;
+  /// RetentionPresets · text on the page
+  /// shown through RetentionPreset.Statute
+  text "Bogføringsloven" => null;
+  /// RetentionPresets · text on the page
+  /// shown through RetentionPreset.Statute
+  text "Bokföringslagen (1999:1078) 7 kap. 2 §" => null;
+  /// RetentionPresets · text on the page
+  /// shown through RetentionPreset.Statute
+  text "Code de commerce L123-22" => null;
+  /// RetentionPresets · text on the page
+  /// shown through RetentionPreset.Statute
+  text "Companies Act 2006 s.388 / HMRC (private companies, tax records)" => null;
+  /// RetentionPresets · text on the page
+  /// shown through RetentionPreset.Statute
+  text "HGB § 257, AO § 147 (books and annual accounts)" => null;
+  /// RetentionPresets · text on the page
+  /// shown through RetentionPreset.Statute
+  text "Kirjanpitolaki (books)" => null;
+
+  // ── RetentionSentence ──
+  /// RetentionSentence · text on the page
+  text "Erased on request" => "تُمحى عند الطلب";
+  /// RetentionSentence · text on the page
+  /// placeholders: {r.RetainedMonths} = r.RetainedMonths (int), {FromPhrase} = FromPhrase(…) (string) — {r.RetainedMonths} is a count: give one text per plural form
+  text "Kept {r.RetainedMonths} months {FromPhrase}" => { zero: "لا يُحتفظ بها {FromPhrase}", one: "يُحتفظ بها شهرًا واحدًا {FromPhrase}", two: "يُحتفظ بها شهرين {FromPhrase}", few: "يُحتفظ بها {r.RetainedMonths} أشهر {FromPhrase}", many: "يُحتفظ بها {r.RetainedMonths} شهرًا {FromPhrase}", other: "يُحتفظ بها {r.RetainedMonths} شهر {FromPhrase}" };
+
+  // ── StandsFor ──
+  /// StandsFor · a label (a field, a list item, a menu entry) · at most ~14 characters
+  /// shown through StandsFor()
+  label "Answered" => "تم الرد";
+  /// StandsFor · a label (a field, a list item, a menu entry) · at most ~40 characters
+  /// shown through StandsFor()
+  label "Partly done — the rest waits" => "أُنجز جزئيًا، والباقي ينتظر";
+  /// StandsFor · a label (a field, a list item, a menu entry) · at most ~34 characters
+  /// shown through StandsFor()
+  label "Received — being handled" => "تم الاستلام، قيد المعالجة";
+
+  // ── WhatACopyIs ──
+  /// WhatACopyIs · text on the page
+  /// shown through WhatACopyIs()
+  text "You get one download, once, for seven days: a page you can open in any browser, with a section for each kind of data below — what we hold, why we keep it and for how long — and the same data as a file another service can read (JSON)." => "تحصل على تنزيل واحد، مرة واحدة، خلال سبعة أيام: صفحة يمكنك فتحها في أي متصفح، فيها قسم لكل نوع من البيانات أدناه، يبيّن ما نحتفظ به وسبب الاحتفاظ به ومدته، والبيانات نفسها في ملف يمكن لخدمة أخرى قراءته (JSON).";
+
+  // ── WhatAMoveIs ──
+  /// WhatAMoveIs · text on the page
+  /// shown through WhatAMoveIs()
+  text "You get one download, once, for seven days: what you gave us, as a file another service can read (JSON), and a page you can open in any browser to see what is in it." => "تحصل على تنزيل واحد، مرة واحدة، خلال سبعة أيام: ما قدّمته لنا، في ملف يمكن لخدمة أخرى قراءته (JSON)، وصفحة يمكنك فتحها في أي متصفح لترى ما فيه.";
+
+  // ── WhatAskingDoes ──
+  /// WhatAskingDoes · text on the page
+  /// shown through KeptCategory.Kept
+  text "A copy, with why we keep it and for how long." => null;
+  /// WhatAskingDoes · text on the page
+  /// shown through KeptCategory.Kept
+  text "Erased." => null;
+  /// WhatAskingDoes · text on the page
+  /// placeholders: {PeriodWords} = PeriodWords(…) (string)
+  /// shown through KeptCategory.Kept
+  text "Kept {PeriodWords}, used for this purpose only, then deleted." => null;
+  /// WhatAskingDoes · text on the page
+  /// shown through KeptCategory.Kept
+  text "Kept, but used for nothing until you say so." => null;
+}

@@ -1,0 +1,328 @@
+// Requests as inbox work, and a person asking for themselves: proven NOW, asked through the kit's own run, answered only
+// at the address the proof reached — and a request staff filed, which records how they checked and mails nobody.
+
+using PrivacyKitTests;
+using Osysharp.Identity;
+using Osysharp.Inbox;
+using Osysharp.Mail;
+using Osysharp.Privacy;
+
+PrivacyRequest RequestNamed(Guid id) { return PrivacyRequest.Single(x => x.Id == id); }
+
+/// Ann proves it is her and asks — answers the ask, as filed by the kit's run.
+PrivacyAsk AnnAsks(RequestKind right) {
+  var proof = ProveItIsMe();
+  Assert.Equal("", ConfirmItIsMe(proof.Id, "123456"));
+  var ask = AskAboutMe(right, proof.Id);
+  Workflow.Settle(ask);
+  return PrivacyAsk.Single(a => a.Id == ask.Id);
+}
+
+/// The mail to `to` whose subject starts `subject`, as the sign-in flow reads the outbox — "" when there is none.
+string MailTo(string to, string subject) {
+  var text = "";
+  runas (AuthBootstrap) {
+    var m = OutgoingMail.Where(x => x.To == to && x.Subject.StartsWith(subject)).OrderByDescending(x => x.CreatedAt).FirstOrDefault();
+    text = m == null ? "" : (m.Text ?? "");
+  }
+  return text;
+}
+
+int MailsTo(string to) {
+  var n = 0;
+  runas (AuthBootstrap) { n = OutgoingMail.Count(x => x.To.Contains(to)); }
+  return n;
+}
+
+// ── on the inbox ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+[Test(Desk)]
+[runas(Ada)]
+void a_request_is_inbox_work_in_the_privacy_queue_due_one_calendar_month_after_it_arrived() {
+  TestClock.Set(new DateTime(2026, 1, 31, 9, 0, 0));
+  var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails,
+                      "Matched the order number and the address on it.");
+  Workflow.Settle(RequestNamed(r.Id));
+  var filed = RequestNamed(r.Id);
+  Assert.Equal("Privacy", filed.Queue!.Name);
+  Assert.Equal("Erasure request", filed.Title);
+  // 31 January → 28 February 2026, a Saturday → Monday 2 March: the inbox's own clock counts to that instant.
+  Assert.Equal(new DateTime(2026, 3, 2, 9, 0, 0), filed.DueAt);
+  Assert.Equal(new DateTime(2026, 3, 2, 9, 0, 0), SlaClock.Single(c => c.Item.Id == r.Id && c.Metric == SlaMetric.Resolution).DueAt);
+  Assert.Equal(IdentityCheck.KnownDetails, filed.Check);
+  Assert.Equal("Matched the order number and the address on it.", filed.Note);
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_request_goes_at_risk_on_the_inbox_and_its_answer_meets_the_promise() {
+  // On a fixed day: the promise is one calendar month, moved off a weekend, and a request is at risk at three quarters
+  // of it — so how far 24 days goes depends on the month. 10 March → Friday 10 April is 31 days, at risk from day 23¼.
+  // (Unpinned, it failed from 7 October 2026: due Monday 9 November, 33 days, at risk only from day 24¾.)
+  TestClock.Set(new DateTime(2026, 3, 10, 9, 0, 0));
+  var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order.");
+  TestClock.Advance(TimeSpan.FromDays(24));
+  Workflow.Settle(RequestNamed(r.Id));
+  Assert.Equal(SlaState.AtRisk, RequestNamed(r.Id).Sla);
+  ApproveRequest(RequestNamed(r.Id));
+  Workflow.Settle(RequestNamed(r.Id));
+  var done = RequestNamed(r.Id);
+  Assert.Equal(RequestState.Done, done.State);
+  Assert.Equal(Handling.Done, done.Handling);
+  Assert.Equal(ClockOutcome.Met, SlaClock.Single(c => c.Item.Id == r.Id && c.Metric == SlaMetric.Resolution).Outcome);
+}
+
+[Test(Desk)]
+void only_the_people_managing_privacy_see_a_request_on_the_inbox() {
+  runas (Ada) { FileRequest(RequestKind.Access, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order."); }
+  // Raj works the inbox — and never sees a privacy request, in a list or a count.
+  runas (Raj) {
+    Assert.Equal(0, PrivacyRequest.Count());
+    Assert.Equal(0, WorkItem.Count());
+    // …and the inbox's board — every list and count is built on it — holds no row for it either.
+    Assert.Equal(0, Workflow.WorkByItem<WorkItem>().ToList().Count);
+  }
+  runas (Max) { Assert.Equal(1, PrivacyRequest.Count()); }
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void staff_say_how_they_checked_it_is_the_person() {
+  var e = Assert.Throws<ValidationException>(() => FileRequest(RequestKind.Access, null, "ann@customer.test", IdentityCheck.KnownDetails, " "));
+  Assert.Contains("how you checked", e.Message);
+  // A step-up is the person's own proof, never something staff can claim for them.
+  Assert.Throws<ValidationException>(() => FileRequest(RequestKind.Access, null, "ann@customer.test", IdentityCheck.StepUp, "They said so."));
+  Assert.Equal(0, PrivacyRequest.Count());
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_request_staff_filed_is_never_mailed_to_the_address_they_typed() {
+  var r = FileRequest(RequestKind.Access, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order.");
+  ApproveRequest(r);
+  var done = RequestNamed(r.Id);
+  Assert.Equal(RequestState.Done, done.State);
+  Assert.Equal("", done.DeliverTo);
+  Assert.Null(done.DeliveredAt);
+  Assert.Equal(0, MailsTo("ann@customer.test"));
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_failed_request_stays_owed_on_the_inbox_and_runs_again_once_fixed() {
+  var r = FileRequest(RequestKind.Erasure, null, "cy@customer.test", IdentityCheck.KnownDetails, "Matched the order.");
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Failed, RequestNamed(r.Id).State);
+  Assert.NotEqual(Handling.Done, RequestNamed(r.Id).Handling);
+
+  Customer.Single(c => c.Number == "C-3").RefusesErasure = false;    // the ledger was unlocked
+  UnitOfWork.Commit();
+  RetryRequest(RequestNamed(r.Id));
+  Assert.Equal(RequestState.Done, RequestNamed(r.Id).State);
+  Assert.Equal(Handling.Done, RequestNamed(r.Id).Handling);
+  Assert.Equal(0, Customer.Count(c => c.Number == "C-3"));
+}
+
+// ── a person asking for themselves ────────────────────────────────────────────────────────────────────────────────
+
+[Test(Desk)]
+void a_person_asks_for_a_copy_and_it_reaches_only_the_address_they_proved() {
+  PrivacyAsk? ask = null;
+  runas (Ann) { ask = AnnAsks(RequestKind.Access); Assert.NotNull(ask!.Request); }
+  runas (Ada) {
+    var r = RequestNamed(ask!.Request!.Id);
+    Assert.Equal("ann@customer.test", r.SubjectEmail);
+    Assert.Equal("ann@customer.test", r.DeliverTo);
+    Assert.Equal(IdentityCheck.StepUp, r.Check);
+    Assert.Equal("self", r.Channel);
+    Assert.Equal(RequestState.Review, r.State);                     // every plan is reviewed here (`ReviewPlans`)
+    ApproveRequest(r);
+  }
+  var mail = MailTo("ann@customer.test", "Our answer to your request");
+  Assert.Contains("What we hold about you:", mail);
+  Assert.Contains("Your data is ready on your privacy page", mail);
+  Assert.Equal(1, MailsTo("ann@customer.test"));
+  runas (Ann) {
+    var mine = MyRequests();
+    Assert.Equal(1, mine.Count);
+    Assert.Equal(RequestState.Done, mine[0].State);
+    Assert.True(ExportReady(mine[0]));
+    var links = FetchMyExport(mine[0]);
+    Assert.NotEqual("", links.Readable);
+    Assert.NotEqual("", links.Data);
+    // Once.
+    var e = Assert.Throws<ValidationException>(() => FetchMyExport(MyRequests()[0]));
+    Assert.Contains("already downloaded", e.Message);
+  }
+}
+
+/// Bo has no account. He proves the address he asks about — a code to it, confirmed from his own browser — and the
+/// request is about that address alone. Another browser holding the proof's id files nothing with it.
+[Test(Desk)]
+void a_customer_with_no_account_proves_their_address_and_asks_about_it() {
+  var proof = Guid.Empty;
+  runas (new Visitor { Id = "v-bo" }) {
+    Assert.True(CanAskWithoutAnAccount());
+    proof = ProveAnAddress("Bo@Customer.test").Id;
+    Assert.Equal("", ConfirmAnAddress(proof, "654321"));
+  }
+  runas (new Visitor { Id = "v-mallory" }) {
+    var stolen = AskAboutAnAddress(RequestKind.Access, proof);
+    Workflow.Settle(stolen);
+    Assert.Null(PrivacyAsk.Single(a => a.Id == stolen.Id).Request);
+  }
+  runas (new Visitor { Id = "v-bo" }) {
+    var ask = AskAboutAnAddress(RequestKind.Access, proof);
+    Workflow.Settle(ask);
+    Assert.NotNull(PrivacyAsk.Single(a => a.Id == ask.Id).Request);
+  }
+  runas (Ada) {
+    var r = PrivacyRequest.Single();
+    Assert.Equal("bo@customer.test", r.SubjectEmail);
+    Assert.Null(r.SubjectAccount);
+    Assert.Equal(IdentityCheck.CodeToTheirAddress, r.Check);
+    Assert.Equal("bo@customer.test", r.DeliverTo);
+  }
+}
+
+[Test(Desk)]
+void an_ask_without_a_fresh_unspent_proof_files_nothing() {
+  runas (Ann) {
+    // Never confirmed.
+    var unconfirmed = ProveItIsMe();
+    var ask = AskAboutMe(RequestKind.Erasure, unconfirmed.Id);
+    Workflow.Settle(ask);
+    Assert.Equal(AskState.Refused, PrivacyAsk.Single(a => a.Id == ask.Id).State);
+    Assert.Contains("could not confirm it was you", PrivacyAsk.Single(a => a.Id == ask.Id).Problem);
+
+    // Confirmed, but eleven minutes ago.
+    var stale = ProveItIsMe();
+    ConfirmItIsMe(stale.Id, "123456");
+    TestClock.Advance(TimeSpan.FromMinutes(11));
+    var late = AskAboutMe(RequestKind.Erasure, stale.Id);
+    Workflow.Settle(late);
+    Assert.Equal(AskState.Refused, PrivacyAsk.Single(a => a.Id == late.Id).State);
+
+    // Confirmed and used once already.
+    var once = AnnAsks(RequestKind.Access);
+    Assert.NotNull(once.Request);
+    var again = AskAboutMe(RequestKind.Erasure, once.Proof);
+    Workflow.Settle(again);
+    Assert.Equal(AskState.Refused, PrivacyAsk.Single(a => a.Id == again.Id).State);
+  }
+  runas (Ada) { Assert.Equal(1, PrivacyRequest.Count()); }
+}
+
+[Test(Desk)]
+void a_request_is_about_its_askers_own_proven_address_only() {
+  ProofStarted? bos = null;
+  runas (Raj) { bos = ProveItIsMe(); ConfirmItIsMe(bos!.Id, "123456"); }
+  runas (Ann) {
+    // Somebody else's proof proves nothing for Ann.
+    var ask = AskAboutMe(RequestKind.Access, bos!.Id);
+    Workflow.Settle(ask);
+    Assert.Equal(AskState.Refused, PrivacyAsk.Single(a => a.Id == ask.Id).State);
+    var mine = AnnAsks(RequestKind.Erasure);
+    Assert.NotNull(mine.Request);
+  }
+  runas (Ada) {
+    var r = PrivacyRequest.Single();
+    Assert.Equal("ann@customer.test", r.SubjectEmail);
+    Assert.Equal(PrivacyAsk.Single(a => a.Request != null).Requester.Id, r.SubjectAccount);
+  }
+}
+
+[Test(Desk)]
+void a_person_cannot_write_a_request_or_its_subject() {
+  runas (Ann) {
+    var ann = Person.Single(p => p.Email == "ann@customer.test");
+    var raj = Person.Single(p => p.Email == "raj@desk.test");
+    Assert.Denied(() => {
+      new PrivacyRequest { Right = RequestKind.Access, Title = "Access", Requester = ann, SubjectEmail = "bo@customer.test",
+                           DeliverTo = "mallory@evil.test", DueAt = DateTime.UtcNow.AddYears(1) };
+      UnitOfWork.Commit();
+    });
+    // An ask in somebody else's name, or one already "filed".
+    Assert.Denied(() => { new PrivacyAsk { Right = RequestKind.Access, Requester = raj, Proof = Guid.NewGuid() }; UnitOfWork.Commit(); });
+    Assert.Denied(() => { new PrivacyAsk { Right = RequestKind.Access, Requester = ann, Proof = Guid.NewGuid(), Problem = "x" }; UnitOfWork.Commit(); });
+    // Their own request reads — but never the staff side of it.
+    var mine = AnnAsks(RequestKind.Access);
+    var r = MyRequests().Single();
+    Assert.Equal(RequestKind.Access, r.Right);
+    Assert.Null(r.Note);
+    Assert.Null(r.SubjectKey);
+  }
+}
+
+[Test(Desk)]
+void an_export_nobody_fetched_is_deleted_after_seven_days() {
+  PrivacyAsk? ask = null;
+  runas (Ann) { ask = AnnAsks(RequestKind.Access); }
+  runas (Ada) { ApproveRequest(RequestNamed(ask!.Request!.Id)); }
+  TestClock.Advance(TimeSpan.FromDays(8));
+  runas (Ada) {
+    PurgeNow();
+    Assert.Equal("", RequestNamed(ask!.Request!.Id).ExportPath);
+  }
+  runas (Ann) {
+    var e = Assert.Throws<ValidationException>(() => FetchMyExport(MyRequests()[0]));
+    Assert.Contains("expired", e.Message);
+  }
+}
+
+[Test(Desk)]
+void an_extension_needs_its_reason_moves_the_deadline_and_tells_the_person() {
+  TestClock.Set(new DateTime(2026, 3, 10, 9, 0, 0));
+  PrivacyAsk? ask = null;
+  runas (Ann) { ask = AnnAsks(RequestKind.Access); }
+  runas (Ada) {
+    var r = RequestNamed(ask!.Request!.Id);
+    Assert.Throws<ValidationException>(() => ExtendRequest(r, 2, " "));
+    Assert.Throws<ValidationException>(() => ExtendRequest(r, 3, "Ten years of orders."));
+    ExtendRequest(r, 2, "Your request covers ten years of orders.");
+    Assert.Equal(new DateTime(2026, 6, 10, 9, 0, 0), RequestNamed(r.Id).DueAt);
+    Assert.Equal(new DateTime(2026, 6, 10, 9, 0, 0), SlaClock.Single(c => c.Item.Id == r.Id && c.Metric == SlaMetric.Resolution).DueAt);
+  }
+  Assert.Contains("Your request covers ten years of orders.", MailTo("ann@customer.test", "Your request about your data will take longer"));
+}
+
+[Test(Desk)]
+void an_extension_is_refused_after_the_first_month() {
+  PrivacyAsk? ask = null;
+  runas (Ann) { ask = AnnAsks(RequestKind.Access); }
+  TestClock.Advance(TimeSpan.FromDays(35));
+  runas (Ada) {
+    var e = Assert.Throws<ValidationException>(() => ExtendRequest(RequestNamed(ask!.Request!.Id), 1, "Busy."));
+    Assert.Contains("first month is over", e.Message);
+  }
+}
+
+[Test(Desk)]
+[runas(Ann)]
+void a_person_reads_what_is_kept_about_people_and_what_asking_would_do() {
+  var kept = WhatWeKeep();
+  Assert.Contains("If you ask us to erase it, it is kept for 84 months from the end of the calendar year its fiscal year ended in",
+    kept.Single(k => k.Key == "app.vouchers").Kept);
+  Assert.Equal("Erased when you ask us to.", kept.Single(k => k.Key == "app.notes").Kept);
+  var erasing = WhatAskingDoes(RequestKind.Erasure);
+  Assert.Equal("Erased.", erasing.Single(k => k.Key == "app.account").Kept);
+  Assert.Equal(1, WhatAskingDoes(RequestKind.Portability).Count);    // only the portable category
+}
+
+[Test(Desk)]
+void a_person_erasing_themselves_is_told_what_was_erased_and_the_request_keeps_no_copy_of_their_address() {
+  PrivacyAsk? ask = null;
+  runas (Ann) { ask = AnnAsks(RequestKind.Erasure); Assert.NotNull(ask!.Request); }
+  runas (Ada) {
+    ApproveRequest(RequestNamed(ask!.Request!.Id));
+    var r = RequestNamed(ask!.Request!.Id);
+    Assert.Equal(RequestState.Done, r.State);
+    Assert.Null(r.SubjectEmail);
+    Assert.Equal("", r.DeliverTo);
+    Assert.NotNull(r.DeliveredAt);
+    Assert.Equal(Security.Fingerprint("ann@customer.test"), r.SubjectKey);
+  }
+  var mail = MailTo("ann@customer.test", "Our answer to your request");
+  Assert.Contains("What we erased: Your customer account", mail);
+  Assert.Contains("What we keep, and why: Your name and email address on vouchers we issued", mail);
+}

@@ -1,0 +1,111 @@
+// A request: its deadline, its plan, its run — erase, keep restricted until the right day, wait on a block, fail loudly —
+// and what the person is told.
+
+using PrivacyKitTests;
+using Osysharp.Privacy;
+
+[Test]
+void the_deadline_is_one_calendar_month_moved_past_a_weekend() {
+  // 31 January → there is no 31 February → 28 February 2026, a Saturday → Monday 2 March.
+  Assert.Equal(new DateTime(2026, 3, 2, 9, 0, 0), StatutoryDue(new DateTime(2026, 1, 31, 9, 0, 0)));
+  // A weekday stays where it falls.
+  Assert.Equal(new DateTime(2026, 4, 10, 9, 0, 0), StatutoryDue(new DateTime(2026, 3, 10, 9, 0, 0)));
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void an_erasure_plans_erase_for_the_account_and_notes_and_keeps_the_voucher_restricted() {
+  var r = FileRequest(RequestKind.Erasure, null, "Ann@Customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  var plan = PlanLine.Where(l => l.Request == r).ToList();
+  Assert.Equal(PlanOutcome.Erase, plan.Single(l => l.Category == "app.account").Outcome);
+  Assert.Equal(PlanOutcome.Erase, plan.Single(l => l.Category == "app.notes").Outcome);
+  Assert.Equal(2, plan.Single(l => l.Category == "app.notes").Items);
+  Assert.Equal(PlanOutcome.Restrict, plan.Single(l => l.Category == "app.vouchers").Outcome);
+  Assert.Equal(PlanOutcome.NotHeld, plan.Single(l => l.Category == "privacy.records").Outcome);
+  // Filed by staff on Ann's behalf: it waits for approval.
+  Assert.Equal(RequestState.Review, PrivacyRequest.Single(x => x.Id == r.Id).State);
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void an_approved_erasure_erases_keeps_the_voucher_for_the_books_until_the_right_day_and_says_so() {
+  var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  var done = PrivacyRequest.Single(x => x.Id == r.Id);
+  Assert.Equal(RequestState.Done, done.State);
+  Assert.Equal(0, Customer.Count(c => c.Number == "C-1"));
+  Assert.Equal(0, Note.Count());
+  // The voucher is kept — and absent from every ordinary read, an admin's included…
+  Assert.Equal(0, Voucher.Count());
+  // …while the bookkeeping export, the one purpose read, still finds it.
+  Assert.Equal("V-1 120 Ann Archer", VoucherForTheBooks("V-1"));
+  Assert.Equal(new DateTime(2034, 1, 1), PlanLine.Single(l => l.Request == r && l.Category == "app.vouchers").Until);
+  Assert.Contains("What we erased: Your customer account: your name and email address; What our staff wrote about your requests.", done.Response);
+  Assert.Contains("What we keep, and why: Your name and email address on vouchers we issued, for the bookkeeping law (Bokföringslagen 7 kap. 2 §), until 31 December 2033.", done.Response);
+  Assert.Contains("complain to the supervisory authority: IMY, imy.se", done.Response);
+  // A finished erasure keeps no copy of the address it erased — only the fingerprint that proves who asked.
+  Assert.Null(done.SubjectEmail);
+  Assert.Equal(Security.Fingerprint("ann@customer.test"), done.SubjectKey);
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_blocked_category_waits_and_runs_when_its_block_clears() {
+  var r = FileRequest(RequestKind.Erasure, null, "bo@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Waiting, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  var line = PlanLine.Single(l => l.Request == r && l.Category == "app.account");
+  Assert.Equal(PlanOutcome.Blocked, line.Outcome);
+  Assert.Equal("an order is on its way to you", line.Reason);
+  Assert.Contains("Not yet: Your customer account: your name and email address — an order is on its way to you.",
+    PrivacyRequest.Single(x => x.Id == r.Id).Response);
+
+  Customer.Single(c => c.Number == "C-2").OrderOnItsWay = false;   // delivered
+  UnitOfWork.Commit();
+  RecheckWaiting();
+
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.Equal(0, Customer.Count(c => c.Number == "C-2"));
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_holder_that_fails_fails_the_request_and_says_which() {
+  var r = FileRequest(RequestKind.Erasure, null, "cy@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  var failed = PrivacyRequest.Single(x => x.Id == r.Id);
+  Assert.Equal(RequestState.Failed, failed.State);
+  Assert.Equal("PrivacyKitTests.Desk could not erase 'app.account': the ledger is locked", failed.Problem);
+}
+
+// ⭐ One row, two erasures: the holder written from `[PersonalData]` blanks a visit's subject, and the desk's own holder
+// writes what stands there instead. Both are erase lines, so nothing but the run's order decides which lands last — and
+// the generic blank must never land after the desk's word. Six people, so a run that left it to chance could not pass.
+[Test(Desk)]
+[runas(Ada)]
+void a_holders_own_word_on_a_row_stands_over_the_blanking_of_its_personal_fields() {
+  List<Guid> visits = [];
+  for (var i = 0; i < 6; i++) {
+    var c = new Customer { Number = $"V-{i}", Name = $"Visitor {i}", Email = $"visitor{i}@customer.test" };
+    new Note { Customer = c, Text = $"Asked about parcel KESTREL{i}." };
+    visits.Add(new Visit { Customer = c, Subject = $"Where is parcel KESTREL{i}?" }.Id);
+  }
+  UnitOfWork.Commit();
+  for (var i = 0; i < 6; i++) {
+    var r = FileRequest(RequestKind.Erasure, null, $"visitor{i}@customer.test", IdentityCheck.KnownDetails, "Matched the address.");
+    Assert.Equal(PlanOutcome.Erase, PlanLine.Single(l => l.Request == r && l.Category == "app.visits").Outcome);
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  foreach (var id in visits) {
+    // The visit stays the desk's record, and says it was erased — not blank, and never the customer's words.
+    Assert.Equal("Erased with the customer's notes", Visit.Single(v => v.Id == id).Subject);
+  }
+  Assert.NoTraceOf("KESTREL");
+}
+
+[Test(Desk)]
+[runas(Raj)]
+void only_the_people_managing_privacy_file_a_request() {
+  Assert.Throws<NotAuthorized>(() => FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it."));
+}

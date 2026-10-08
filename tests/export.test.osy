@@ -1,0 +1,44 @@
+// Access and portability: what we hold about a person, each category with why and for how long.
+
+using PrivacyKitTests;
+using Osysharp.Privacy;
+
+[Test(Desk)]
+[runas(Ada)]
+void an_access_export_carries_every_category_with_its_purpose_basis_and_retention() {
+  var r = FileRequest(RequestKind.Access, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  var export = ExportOf(PrivacyRequest.Single(x => x.Id == r.Id));
+  Assert.Contains("\"category\":\"app.vouchers\"", export);
+  Assert.Contains("\"basis\":\"LegalObligation\"", export);
+  Assert.Contains("Kept 84 months from the end of the calendar year its fiscal year ended in", export);
+  Assert.Contains("Ann was refunded.", export);
+  Assert.Contains("What we hold about you:", PrivacyRequest.Single(x => x.Id == r.Id).Response);
+  // Nothing was erased by asking.
+  Assert.Equal(1, Customer.Count(c => c.Number == "C-1"));
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_portability_export_carries_only_portable_categories() {
+  var r = FileRequest(RequestKind.Portability, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  var export = ExportOf(PrivacyRequest.Single(x => x.Id == r.Id));
+  Assert.Contains("\"category\":\"app.account\"", export);
+  Assert.Contains("Ann Archer", export);
+  Assert.DoesNotContain("app.notes", export);
+  Assert.DoesNotContain("app.vouchers", export);
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void an_export_file_is_written_about_its_request() {
+  var r = FileRequest(RequestKind.Access, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  var stored = PrivacyRequest.Single(x => x.Id == r.Id);
+  // The data file and its readable copy, both about the request — both go when it goes.
+  Assert.Equal(2, File.About(stored).Count);
+  Assert.Contains(stored.ExportPath, File.About(stored));
+  Assert.Contains(ReadablePathOf(stored.ExportPath), File.About(stored));
+}

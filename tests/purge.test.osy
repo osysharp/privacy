@@ -1,0 +1,44 @@
+// Nothing is kept past its period — the daily purge, recorded.
+
+using PrivacyKitTests;
+using Osysharp.Privacy;
+
+[Test(Desk)]
+[runas(Ada)]
+void a_kept_voucher_is_gone_the_day_after_its_period_ends() {
+  var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+
+  TestClock.Set(new DateTime(2033, 12, 31, 23, 0, 0));   // the last day it is kept
+  PurgeNow();
+  Assert.Equal(0, PurgeRecord.Count(p => p.Category == "app.vouchers" && p.Count > 0));
+  Assert.Equal("V-1 120 Ann Archer", VoucherForTheBooks("V-1"));
+
+  TestClock.Set(new DateTime(2034, 1, 1, 0, 30, 0));     // the first day it is not
+  PurgeNow();
+  Assert.Equal(1, PurgeRecord.Count(p => p.Category == "app.vouchers" && p.Count == 1));
+  Assert.Equal("", VoucherForTheBooks("V-1"));
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_finished_request_is_purged_with_its_inbox_history_once_its_own_period_ends() {
+  var r = FileRequest(RequestKind.Access, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  // 36 months after it was received, and a day — the kit's own evidence has a period too (`privacy.records`).
+  TestClock.Advance(TimeSpan.FromDays(3 * 366 + 2));
+  PurgeNow();
+  Assert.False(PrivacyRequest.Any(x => x.Id == r.Id));
+  var record = PurgeRecord.Single(p => p.Category == "privacy.records" && p.Count > 0);
+  Assert.False(record.Failed);
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void every_category_of_every_holder_is_purged_and_recorded() {
+  PurgeNow();
+  Assert.Equal(7, PurgeRecord.Count());
+  Assert.True(PurgeRecord.Any(p => p.Category == "app.visits"));
+  Assert.False(PurgeRecord.Any(p => p.Failed));
+}

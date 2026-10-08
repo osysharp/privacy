@@ -1,0 +1,242 @@
+namespace Osysharp.Privacy;
+
+// ── the tenant's settings: how long, from when, in whose words ─────────────────────────────────────────────────────
+//
+// The tenant is the CONTROLLER (GDPR Art. 4(7)): it decides its bases and periods. A kit declares a default and the
+// limits it believes are safe; the tenant sets its own within them, or states a jurisdiction and a reason to go outside
+// them — recorded, and shown in the records of processing. Nothing here is legal advice, and a preset says so.
+
+/// Who manages privacy: files and approves requests, and sets the periods. The app's to say —
+/// `policy ManagesPrivacy => IsAdmin;`.
+policy ManagesPrivacy;
+
+/// The app's privacy setup — `app.Privacy = new PrivacySetup { … }`. Every field has a default.
+[AppSetting("Privacy")]
+public class PrivacySetup {
+  /// Who the controller is, as the records of processing name it.
+  public string Controller = "";
+  /// The month (1–12) and day the fiscal year ends — a kept bookkeeping row counts from it. 12/31 when the fiscal year is
+  /// the calendar year. One fiscal calendar for the app — an organisation's may set it (owner, Q8).
+  [OrgPolicy(OrgPolicyMode.Default)] public int FiscalYearEndMonth = 12;
+  [OrgPolicy(OrgPolicyMode.Default)] public int FiscalYearEndDay = 31;
+  /// Where a person who disagrees may complain — in Sweden, "IMY, imy.se". Said in every response.
+  public string SupervisoryAuthority = "";
+  /// Which plans wait for a person managing privacy to approve them. `Always` by default — every plan is reviewed;
+  /// `WhenJudgement` runs one that follows wholly from the declarations at once, and waits only where somebody must weigh
+  /// something (a legitimate interest) or staff filed it. An organisation's policy may set it for every app (owner, Q3).
+  [OrgPolicy(OrgPolicyMode.Lock)] public PlanReview ReviewPlans = PlanReview.Always;
+  /// Lifting a legal hold needs a SECOND person who places holds to confirm it — never the one who asked (four eyes).
+  /// Off by default: one person, with a reason, recorded, is the bar. An organisation's policy may require it for
+  /// every app (owner, Q5) — and it is the app's code or the organisation that sets it, never the people it binds.
+  [OrgPolicy(OrgPolicyMode.Lock)] public bool HoldLiftNeedsSecondPerson = false;
+}
+
+/// Which privacy-request plans wait for a person's approval before they run.
+public enum PlanReview {
+  /// Every plan.
+  Always,
+  /// Only a plan with a judgement in it, or one staff filed.
+  WhenJudgement,
+}
+
+/// The tenant's own setting for one category — written by `SetRetention`, `ApplyPreset` and `ConfirmCategory`, and by the
+/// retention page, which stages its changes on the page and checks every period with `RetentionRefusal` before it
+/// saves. Every change is in the audit trail (who, when, from what to what).
+public entity RetentionSetting {
+  [Required, Unique, MaxLength(200)] string Category;
+  /// How many months a row of the category is kept. An organisation's policy may bound it for every app (owner, Q9).
+  [OrgPolicy(OrgPolicyMode.Range)] int RetainedMonths;
+  RetentionStart RetainedFrom = RetentionStart.Collected;
+  /// The basis in the tenant's own words — what the response and the records of processing quote.
+  [MaxLength(500)] string BasisDetail = "";
+  /// Stated to set a period outside the kit's limits: the jurisdiction ("SE"), and why.
+  [MaxLength(40)] string Jurisdiction = "";
+  [MaxLength(500)] string Reason = "";
+  /// A category that `RequiresConfirmation` is relied on only once somebody managing privacy confirmed it.
+  bool Confirmed;
+  security {
+    // Everyone READS it: how long the app keeps what is the privacy notice every person is owed (Art. 13(2)(a)), and
+    // what "Your privacy" and "Ask about your data" show before a person asks. Read only by the managers, it was not
+    // found for anybody else — and a person was shown the kit's default period instead of the tenant's own.
+    allow read when IsAnonymous || IsAuthenticated;
+    // The people managing privacy write it — through SetRetention / ApplyPreset / ConfirmCategory, which check the
+    // kit's limits; a setting is the controller's own decision, so nobody else touches it.
+    allow create, update when ManagesPrivacy;
+  }
+}
+
+/// A jurisdiction's bookkeeping period — data, citing its statute, applied by `ApplyPreset` and never by itself.
+/// ⚠ Labelled "verify with your adviser": the kit models the rule; the tenant confirms it applies to them.
+public class RetentionPreset {
+  public string Jurisdiction = "";
+  public string Statute = "";
+  public int RetainedMonths = 0;
+  public RetentionStart RetainedFrom = RetentionStart.EndOfCalendarYear;
+}
+
+/// The bookkeeping presets the kit ships. Figures to model, confirmed by the tenant (privacy_kit_design §1.2).
+public List<RetentionPreset> RetentionPresets() {
+  return [
+    new RetentionPreset { Jurisdiction = "SE", Statute = "Bokföringslagen (1999:1078) 7 kap. 2 §", RetainedMonths = 84, RetainedFrom = RetentionStart.EndOfFiscalYearCalendarYear },
+    new RetentionPreset { Jurisdiction = "DE", Statute = "HGB § 257, AO § 147 (books and annual accounts)", RetainedMonths = 120, RetainedFrom = RetentionStart.EndOfCalendarYear },
+    new RetentionPreset { Jurisdiction = "FR", Statute = "Code de commerce L123-22", RetainedMonths = 120, RetainedFrom = RetentionStart.EndOfFiscalYear },
+    new RetentionPreset { Jurisdiction = "NL", Statute = "AWR art. 52", RetainedMonths = 84, RetainedFrom = RetentionStart.EndOfFiscalYear },
+    new RetentionPreset { Jurisdiction = "DK", Statute = "Bogføringsloven", RetainedMonths = 60, RetainedFrom = RetentionStart.EndOfFiscalYear },
+    new RetentionPreset { Jurisdiction = "FI", Statute = "Kirjanpitolaki (books)", RetainedMonths = 120, RetainedFrom = RetentionStart.EndOfFiscalYear },
+    new RetentionPreset { Jurisdiction = "UK", Statute = "Companies Act 2006 s.388 / HMRC (private companies, tax records)", RetainedMonths = 72, RetainedFrom = RetentionStart.EndOfFiscalYear },
+  ];
+}
+
+/// One category's period as it applies now: the tenant's setting, else the kit's default.
+public class EffectiveRetention {
+  public int RetainedMonths = 0;
+  public RetentionStart RetainedFrom = RetentionStart.Collected;
+  public string BasisDetail = "";
+  /// False while a category that `RequiresConfirmation` has not been confirmed.
+  public bool Confirmed = true;
+  /// The jurisdiction stated for a period outside the kit's limits, or "".
+  public string Jurisdiction = "";
+  /// The category's own words for when the period starts (`DataCategory.RetainedFromWords`), or "".
+  public string FromWords = "";
+}
+
+/// The period that applies to `category` now.
+public EffectiveRetention RetentionOf(DataCategory category) {
+  var s = RetentionSetting.FirstOrDefault(r => r.Category == category.Key);
+  if (s == null) {
+    return new EffectiveRetention { RetainedMonths = category.RetainedMonths, RetainedFrom = category.RetainedFrom,
+      BasisDetail = category.BasisDetail, Confirmed = !category.RequiresConfirmation, FromWords = category.RetainedFromWords };
+  }
+  return new EffectiveRetention { RetainedMonths = s.RetainedMonths, RetainedFrom = s.RetainedFrom,
+    BasisDetail = s.BasisDetail != "" ? s.BasisDetail : category.BasisDetail,
+    Confirmed = !category.RequiresConfirmation || s.Confirmed, Jurisdiction = s.Jurisdiction,
+    FromWords = s.RetainedFrom == category.RetainedFrom ? category.RetainedFromWords : "" };
+}
+
+/// The first instant AFTER a row of `category` dated `itemDate` stops being kept — it is kept through the whole of the
+/// day before (`KeptThrough`). Counted from the category's start event, with the tenant's fiscal year:
+///   an invoice issued in August 2025, in a July–June fiscal year, under Bokföringslagen (84 months from the end of the
+///   calendar year the fiscal year ended in) → its fiscal year ends June 2026 → that calendar year ends 31 Dec 2026 →
+///   kept through 31 Dec 2033, so this answers 1 Jan 2034 00:00.
+public DateTime KeepUntil(DataCategory category, DateTime itemDate) {
+  var r = RetentionOf(category);
+  return StartOfPeriod(r.RetainedFrom, itemDate).AddMonths(r.RetainedMonths);
+}
+
+/// The last day a row whose period ends at `until` (exclusive) is kept — what a response says.
+public DateTime KeptThrough(DateTime until) { return until.AddDays(-1); }
+
+/// When the period of a row dated `itemDate` starts counting, as the first instant after the start event's day.
+public DateTime StartOfPeriod(RetentionStart from, DateTime itemDate) {
+  var setup = App.Setting<PrivacySetup>();
+  var day = new DateTime(itemDate.Year, itemDate.Month, itemDate.Day);
+  if (from == RetentionStart.Collected) { return day.AddDays(1); }
+  if (from == RetentionStart.EndOfCalendarYear) { return new DateTime(itemDate.Year + 1, 1, 1); }
+  // The fiscal year containing the row's date ends on the first FiscalYearEnd on or after it.
+  var fyEnd = new DateTime(itemDate.Year, setup.FiscalYearEndMonth, setup.FiscalYearEndDay);
+  if (fyEnd < day) { fyEnd = new DateTime(itemDate.Year + 1, setup.FiscalYearEndMonth, setup.FiscalYearEndDay); }
+  if (from == RetentionStart.EndOfFiscalYear) { return fyEnd.AddDays(1); }
+  // EndOfFiscalYearCalendarYear — the end of the calendar year in which that fiscal year ended.
+  return new DateTime(fyEnd.Year + 1, 1, 1);
+}
+
+/// Why `months` may not be set for `categoryKey` with this jurisdiction and reason — "" when it may. A period outside
+/// the kit's declared limits needs a jurisdiction that allows it and a reason, which are recorded. The one check behind
+/// `SetRetention` and the retention page's Save.
+public string RetentionRefusal(string categoryKey, int months, string jurisdiction = "", string reason = "") {
+  var category = CategoryOf(categoryKey);
+  return RetentionLimitRefusal(category.Label, category.MinMonths, category.MaxMonths, months, jurisdiction, reason);
+}
+
+/// `RetentionRefusal` for a category already in hand — its label and limits. Reads nothing, so the retention page
+/// asks it as the person types and holds its Save back with the same sentence.
+public string RetentionLimitRefusal(string label, int minMonths, int maxMonths, int months, string jurisdiction, string reason) {
+  if (months < 0) { return "A period is a number of months, 0 or more."; }
+  var below = months < minMonths;
+  var above = maxMonths > 0 && months > maxMonths;
+  if ((below || above) && (jurisdiction.Trim() == "" || reason.Trim() == "")) {
+    var limit = below ? $"shorter than {minMonths} months" : $"longer than {maxMonths} months";
+    return $"'{label}' cannot be kept {limit} without saying why: the kit declares {minMonths}–{maxMonths} "
+      + "months as the range no law it knows of asks you to leave. Set it outside only for a jurisdiction that allows it — "
+      + "state the jurisdiction and the reason, and both are recorded.";
+  }
+  return "";
+}
+
+/// Set how long `categoryKey` is kept, from when, and in whose words. A period outside the kit's declared limits is
+/// refused with the limit and why — unless a jurisdiction and a reason are stated, which are recorded.
+[Authorize(ManagesPrivacy)]
+public void SetRetention(string categoryKey, int months, RetentionStart from, string basisDetail = "",
+                         string jurisdiction = "", string reason = "") {
+  var refusal = RetentionRefusal(categoryKey, months, jurisdiction, reason);
+  if (refusal != "") { throw new ValidationException(refusal); }
+  var s = RetentionSetting.FirstOrDefault(r => r.Category == categoryKey);
+  if (s == null) { s = WriteSetting(categoryKey); }
+  s.RetainedMonths = months;
+  s.RetainedFrom = from;
+  s.BasisDetail = basisDetail;
+  s.Jurisdiction = jurisdiction.Trim();
+  s.Reason = reason.Trim();
+}
+
+/// One category's period as a preset sets it.
+public class RetentionChange {
+  public string Key = "";
+  public int Months = 0;
+  public RetentionStart From = RetentionStart.Collected;
+  public string BasisDetail = "";
+  public string Jurisdiction = "";
+  public string Reason = "";
+}
+
+/// What a jurisdiction's bookkeeping preset sets: every bookkeeping category to its statutory period, citing the
+/// statute. The one statement of a preset, behind `ApplyPreset` and the retention page's preset buttons.
+public List<RetentionChange> PresetChanges(string jurisdiction) {
+  var preset = RetentionPresets().FirstOrDefault(p => p.Jurisdiction == jurisdiction);
+  if (preset == null) {
+    throw new ValidationException($"There is no preset for '{jurisdiction}'. The presets are "
+      + string.Join(", ", RetentionPresets().Select(p => p.Jurisdiction)) + ".");
+  }
+  List<RetentionChange> changes = [];
+  foreach (var c in AllCategories().Where(c => c.Kind == RecordKind.Bookkeeping)) {
+    changes.Add(new RetentionChange { Key = c.Key, Months = preset.RetainedMonths, From = preset.RetainedFrom,
+      BasisDetail = preset.Statute, Jurisdiction = preset.Jurisdiction,
+      Reason = "Preset: " + preset.Statute + " — verify with your adviser." });
+  }
+  return changes;
+}
+
+/// Apply a jurisdiction's bookkeeping preset to every bookkeeping category — one action, recorded, never automatic.
+/// Answers how many categories it set.
+[Authorize(ManagesPrivacy)]
+public int ApplyPreset(string jurisdiction) {
+  var changes = PresetChanges(jurisdiction);
+  foreach (var c in changes) {
+    SetRetention(c.Key, c.Months, c.From, c.BasisDetail, c.Jurisdiction, c.Reason);
+  }
+  return changes.Count;
+}
+
+/// Confirm a category that `RequiresConfirmation` — its period is the tenant's decision, now taken.
+[Authorize(ManagesPrivacy)]
+public void ConfirmCategory(string categoryKey) {
+  var category = CategoryOf(categoryKey);
+  var s = RetentionSetting.FirstOrDefault(r => r.Category == categoryKey);
+  if (s == null) {
+    s = WriteSetting(categoryKey);
+    s.RetainedMonths = category.RetainedMonths;
+    s.RetainedFrom = category.RetainedFrom;
+  }
+  s.Confirmed = true;
+}
+
+/// The categories still waiting for the tenant to confirm their period.
+[SuppressWarning("cost-clause-calls-the-server-per-element")]   // the categories the app's holders declare — a fixed handful, each period read by its key
+public List<string> UnconfirmedCategories() {
+  return AllCategories().Where(c => !RetentionOf(c).Confirmed).Select(c => c.Key).ToList();
+}
+
+// The one place a setting row is made.
+internal RetentionSetting WriteSetting(string categoryKey) {
+  return new RetentionSetting { Category = categoryKey };
+}

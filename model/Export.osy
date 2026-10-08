@@ -1,0 +1,171 @@
+namespace Osysharp.Privacy;
+
+using Osysharp.Storage;
+
+// ── access and portability: what we hold, and why ─────────────────────────────────────────────────────────────────
+//
+// An access export (Art. 15) carries one section per category the person is in, each with its 15(1) information —
+// purpose, basis, how long it is kept and from when, and any automated decision. A portability export (Art. 20)
+// carries only the portable categories. It is written TWICE, about the request (`File.WriteAllText(…, about: r)`), so
+// both go when the request goes: `your-data.json` — the machine-readable file another service reads — and
+// `your-data.html`, the same sections for a PERSON to read in any browser, in the language they asked in. The person
+// fetches both at once, once (`FetchMyExport`).
+
+/// Write the export of request `r` — the data file and its readable copy — and record where. Answers the data file's path.
+[SuppressWarning("cost-unbounded-read")]   // one request's plan lines — one per category the app declares
+public string WriteExport(PrivacyRequest r) {
+  var subject = SubjectOf(r);
+  var portability = r.Right == RequestKind.Portability;
+  // Written in the language the person asked in — the holders' words (what a row is, why it is kept) as well as the
+  // page's own — and the run's language back afterwards.
+  var was = Session.Language;
+  var inTheirs = r.Language != "" && r.Language != was && App.Languages.Contains(r.Language);
+  if (inTheirs) { Session.SetLanguage(r.Language); }
+  List<string> sections = [];
+  var doc = new ReadableExport { Language = r.Language, Portability = portability, At = DateTime.UtcNow,
+                                 Controller = ControllerName() };
+  // In the order the holders declare their categories, as the page and the response list them.
+  var order = AllCategories().Select(c => c.Key).ToList();
+  foreach (var line in PlanLine.Where(l => l.Request == r && l.Outcome == PlanOutcome.Export).ToList()
+                         .OrderBy(l => order.IndexOf(l.Category)).ToList()) {
+    var h = Holders().FirstOrDefault(x => x.Key() == line.Holder);
+    if (h == null) { continue; }
+    var c = CategoryOf(line.Category);
+    var section = h.Export(subject, c);
+    // A holder with nothing to say writes an empty list — never a word, which would be read as text to translate.
+    var data = section.Json.Trim() == "" ? "[]" : section.Json;
+    var kept = RetentionOf(c);
+    if (portability) {
+      sections.Add("{\"category\":" + JsonSerializer.Serialize(c.Key) + ",\"data\":" + data + "}");
+    } else {
+      sections.Add("{\"category\":" + JsonSerializer.Serialize(c.Key)
+        + ",\"label\":" + JsonSerializer.Serialize(c.Label)
+        + ",\"purpose\":" + JsonSerializer.Serialize(c.Purpose)
+        + ",\"basis\":" + JsonSerializer.Serialize(c.Basis.ToString())
+        + ",\"basisDetail\":" + JsonSerializer.Serialize(kept.BasisDetail)
+        + ",\"retention\":" + JsonSerializer.Serialize(RetentionSentence(kept))
+        + ",\"automatedDecisions\":" + JsonSerializer.Serialize(c.AutomatedDecisions)
+        + ",\"data\":" + data + "}");
+    }
+    doc.Parts.Add(new ReadablePart { Label = c.Label, Purpose = c.Purpose,
+      Basis = kept.BasisDetail != "" ? kept.BasisDetail : c.Basis.Label, Retention = HowLongWords(c, kept),
+      Automated = c.AutomatedDecisions, Items = section.Items, Json = section.Items.Count == 0 && !IsEmptyJson(data) ? data : "" });
+  }
+  var json = "{\"request\":" + JsonSerializer.Serialize(r.Id.ToString())
+    + ",\"kind\":" + JsonSerializer.Serialize(r.Right.ToString())
+    + ",\"sections\":[" + string.Join(",", sections) + "]}";
+  var readable = ReadableExportCopy(doc).Html;
+  if (inTheirs) { Session.SetLanguage(was); }
+  var path = $"privacy/exports/{r.Id}/your-data.json";
+  File.WriteAllText(path, json, about: r);
+  File.WriteAllText(ReadablePathOf(path), readable, about: r);
+  r.ExportPath = path;
+  return path;
+}
+
+/// Where the readable copy of the export at `path` is: beside it, as `your-data.html`.
+public string ReadablePathOf(string path) {
+  return path.EndsWith(".json") ? path.Substring(0, path.Length - 5) + ".html" : path + ".html";
+}
+
+/// A section's data holds nothing: no rows at all.
+bool IsEmptyJson(string json) {
+  var j = json.Trim();
+  return j == "" || j == "null" || j == "[]" || j == "{}";
+}
+
+/// How long a category is kept, as its person reads it in their copy.
+string HowLongWords(DataCategory c, EffectiveRetention r) {
+  if (IsKept(c)) { return Translate($"If you ask us to erase it, it is kept {PeriodWords(r)}, used for this purpose only, then deleted."); }
+  return c.OnErasureWords != "" ? c.OnErasureWords : Translate("Until you ask us to erase it.");
+}
+
+/// The export of request `r`, as written — for the people managing privacy to check before it goes.
+[Authorize(ManagesPrivacy)]
+public string ExportOf(PrivacyRequest r) {
+  return r.ExportPath == "" ? "" : File.ReadAllText(r.ExportPath);
+}
+
+/// The readable copy of request `r`'s export, as written — what the person opens in their browser.
+[Authorize(ManagesPrivacy)]
+public string ReadableExportOf(PrivacyRequest r) {
+  return r.ExportPath == "" ? "" : File.ReadAllText(ReadablePathOf(r.ExportPath));
+}
+
+// ── the readable copy ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/// What the readable copy of an export says — the same sections as the data file.
+public class ReadableExport {
+  public string Language = "";
+  public bool Portability = false;
+  public DateTime At;
+  public string Controller = "";
+  public List<ReadablePart> Parts = [];
+}
+
+/// One kind of data in the readable copy.
+public class ReadablePart {
+  public string Label = "";
+  public string Purpose = "";
+  public string Basis = "";
+  public string Retention = "";
+  public string Automated = "";
+  public List<ExportItem> Items = [];
+  /// The section's data as written, when its holder gives no readable items.
+  public string Json = "";
+}
+
+/// The readable copy of a person's export — a document they open in any browser, in the language they asked in,
+/// rendered on the server like a mail (every value escaped, nothing that runs) and saved beside the data file.
+[Email]
+public component ReadableExportCopy(ReadableExport doc) {
+  language => doc.Language;
+  subject => doc.Portability ? "The data you gave us" : "What we hold about you";
+  render {
+    Box(bg: Colors.Bg, p: 6) {
+      Stack(gap: 6, maxW: 680) {
+        Stack(gap: 2) {
+          Text(doc.Portability ? "The data you gave us" : "What we hold about you", fontSize: 26, fontWeight: 700, color: Colors.OnSurface);
+          Text("Made on " + doc.At.ToString("d MMMM yyyy") + ", at your request." + (doc.Controller == "" ? "" : " " + doc.Controller + " is responsible for it."),
+               color: Colors.TextMuted);
+          Text(doc.Portability
+                 ? "Below is each kind of data you gave us. The same data is in the file your-data.json, which another service can read."
+                 : "Below is each kind of data we hold about you, with why we keep it and for how long. The same data is in the file your-data.json, which another service can read.",
+               color: Colors.OnSurface, lineHeight: 1.5);
+        }
+        if (doc.Parts.Count == 0) {
+          Text("We hold nothing about you.", fontWeight: 600, color: Colors.OnSurface);
+        }
+        foreach (var part in doc.Parts) {
+          Box(bg: Colors.Surface, border: Colors.Border, borderW: 1, rounded: Radius.Md, p: 5) {
+            Stack(gap: 3) {
+              Text(part.Label, fontSize: 19, fontWeight: 600, color: Colors.OnSurface);
+              if (!doc.Portability) {
+                Stack(gap: 1) {
+                  Text("Why we keep it: " + part.Purpose, fontSize: 14, color: Colors.TextMuted);
+                  Text("On what grounds: " + part.Basis, fontSize: 14, color: Colors.TextMuted);
+                  Text("How long: " + part.Retention, fontSize: 14, color: Colors.TextMuted);
+                  if (part.Automated != "") { Text("Decisions made automatically: " + part.Automated, fontSize: 14, color: Colors.TextMuted); }
+                }
+              }
+              Divider(color: Colors.Border);
+              if (part.Items.Count == 0 && part.Json == "") { Text("Nothing of this kind.", color: Colors.TextMuted); }
+              foreach (var item in part.Items) {
+                Stack(gap: 1, pb: 2) {
+                  Text((item.At == null ? "" : item.At!.Value.ToString("d MMMM yyyy, HH:mm") + " · ") + item.Title,
+                       fontSize: 13, fontWeight: 600, color: Colors.TextMuted);
+                  if (item.Body != "") { Text(item.Body, color: Colors.OnSurface, lineHeight: 1.5); }
+                  foreach (var f in item.Fields) { Text(f.Name + ": " + f.Value, fontSize: 14, color: Colors.OnSurface); }
+                }
+              }
+              if (part.Json != "") {
+                Text("As written for another service to read:", fontSize: 13, color: Colors.TextMuted);
+                Text(part.Json, fontSize: 12, fontFamily: "ui-monospace, Menlo, Consolas, monospace", color: Colors.OnSurface);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

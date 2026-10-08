@@ -1,0 +1,531 @@
+namespace Osysharp.Privacy;
+
+using Osysharp.Identity;
+using Osysharp.Mail;
+using Osysharp.Storage;
+using Osysharp.Workflow;
+
+// ── a person asking for themselves: prove it is you, ask, and get the answer only where the proof reached ──────────
+//
+// A fraudulent access request is a known way to steal someone's data, and a session left open on a shared computer is a
+// known way to erase someone's account. So a person asks only after proving it is them NOW (`IRequesterProof` — the
+// sign-in kit's step-up: a code to the address their account holds), and the request is not theirs to write: they file
+// an ASK, and the kit's own run checks and spends the proof and makes the request — about their own account and the
+// address the proof reached, never an address typed in, never an identifier found along the way. The answer, and the
+// notice that an export is ready, go to that address and to their privacy page; the export is fetched once, within
+// seven days, and then deleted.
+
+/// Proving the signed-in person, now — implemented by the sign-in kit (`Osysharp.Privacy.Accounts` for
+/// `Osysharp.Accounts`), DISCOVERED. With none, a person cannot ask for themselves, and the privacy page says how to ask.
+public interface IRequesterProof {
+  string Key();
+  /// Start proving the signed-in person: a code goes to the address their account holds.
+  ProofStarted Start();
+  /// The code they typed, for proof `proof`. Answers "" when it proved them, or the sentence to show.
+  string Prove(Guid proof, string code);
+  /// Run as the system by a request's intake: when `proof` proved `account` within `within` and was never spent, spend
+  /// it and answer the address it proved; "" otherwise.
+  string Spend(Guid proof, Guid account, TimeSpan within);
+  /// The address `account` has PROVEN it controls — the one a proof reaches, confirmed when the
+  /// account was made or since — or "" when it has proven none. Their privacy page counts what is held about them by it
+  /// (and by their account), as a request about them would. (0.7.0 — defaulted, so a proof written before keeps
+  /// compiling; with none, the page counts by the account alone.)
+  string ProvenAddress(Guid account) => "";
+}
+
+/// Proving an ADDRESS, for a person with no account — implemented by the kit that holds people by their address
+/// (`Osysharp.Privacy.Conversations`, a code mailed through the desk's own mail channel), DISCOVERED. The proof is the
+/// asking browser's: only that visit can spend it, so a code read in somebody else's inbox files nothing.
+public interface IAddressProof {
+  string Key();
+  /// Send a code to `address`, for the asking browser. Refused with the sentence to show when it cannot.
+  ProofStarted StartFor(string address);
+  /// The code they typed, for proof `proof`. Answers "" when it proved the address, or the sentence to show.
+  string Prove(Guid proof, string code);
+  /// Run as the system by a request's intake: when `proof` proved an address for the browser `visit` within `within`
+  /// and was never spent, spend it and answer the address it proved; "" otherwise.
+  string SpendForVisit(Guid proof, string visit, TimeSpan within);
+}
+
+/// A proof under way: its id, and where the code went, masked ("a•••@example.com").
+public class ProofStarted {
+  public Guid Id;
+  public string SentTo = "";
+}
+
+/// How long a proof is good for, from the moment it was proven, to ask with.
+public TimeSpan ProofLasts() { return TimeSpan.FromMinutes(10); }
+
+/// How many days an export can be fetched before it is deleted.
+public int ExportDays() { return 7; }
+
+/// The proofs the app has — the sign-in kit's, discovered.
+public List<IRequesterProof> Proofs() { return App.Implementations<IRequesterProof>(); }
+
+/// Whether a person can ask for themselves here at all — a sign-in kit proves them.
+public bool CanAskForMyself() { return Proofs().Count > 0; }
+
+/// Start proving it is you. Refused when the app has no way to.
+public ProofStarted ProveItIsMe() {
+  if (Session.CurrentUser == null) { throw new ValidationException("Sign in first."); }
+  var p = Proofs().FirstOrDefault();
+  if (p == null) { throw new ValidationException(NoSelfService()); }
+  return p!.Start();
+}
+
+/// The code from that mail. Answers "" when it proved you, or the sentence to show.
+public string ConfirmItIsMe(Guid proof, string code) {
+  var p = Proofs().FirstOrDefault();
+  if (p == null) { return NoSelfService(); }
+  return p!.Prove(proof, code);
+}
+
+/// The address proofs the app has — discovered.
+public List<IAddressProof> AddressProofs() { return App.Implementations<IAddressProof>(); }
+
+/// Whether a person with no account can ask here — something proves their address.
+[AllowAnonymous]
+public bool CanAskWithoutAnAccount() { return AddressProofs().Count > 0; }
+
+/// Start proving an address, with no account: a code goes there. Refused when the app has no way to.
+[AllowAnonymous]
+public ProofStarted ProveAnAddress(string address) {
+  var p = AddressProofs().FirstOrDefault();
+  if (p == null) { throw new ValidationException(NoSelfService()); }
+  return p!.StartFor(address);
+}
+
+/// The code from that mail. Answers "" when it proved the address, or the sentence to show.
+[AllowAnonymous]
+public string ConfirmAnAddress(Guid proof, string code) {
+  var p = AddressProofs().FirstOrDefault();
+  if (p == null) { return NoSelfService(); }
+  return p!.Prove(proof, code);
+}
+
+/// Ask about the address you just proved, with no account: a copy, your data to take elsewhere, erasure, or restriction.
+/// Answers the ask; its `Request` is the request once the kit's run filed it (`Problem` says why it did not).
+[AllowAnonymous]
+public PrivacyAsk AskAboutAnAddress(RequestKind right, Guid proof) {
+  if (Visitor.Id == null) {
+    throw new ValidationException("This browser cannot keep your request — let it keep cookies for this site and ask again.");
+  }
+  var ask = new PrivacyAsk { Right = right, Proof = proof, Language = Session.Language };
+  UnitOfWork.Commit();
+  return PrivacyAsk.Single(a => a.Id == ask.Id);
+}
+
+/// What the page says when nobody can ask for themselves here.
+[AllowAnonymous]
+public string NoSelfService() {
+  var who = ControllerName();
+  return "This app cannot confirm it is you yet, so a request is made by writing to "
+    + (who == "" ? "the people who run it" : who) + " — they will check it is you.";
+}
+
+/// Where an ask stands — tracked by `PrivacyIntake`. ⚠ Appended, never inserted.
+public enum AskState {
+  [Label("Checking it is you")] Checking,
+  [Label("Filed")] Filed,
+  [Label("Not filed")] Refused,
+}
+
+/// A person asking for themselves — the kit's run checks the proof and files the request. Nothing the person writes
+/// here says who the request is about: that is their own account, and the address the proof reached.
+///
+/// SECURITY-INVARIANT(privacy-a-request-answers-only-its-proven-subject): a request a person files for themselves is made
+/// by `PrivacyIntake`, as the system, only from a proof that this signed-in account made within `ProofLasts()` and never
+/// spent; its subject is that account and the address the proof reached, and its answer and export go only there. No
+/// identifier is typed in or found along the way, and a person cannot write a request, its subject, its deadline or
+/// where it is delivered. A request staff file is delivered by them, never mailed to the address they typed. Guarded by
+/// tests/self.test.osy `an_ask_without_a_fresh_proof_files_nothing`, `a_request_is_about_its_askers_own_proven_address_only`,
+/// `a_person_cannot_write_a_request_or_its_subject` and `a_request_staff_filed_is_never_mailed_to_the_address_they_typed`.
+public entity PrivacyAsk {
+  RequestKind Right;
+  /// The signed-in person asking — none for a person with no account, who asks from their browser (`Visit`).
+  Principal? Requester;
+  /// The browser that asked — its own visit, stamped when the row is made; only it can spend an address proof.
+  [MaxLength(64)] string? Visit = Visitor.Id;
+  /// The proof they made just before (`ProveItIsMe` / `ConfirmItIsMe`).
+  Guid Proof;
+  /// The request the run filed — none until it did.
+  PrivacyRequest? Request;
+  /// Why it was not filed.
+  [MaxLength(300)] string Problem = "";
+  /// The language they asked in — their answer's readable copy is written in it.
+  [MaxLength(16)] string Language = "";
+  AskState State;                                   // no default — PrivacyIntake owns it
+  security {
+    allow read when ManagesPrivacy;
+    allow read when IsAnonymous || IsAuthenticated
+      where Requester == user
+         || Requester == null && Visit != null && Visit == Visitor.Id;
+    allow create when IsAnonymous || IsAuthenticated
+      where Requester == user || (Requester == null && Visit != null && Visit == Visitor.Id);
+    allow delete when ManagesPrivacy;
+    deny create where Request != null || Problem != "";
+    // The browser is the asker's own, never another's: an ask names THIS visit.
+    deny create where Visit != Visitor.Id;
+    deny update;
+  }
+}
+
+/// Ask for yourself: a copy of your data, your data to take elsewhere, erasure, or restriction — with the proof you just
+/// made. Answers the ask; its `Request` is the request once the kit's run filed it (`Problem` says why it did not).
+public PrivacyAsk AskAboutMe(RequestKind right, Guid proof) {
+  var me = Session.CurrentUser;
+  if (me == null) { throw new ValidationException("Sign in first."); }
+  var ask = new PrivacyAsk { Right = right, Requester = me!, Proof = proof, Language = Session.Language };
+  UnitOfWork.Commit();
+  return PrivacyAsk.Single(a => a.Id == ask.Id);
+}
+
+/// Checks and spends the proof, then files the request — as the system.
+public workflow PrivacyIntake {
+  Tracks    = PrivacyAsk.State;
+  Autostart = true;
+  Initial   = Checking;
+
+  state Checking {
+    enter {
+      FileAsk(this.Item);
+      if (this.Item.Request != null) { goto Filed; }
+      goto Refused;
+    }
+  }
+  terminal success Filed { }
+  terminal cancel Refused { }
+}
+
+// The run's half: the proof spent, the request made about the proven account and address — or the reason it was not.
+internal void FileAsk(PrivacyAsk ask) {
+  var address = "";
+  if (ask.Requester == null) {
+    // No account: a proof of the ADDRESS, made by this very browser — the request is about that address alone.
+    var visit = ask.Visit ?? "";
+    foreach (var p in AddressProofs()) {
+      if (address == "" && visit != "") { address = p.SpendForVisit(ask.Proof, visit, ProofLasts()); }
+    }
+  } else {
+    foreach (var p in Proofs()) {
+      if (address == "") { address = p.Spend(ask.Proof, ask.Requester!.Id, ProofLasts()); }
+    }
+  }
+  if (address == "") {
+    ask.Problem = "We could not confirm it was you — the code was not confirmed, was used already, or is more than ten "
+      + "minutes old. Confirm it is you again, and ask again.";
+    return;
+  }
+  var proven = address.Trim().ToLower();
+  var now = DateTime.UtcNow;
+  var noAccount = ask.Requester == null;
+  var r = new PrivacyRequest {
+    Right = ask.Right, Title = TitleOf(ask.Right), Kind = "privacy", Channel = "self", Requester = ask.Requester,
+    ArrivedAt = now, ReceivedAt = now, DueAt = StatutoryDue(now), SubjectAccount = noAccount ? null : ask.Requester!.Id,
+    SubjectEmail = proven, SubjectKey = Security.Fingerprint(proven),
+    Check = noAccount ? IdentityCheck.CodeToTheirAddress : IdentityCheck.StepUp, Language = ask.Language,
+    Note = noAccount ? "No account: proved control of the address they asked about, by a code mailed there."
+                     : "Signed in, and proved control of the account's address by a code.",
+    DeliverTo = proven };
+  PlanRequest(r);
+  ask.Request = r;
+}
+
+/// The signed-in person's own requests, newest first.
+[SuppressWarning("cost-unbounded-read")]   // one person's own requests
+public List<PrivacyRequest> MyRequests() {
+  var me = Session.CurrentUser;
+  if (me == null) { return []; }
+  return PrivacyRequest.Where(r => r.Requester == me).OrderByDescending(r => r.ReceivedAt).ToList();
+}
+
+/// The link an export is fetched by when the person has no account — mailed only to the address their proof reached,
+/// good for the export's days, and spent by the one fetch it allows.
+public grant ExportLink for PrivacyRequest { Expires = TimeSpan.FromDays(7); }
+
+/// One fetch of an export — it may be fetched once.
+public entity ExportFetch {
+  [Required] PrivacyRequest Request;
+  DateTime At;
+  security {
+    // ⚠ `Requester != null` on both: a request made with no account has no requester, and `Requester == user` must
+    //   never match it for a caller with no user — its fetch is the mailed link's alone.
+    allow read when ManagesPrivacy;
+    allow read where Request.Requester != null && Request.Requester == user;
+    allow read by ExportLink where Request == ExportLink.Row;
+    allow create where Request.Requester != null && Request.Requester == user;
+    // …or by the link the answer was mailed with — for that request only.
+    allow create by ExportLink where Request == ExportLink.Row;
+    allow delete when ManagesPrivacy;
+    deny update;
+  }
+}
+
+/// An export, fetched: the two files' links, each working for a few minutes — the readable copy a person opens in
+/// their browser, and the data file another service reads.
+public class ExportLinks {
+  public string Readable = "";
+  public string Data = "";
+}
+
+/// Both files of export `r`, signed for a few minutes.
+ExportLinks LinksOf(PrivacyRequest r) {
+  return new ExportLinks { Readable = File.SignedUrl(ReadablePathOf(r.ExportPath)), Data = File.SignedUrl(r.ExportPath) };
+}
+
+/// Fetch your export — once, within its days: answers its two files' links, which work for a few minutes.
+public ExportLinks FetchMyExport(PrivacyRequest request) {
+  var r = PrivacyRequest.FirstOrDefault(x => x.Id == request.Id);
+  if (r == null || r.Requester != Session.CurrentUser) { throw new ValidationException("That is not your request."); }
+  if (r.ExportPath == "" || r.ExportExpiresAt == null || r.ExportExpiresAt!.Value < DateTime.UtcNow) {
+    throw new ValidationException("That export has expired and was deleted — ask again for a new one.");
+  }
+  if (ExportFetch.Any(f => f.Request == r)) {
+    throw new ValidationException("That export was already downloaded — ask again for a new one.");
+  }
+  new ExportFetch { Request = r, At = DateTime.UtcNow };
+  UnitOfWork.Commit();
+  return LinksOf(r);
+}
+
+/// Fetch your export by the link it was mailed with — a person with no account. Once, within its days: answers its two
+/// files' links, which work for a few minutes, and the mailed link stops working.
+[AllowAnonymous]
+public ExportLinks FetchExportByLink(ExportLink link) {
+  var r = link.Row;
+  if (r.ExportPath == "" || r.ExportExpiresAt == null || r.ExportExpiresAt!.Value < DateTime.UtcNow) {
+    throw new ValidationException("That export has expired and was deleted — ask again for a new one.");
+  }
+  if (ExportFetch.Any(f => f.Request == r)) {
+    throw new ValidationException("That export was already downloaded — ask again for a new one.");
+  }
+  new ExportFetch { Request = r, At = DateTime.UtcNow };
+  UnitOfWork.Commit();
+  ExportLink.RevokeAll(r);
+  return LinksOf(r);
+}
+
+/// Whether request `r`'s export can still be fetched by its person.
+public bool ExportReady(PrivacyRequest r) {
+  return r.ExportPath != "" && r.ExportExpiresAt != null && r.ExportExpiresAt!.Value > DateTime.UtcNow
+    && !ExportFetch.Any(f => f.Request == r);
+}
+
+/// Delete every export past its days — the file goes; the request keeps that it was answered. Answers how many.
+[SuppressWarning("cost-unbounded-read")]   // the exports past their days — each deleted in this pass
+internal int ExpireExports(DateTime now) {
+  var n = 0;
+  foreach (var r in PrivacyRequest.Where(r => r.ExportPath != "" && r.ExportExpiresAt != null && r.ExportExpiresAt < now).ToList()) {
+    File.DeleteAbout(r);
+    r.ExportPath = "";
+    n = n + 1;
+  }
+  return n;
+}
+
+// Tell the person — only at the address a proof reached; a request staff filed is delivered by them. For access and
+// portability the export waits on their privacy page, once, for `ExportDays()`. An erasure keeps no copy of the
+// address it was delivered to.
+internal void Deliver(PrivacyRequest r) {
+  if (r.DeliverTo == "" || r.DeliveredAt != null) { return; }
+  var now = DateTime.UtcNow;
+  var text = r.Response;
+  if (r.Right == RequestKind.Access || r.Right == RequestKind.Portability) {
+    r.ExportExpiresAt = now.AddDays(ExportDays());
+    // A person with no account has no page to sign in to: the link is theirs alone, works once, and only until then.
+    var where = r.Requester == null
+      ? "at this link, which works once — " + App.BaseUrl.TrimEnd('/') + "/privacy/export/" + $"{ExportLink.For(r)}"
+      : "on your privacy page — " + App.BaseUrl.TrimEnd('/') + "/privacy";
+    text = text + "\n\nYour data is ready " + where + " — until "
+      + r.ExportExpiresAt!.Value.ToString("d MMMM yyyy") + ". It can be downloaded once; after that date it is deleted.";
+  }
+  // The answer to a finished erasure is written AFTER the erasure ran, so nothing erased it: the outbox forgets it once
+  // it is sent — or the address an erasure was asked for would be kept by the very message saying it was erased.
+  SendMail(new MailMessage { To = [r.DeliverTo], Subject = "Our answer to your request about your data", Text = text,
+                             ForgetOnceSent = r.Right == RequestKind.Erasure && !IsWaiting(r) },
+           "privacy-answer-" + r.Id.ToString());
+  r.DeliveredAt = now;
+  if (r.Right == RequestKind.Erasure && !IsWaiting(r)) { r.DeliverTo = ""; }
+}
+
+/// One category as a person reads it on their privacy page — what is kept about people, and why.
+public class KeptCategory {
+  public string Key = "";
+  public string Label = "";
+  public string Purpose = "";
+  public string Basis = "";
+  /// "Erased when you ask", or "Kept, restricted, 84 months from the end of the calendar year its fiscal year ended in".
+  public string Kept = "";
+  public bool Portable = false;
+  /// How many of these are about the signed-in person right now — counted on their own page only (`WhatWeKeepAboutMe`).
+  public int Held = 0;
+  /// Whether `Held` was counted: false on the general list, and for a category nobody can count by person.
+  public bool Counted = false;
+}
+
+/// What the app keeps about people, and why — from the same declarations as the records of processing, never typed.
+/// The kit's own records and the platform's copies are listed too.
+public List<KeptCategory> WhatWeKeep() {
+  List<KeptCategory> rows = [];
+  foreach (var c in AllCategories()) { rows.Add(KeptOf(c)); }
+  return rows;
+}
+
+/// One category as the privacy page lists it.
+KeptCategory KeptOf(DataCategory c) {
+  var r = RetentionOf(c);
+  return new KeptCategory { Key = c.Key, Label = c.Label, Purpose = c.Purpose, Basis = c.Basis.Label,
+    // `Translate`: these reach the page through a list the server builds, where the analysis cannot follow them.
+    Kept = IsKept(c) ? Translate($"If you ask us to erase it, it is kept {PeriodWords(r)}, used for this purpose only, then deleted.")
+                     : c.OnErasureWords != "" ? c.OnErasureWords : Translate("Erased when you ask us to."),
+    Portable = c.Portable };
+}
+
+/// The person signing in as `account`, as a request of theirs would be about them: that account, and the address it has
+/// proven (`IRequesterProof.ProvenAddress`) — never an address typed in, never one found along the way.
+public DataSubject SubjectOfAccount(Guid account) {
+  var s = new DataSubject { Account = account };
+  foreach (var p in Proofs()) {
+    var address = p.ProvenAddress(account).Trim().ToLower();
+    if (address != "" && !s.Emails.Contains(address)) { s.Emails.Add(address); }
+  }
+  return s;
+}
+
+/// The signed-in person, as a request of theirs would be about them.
+public DataSubject MySubject() {
+  var me = Session.CurrentUser;
+  if (me == null) { throw new ValidationException("Sign in first."); }
+  return SubjectOfAccount(me!.Id);
+}
+
+/// Where a person's tally stands — tracked by `PrivacyTally`. ⚠ Appended, never inserted.
+public enum TallyState {
+  [Label("Counting")] Counting,
+  [Label("Counted")] Counted,
+}
+
+/// How many of each category is held about one person — what their privacy page shows. Counted by the kit's own run
+/// (`PrivacyTally`), as a request about them is planned: their own data is often rows they may not read themselves
+/// (the mail the app sent them), and counted with their own access those would read "none". So the run counts, about
+/// their account and its proven address only, and writes NUMBERS here — never what a row says. One per person.
+///
+/// SECURITY-INVARIANT(privacy-a-tally-counts-only-its-own-person): a tally is created only by the person it is about,
+/// read only by them, and written only by the kit's run, which counts for `SubjectOfAccount(Person)` — their account and
+/// the address it PROVED, nothing typed and nothing found along the way — and stores counts per category key, never
+/// content. Guarded by demo/helpdesk tests/your-privacy.test.osy `her_page_counts_only_her_own_never_another_customers`
+/// and `an_account_that_never_proved_its_address_is_counted_by_the_account_alone`.
+[Unique(Person, "There is already a tally for this person.")]
+public entity HeldTally {
+  [Required] Principal Person;
+  DateTime? CountedAt;
+  /// `HeldCounts`, as JSON.
+  Json? Counts;
+  TallyState State;                                 // no default — PrivacyTally owns it
+  security {
+    allow read where Person == user;
+    allow create where Person == user;
+    allow delete when ManagesPrivacy;
+    deny create where Counts != null || CountedAt != null;
+    deny update;
+  }
+}
+
+/// A tally's numbers.
+public class HeldCounts {
+  public List<HeldCount> Rows = [];
+}
+
+/// How many of one category.
+public class HeldCount {
+  public string Key = "";
+  public int Held = 0;
+}
+
+/// Counts what is held about a tally's person — when it is made, and again each time their page asks (`Recount`).
+public workflow PrivacyTally {
+  Tracks    = HeldTally.State;
+  Autostart = true;
+  Initial   = Counting;
+
+  event Recount();
+
+  state Counting {
+    enter {
+      CountForTally(this.Item);
+      goto Counted;
+    }
+  }
+  state Counted {
+    on Recount { goto Counting; }
+  }
+}
+
+// The run's half: one Count per category, from its holder, about the tally's person.
+internal void CountForTally(HeldTally t) {
+  var subject = SubjectOfAccount(t.Person.Id);
+  var counts = new HeldCounts();
+  foreach (var h in Holders()) {
+    foreach (var c in h.Categories()) {
+      // This kit's own record of the person's requests: a plan never counts it (asking does not erase the evidence of
+      // asking), but the person is told the truth — their requests, as their page lists them.
+      if (c.Key == "privacy.records") {
+        counts.Rows.Add(new HeldCount { Key = c.Key, Held = PrivacyRequest.Count(r => r.Requester == t.Person) });
+      } else if (c.FoundByPerson) {
+        counts.Rows.Add(new HeldCount { Key = c.Key, Held = h.Count(subject, c) });
+      }
+    }
+  }
+  t.Counts = JsonSerializer.Serialize(counts);
+  t.CountedAt = DateTime.UtcNow;
+}
+
+/// What the app keeps about people, and how much of each it holds about the signed-in person right now — a count per
+/// category from its holder (`Count`, the same a request's plan asks), never what the rows say. A category nobody can
+/// find by person is not counted, and says so. What is held about them comes first.
+public List<KeptCategory> WhatWeKeepAboutMe() {
+  var me = Session.CurrentUser;
+  if (me == null) { throw new ValidationException("Sign in first."); }
+  var tally = HeldTally.FirstOrDefault(t => t.Person == me);
+  if (tally == null) {
+    var made = new HeldTally { Person = me! };
+    UnitOfWork.Commit();
+    tally = made;
+  } else {
+    PrivacyTally.RaiseRecount(tally!);
+  }
+  var counted = HeldTally.Single(t => t.Id == tally!.Id);
+  var held = counted.Counts == null ? new HeldCounts() : JsonSerializer.Deserialize<HeldCounts>(counted.Counts!);
+  List<KeptCategory> rows = [];
+  foreach (var c in AllCategories()) {
+    var k = KeptOf(c);
+    var n = held.Rows.FirstOrDefault(x => x.Key == c.Key);
+    if (n != null) { k.Held = n!.Held; k.Counted = true; }
+    rows.Add(k);
+  }
+  return rows.Where(k => k.Held > 0).Concat(rows.Where(k => k.Held == 0)).ToList();
+}
+
+/// How long a kept category is kept, as a phrase: "for 84 months from the end of the calendar year its fiscal year ended in".
+public string PeriodWords(EffectiveRetention r) {
+  if (r.RetainedMonths <= 0) { return Translate("erased on request"); }
+  return Translate($"for {r.RetainedMonths} months {FromPhrase(r)}");
+}
+
+/// What a request would do, category by category, before it is made — "we will erase…, we will keep… until…".
+[AllowAnonymous]
+public List<KeptCategory> WhatAskingDoes(RequestKind right) {
+  List<KeptCategory> rows = [];
+  foreach (var c in AllCategories()) {
+    if (right == RequestKind.Portability && !c.Portable) { continue; }
+    var r = RetentionOf(c);
+    var does = right == RequestKind.Access || right == RequestKind.Portability ? "A copy, with why we keep it and for how long."
+      : right == RequestKind.Restriction ? "Kept, but used for nothing until you say so."
+      : IsKept(c) ? "Kept " + PeriodWords(r) + ", used for this purpose only, then deleted."
+      : c.OnErasureWords != "" ? c.OnErasureWords
+      : "Erased.";
+    rows.Add(new KeptCategory { Key = c.Key, Label = c.Label, Purpose = c.Purpose, Basis = c.Basis.Label, Kept = does,
+                                Portable = c.Portable });
+  }
+  return rows;
+}

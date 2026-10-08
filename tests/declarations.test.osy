@@ -1,0 +1,84 @@
+// What the app holds and why — found without wiring, checked, and listed as the records of processing.
+
+using PrivacyKitTests;
+using Osysharp.Identity;
+using Osysharp.Inbox;
+using Osysharp.Privacy;
+
+/// A desk: Ada manages privacy and places legal holds, Lou places them too, Max manages privacy only, Raj is staff. Ann has an account, two notes and a voucher issued in August 2025 — inside
+/// the fiscal year that ends 30 June 2026. Bo has an order on its way. Cy's erasure fails at the desk's own ledger.
+[TestFixture]
+void Desk() {
+  var ada = new Person { Email = "ada@desk.test", DisplayName = "Ada", CodeHash = Security.HashPassword("1111") };
+  new RoleGrant { Member = ada, Role = DeskRole.Admin };
+  new RoleGrant { Member = ada, Role = DeskRole.Legal };
+  var raj = new Person { Email = "raj@desk.test", DisplayName = "Raj", CodeHash = Security.HashPassword("2222") };
+  new RoleGrant { Member = raj, Role = DeskRole.Staff };
+  // Lou handles legal matters with Ada — the second person a lift may need. Max manages privacy and holds no matter.
+  var lou = new Person { Email = "lou@desk.test", DisplayName = "Lou", CodeHash = Security.HashPassword("3333") };
+  new RoleGrant { Member = lou, Role = DeskRole.Admin };
+  new RoleGrant { Member = lou, Role = DeskRole.Legal };
+  var max = new Person { Email = "max@desk.test", DisplayName = "Max", CodeHash = Security.HashPassword("4444") };
+  new RoleGrant { Member = max, Role = DeskRole.Admin };
+
+  var ann = new Customer { Number = "C-1", Name = "Ann Archer", Email = "ann@customer.test" };
+  new Note { Customer = ann, Text = "Ann asked about her delivery." };
+  new Note { Customer = ann, Text = "Ann was refunded." };
+  new Voucher { Number = "V-1", Amount = 120m, IssuedAt = new DateTime(2025, 8, 15), BuyerName = "Ann Archer",
+    BuyerEmail = "ann@customer.test" };
+
+  // Ann signs in too — the desk's customers have accounts, and ask for themselves on their privacy page.
+  new Person { Email = "ann@customer.test", DisplayName = "Ann Archer", CodeHash = Security.HashPassword("5555") };
+
+  // Every request is inbox work, routed to a restricted queue only the people managing privacy are members of.
+  var privacy = new Queue { Name = "Privacy", Restricted = true };
+  new QueueMember { Queue = privacy, Member = ada };
+  new QueueMember { Queue = privacy, Member = max };
+  new RoutingRule { Name = "Privacy requests", Kind = "privacy", ToQueue = privacy };
+
+  new Customer { Number = "C-2", Name = "Bo Baker", Email = "bo@customer.test", OrderOnItsWay = true };
+  new Customer { Number = "C-3", Name = "Cy Cole", Email = "cy@customer.test", RefusesErasure = true };
+}
+
+principal Ada => Person.Single(p => p.Email == "ada@desk.test");
+principal Raj => Person.Single(p => p.Email == "raj@desk.test");
+principal Lou => Person.Single(p => p.Email == "lou@desk.test");
+principal Max => Person.Single(p => p.Email == "max@desk.test");
+principal Ann => Person.Single(p => p.Email == "ann@customer.test");
+
+[Test(Desk)]
+void every_holder_is_found_without_being_wired() {
+  var keys = Holders().Select(h => h.Key()).ToList();
+  Assert.Contains("PrivacyKitTests.Desk", keys);  // the app's own, written by hand — never listed anywhere
+  Assert.Contains("PrivacyKitTests", keys);       // …and the one the platform writes from its `[PersonalData]` visits
+  Assert.Contains("Osysharp.Privacy", keys);      // the kit's own, for the platform's copies
+  Assert.Contains("Osysharp.Mail", keys);         // the outbox the kit's own answers go through
+  Assert.Equal(4, keys.Count);
+}
+
+[Test(Desk)]
+void the_declarations_have_no_problem() {
+  Assert.Empty(DeclarationProblems());
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void the_records_of_processing_list_every_category_with_its_basis_and_period() {
+  var rows = RecordsOfProcessing();
+  Assert.Equal(7, rows.Count);
+  // The visits are by name too — held by the holder the platform writes from `[PersonalData]`, under the app's name.
+  Assert.Equal("PrivacyKitTests", rows.Single(r => r.Category == "app.visits").Holder);
+  Assert.Equal(RetentionBasis.Contract, rows.Single(r => r.Category == "mail.sent").Basis);
+  var vouchers = rows.Single(r => r.Category == "app.vouchers");
+  Assert.Equal(RetentionBasis.LegalObligation, vouchers.Basis);
+  Assert.Equal("Kept 84 months from the end of the calendar year its fiscal year ended in", vouchers.Retention);
+  Assert.Contains("Bokföringslagen", vouchers.BasisDetail);
+  Assert.Equal("Erased on request", rows.Single(r => r.Category == "app.notes").Retention);
+  Assert.True(rows.Single(r => r.Category == "app.account").Portable);
+}
+
+[Test(Desk)]
+[runas(Raj)]
+void only_the_people_managing_privacy_read_the_records_of_processing() {
+  Assert.Throws<NotAuthorized>(() => RecordsOfProcessing());
+}

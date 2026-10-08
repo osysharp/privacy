@@ -1,0 +1,256 @@
+// The Privacy kit's part of the app's settings area (D-SETTINGSREG1): how long each category of personal data is kept,
+// confirming the periods only the tenant can decide, a jurisdiction's bookkeeping preset, and how plans are reviewed.
+// ANNOUNCED (`ISettingsProvider`), so `SettingsArea()` lists it with no wiring, and served at `/settings/privacy` in the
+// area's frame (`SettingsFrame`).
+//
+// ⚑ NOTHING IS SAVED UNTIL SAVE (D-SETTINGSSWEEP1), like every settings page: a period changed, a category confirmed and
+//   a preset applied are all staged on the page's own unit of work, and the page's `SaveBar` saves them together. The
+//   bar is held back (`blockedBy`) by the check `SetRetention` makes (`RetentionLimitRefusal`), asked as the person
+//   types: a period outside the kit's limits saves only with the jurisdiction that allows it and the reason, both
+//   written on the page and recorded.
+//
+// ⚑ AN APP TAKES THE PAGE OVER BY NAME — a component `PrivacySettings` of its own replaces the kit's.
+
+namespace Osysharp.Privacy;
+
+using Osysharp.Ui;
+
+/// The Privacy kit's settings sections, shown to the people managing privacy.
+public class PrivacySettingsSections : ISettingsProvider {
+  public SettingsLink[] Sections() {
+    return [
+      new SettingsLink { Label = "Data retention", To = "/settings/privacy", Group = "Privacy", Icon = Icons.Archive,
+                         Order = 60, Shown = ManagesPrivacy,
+                         Hint = "How long each kind of personal data is kept, and on what basis." },
+    ];
+  }
+}
+
+/// One category as the retention page shows it — what it is and its limits; its current period is read from the
+/// category's `RetentionSetting` on the page, so a staged change shows at once.
+public class RetentionRow {
+  public string Key = "";
+  public string Label = "";
+  public string Purpose = "";
+  public string Basis = "";
+  /// "Kept 84 months from the end of the calendar year its fiscal year ended in", or "Erased on request" — as saved.
+  public string Retention = "";
+  public int Months = 0;
+  public RetentionStart From = RetentionStart.Collected;
+  /// The category's own start, and its words for it ("from the last message in it") — used while it is unchanged.
+  public RetentionStart DeclaredFrom = RetentionStart.Collected;
+  public string FromWords = "";
+  public int MinMonths = 0;
+  public int MaxMonths = 0;
+  public bool Confirmed = true;
+  public bool RequiresConfirmation = false;
+  public bool Bookkeeping = false;
+  /// The category declares no period at all — erased on request, with nothing to keep and nothing to change.
+  public bool Periodless = false;
+}
+
+// ⚑ A PERIOD IS NEVER "SET BY YOUR ORGANIZATION": `RetainedMonths` is `OrgPolicyMode.Range` — an organisation BOUNDS it
+//   and the app still chooses within — so the page keeps its Change button. Saying the bounds is D-ORGPOLICY1's, once an
+//   organisation can state them.
+
+/// Every category every holder declares, as the retention page shows it — the ones waiting for confirmation first.
+[Authorize(ManagesPrivacy)]
+public List<RetentionRow> RetentionRows() {
+  List<RetentionRow> rows = [];
+  foreach (var c in AllCategories()) {
+    var r = RetentionOf(c);
+    rows.Add(new RetentionRow {
+      Key = c.Key, Label = c.Label, Purpose = c.Purpose, Basis = c.Basis.Label, Retention = RetentionSentence(r),
+      Months = r.RetainedMonths, From = r.RetainedFrom, DeclaredFrom = c.RetainedFrom, FromWords = c.RetainedFromWords,
+      MinMonths = c.MinMonths, MaxMonths = c.MaxMonths, Confirmed = r.Confirmed, RequiresConfirmation = c.RequiresConfirmation,
+      Bookkeeping = c.Kind == RecordKind.Bookkeeping,
+      Periodless = c.RetainedMonths <= 0 && c.MinMonths <= 0 && c.MaxMonths <= 0 });
+  }
+  return rows.OrderBy(x => x.Label).ToList().OrderBy(x => x.Confirmed).ToList();
+}
+
+/// How the app's plans are reviewed, in words, and whether the organisation sets it — for the retention page.
+public class PlanReviewFacts {
+  public string Words = "";
+  public bool SetByOrganization = false;
+}
+
+[Authorize(ManagesPrivacy)]
+public PlanReviewFacts PlanReviewNow() {
+  var always = App.Setting<PrivacySetup>().ReviewPlans == PlanReview.Always;
+  return new PlanReviewFacts {
+    Words = always ? "Every plan waits for somebody managing privacy to approve it before it runs."
+                   : "A plan runs at once when it follows wholly from the declarations; one with a judgement in it, or filed by staff, waits for approval.",
+    SetByOrganization = SetByOrganization<PrivacySetup>(p => p.ReviewPlans) };
+}
+
+/// The retention page: each category's period (change it within the kit's limits — or outside them, saying the
+/// jurisdiction and why — or confirm one only the tenant can decide), a jurisdiction's bookkeeping preset, and how plans
+/// are reviewed. Every change waits for the page's Save.
+/// In a test: `Ui.Click("Change Support tickets")`, `Ui.Fill("Months kept", "24")`, `Ui.Click("Apply SE")`, `Ui.Click("Save")`.
+[Composable]
+public component RetentionEditor() {
+  List<RetentionRow> rows = [];
+  List<RetentionPreset> presets = [];
+  [SuppressWarning("cost-page-reads-the-whole-table")]   // one row per category the app declares, at most
+  live var settings = RetentionSetting.ToList();
+  PlanReviewFacts review = new PlanReviewFacts();
+  bool loaded = false;
+  string editing = "";
+  // The category whose row this page made to edit it — given back if Close finds it untouched.
+  string made = "";
+  string problem = "";
+  string done = "";
+  on mount { rows = RetentionRows(); presets = RetentionPresets(); review = PlanReviewNow(); loaded = true; }
+
+  /// The category's setting on this page — staged or saved — or null while it follows the kit's default.
+  RetentionSetting? SettingOf(string key) { return settings.FirstOrDefault(s => s.Category == key); }
+
+  /// The category's setting, made with its current period when it has none.
+  RetentionSetting Setting(RetentionRow r) {
+    var s = SettingOf(r.Key);
+    if (s != null) { return s; }
+    return new RetentionSetting { Category = r.Key, RetainedMonths = r.Months, RetainedFrom = r.From };
+  }
+
+  /// The period as it stands on the page.
+  string Sentence(RetentionRow r) {
+    var s = SettingOf(r.Key);
+    if (s == null) { return r.Retention; }
+    return RetentionSentence(new EffectiveRetention { RetainedMonths = s.RetainedMonths, RetainedFrom = s.RetainedFrom,
+      FromWords = s.RetainedFrom == r.DeclaredFrom ? r.FromWords : "" });
+  }
+
+  bool ConfirmedNow(RetentionRow r) {
+    var s = SettingOf(r.Key);
+    return r.Confirmed || (s != null && s.Confirmed);
+  }
+
+  bool Outside(RetentionRow r, RetentionSetting s) {
+    return s.RetainedMonths < r.MinMonths || (r.MaxMonths > 0 && s.RetainedMonths > r.MaxMonths);
+  }
+
+  /// The kit's limits, in words — "" when there are none to state.
+  string Limits(RetentionRow r) {
+    if (r.MaxMonths > 0) { return r.MinMonths + "–" + r.MaxMonths + " months without a stated reason"; }
+    if (r.MinMonths > 0) { return "At least " + r.MinMonths + " months without a stated reason"; }
+    return "";
+  }
+
+  action Edit(RetentionRow r) {
+    problem = ""; done = "";
+    if (editing == r.Key) { Close(r); return; }
+    editing = r.Key;
+    // Short: a savepoint's label is the Undo button's ("Undo period change"), on a phone's bar too.
+    UnitOfWork.Mark("Period change");
+    made = SettingOf(r.Key) == null ? r.Key : "";
+    Setting(r);
+  }
+  action Close(RetentionRow r) {
+    var s = SettingOf(r.Key);
+    // Opened and left as it was: the row this page made to edit it is given back, so nothing is waiting to be saved.
+    if (made == r.Key && s != null && s.RetainedMonths == r.Months && s.Jurisdiction == "" && s.Reason == "") { UnitOfWork.Undo(); }
+    editing = ""; made = "";
+  }
+  action Confirm(RetentionRow r) {
+    problem = ""; done = "";
+    UnitOfWork.Mark("Confirmation");
+    var s = Setting(r);
+    s.Confirmed = true;
+  }
+  action Preset(RetentionPreset p) {
+    problem = ""; done = "";
+    try {
+      var changes = PresetChanges(p.Jurisdiction);
+      UnitOfWork.Mark("Preset");
+      foreach (var c in changes) {
+        var s = Setting(rows.Single(x => x.Key == c.Key));
+        s.RetainedMonths = c.Months; s.RetainedFrom = c.From; s.BasisDetail = c.BasisDetail;
+        s.Jurisdiction = c.Jurisdiction; s.Reason = c.Reason;
+      }
+      done = p.Jurisdiction + " preset set on " + changes.Count + (changes.Count == 1 ? " category" : " categories") + " — Save keeps it.";
+    }
+    catch (Exception ex) { problem = ex.Message; }
+  }
+  /// As Save is pressed: the period being edited is closed — what it now says is the sentence above it.
+  action Saving() { editing = ""; made = ""; done = ""; }
+
+  /// Why the page cannot be saved as it stands — the kit's own check (`RetentionLimitRefusal`, the one `SetRetention`
+  /// makes) over every period on the page, as the person types. "" when it can. Said SHORT on the bar: the fields it
+  /// asks for, and the limits, are on the row being changed.
+  string Refusal() {
+    foreach (var r in rows) {
+      var s = SettingOf(r.Key);
+      if (s == null) { continue; }
+      var refusal = RetentionLimitRefusal(r.Label, r.MinMonths, r.MaxMonths, s.RetainedMonths, s.Jurisdiction, s.Reason);
+      if (refusal != "") {
+        return s.RetainedMonths < 0 ? refusal
+          : "Outside the kit's limits, a period is saved only with the jurisdiction that allows it and the reason.";
+      }
+    }
+    return "";
+  }
+
+  render {
+    SettingsPage("Data retention", description: "How long each kind of personal data is kept after its purpose ends, and on what basis. A request to erase keeps what the law still needs, restricted, until its period ends — then the daily purge removes it.") {
+      if (problem != "") { Alert(problem, tone: Tone.Warning); }
+      if (done != "") { Text(done, color: Colors.TextMuted, fontSize: FontSize.Caption, role: UiRole.Status); }
+      if (!loaded) { Skeleton(); }
+      if (loaded && rows.Count == 0) {
+        EmptyState("Nothing declared yet", body: "The app and its kits declare what personal data they hold; each kind appears here with its period.");
+      }
+      foreach (var r in rows) {
+        SettingsSection(r.Label, description: r.Purpose) {
+          Row(gap: 3, align: Align.Center, wrap: Wrapping.Wrap) {
+            Stack(gap: 0, grow: 1, minW: "200px") {
+              Text(Sentence(r));
+              Text(Limits(r) == "" ? r.Basis : r.Basis + " · " + Limits(r), fontSize: FontSize.Caption, color: Colors.TextMuted);
+            }
+            if (!ConfirmedNow(r)) {
+              Badge("Needs your decision", tone: Tone.Warning);
+              Button("Confirm", onPress: () => Confirm(r), tone: Tone.Primary, size: Size.Sm, announceAs: "Confirm " + r.Label);
+            }
+            // A category with no period has nothing to change: it is erased on request.
+            if (!r.Periodless) {
+              Button(editing == r.Key ? "Close" : "Change", onPress: () => Edit(r), tone: Tone.Ghost, size: Size.Sm,
+                     announceAs: (editing == r.Key ? "Close " : "Change ") + r.Label);
+            }
+          }
+          foreach (var s in settings.Where(x => x.Category == r.Key)) {
+            if (editing == r.Key) {
+              Stack(w: "160px") { NumberField("Months kept", value: s.RetainedMonths, min: 0, max: 600); }
+              if (Outside(r, s)) {
+                Text("Outside the kit's limits only for a jurisdiction that allows it — say which, and why. Both are recorded.",
+                     fontSize: FontSize.Caption, color: Colors.TextMuted);
+                Row(gap: 3, wrap: Wrapping.Wrap) {
+                  Stack(w: "160px") { Field("Jurisdiction", value: s.Jurisdiction, placeholder: "SE"); }
+                  Stack(grow: 1, minW: "220px") { Field("Why", value: s.Reason, placeholder: "The statute or decision that allows it"); }
+                }
+              }
+            } else if (s.Jurisdiction != "" && s.Reason != "") {
+              Text("Outside the kit's limits for " + s.Jurisdiction + ": " + s.Reason, fontSize: FontSize.Caption, color: Colors.TextMuted);
+            }
+          }
+        }
+      }
+      SettingsSection("Bookkeeping preset", description: "Set every bookkeeping category to a country's statutory period at once — recorded, and yours to verify with your adviser.") {
+        Row(gap: 2, wrap: Wrapping.Wrap) {
+          foreach (var p in presets) {
+            Button("Apply " + p.Jurisdiction, onPress: () => Preset(p), tone: Tone.Ghost, size: Size.Sm);
+          }
+        }
+      }
+      // Said where it is decided: the organisation's policy when it sets it, else the app's own code (`app.Privacy`).
+      SettingsSection("Plan review",
+                      description: "Which privacy-request plans wait for approval before they run."
+                                   + (review.SetByOrganization ? "" : " Set in the app's own code."),
+                      setByOrganization: review.SetByOrganization) {
+        Text(review.Words);
+      }
+      SaveBar(onSave: Saving, saved: "Retention saved.", blockedBy: Refusal());
+    }
+  }
+}
+
+[Page("/settings/privacy")] [Layout(SettingsFrame)] [Authorize(ManagesPrivacy)] [Render(CSR)] [Title("Data retention")]
+public component PrivacySettings() { render { RetentionEditor(); } }

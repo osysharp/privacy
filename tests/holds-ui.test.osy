@@ -1,0 +1,94 @@
+// Legal holds as the people who place them use them — from the settings area. `osy test --pixels` photographs each.
+
+using PrivacyKitTests;
+using Osysharp.Privacy;
+
+[Test(Desk)]
+void a_hold_is_placed_from_the_settings_area_and_lifted_only_with_a_reason() {
+  Ui.Viewport(1440, 900);
+  Ui.SignInAs(Ada);
+  Ui.Visit("/settings/privacy/holds");
+  Assert.Visible("No legal holds in force");
+  Assert.Visible("No second person", within: "Lifting a hold");
+  Ui.Shot("holds-empty");
+
+  Ui.Click("Place a hold");
+  Assert.Dialog("Place a legal hold");
+  Ui.Fill("Their email address", "Ann@Customer.test");
+  Ui.Fill("Matter", "Dispute with Ann Archer, 2026");
+  Ui.Fill("Why it must be kept", "Her complaint about the refund may go to court.");
+  // No review date yet: a hold is never kept for ever unseen.
+  Ui.Click("Place the hold");
+  Assert.Visible("Pick the date the hold is reviewed");
+  Ui.Fill("Review by", DateTime.UtcNow.AddDays(90).ToString("yyyy-MM-dd"));
+  // …and once it is picked, the dialog stops asking for it — before the next press, not after.
+  Assert.Hidden("Pick the date the hold is reviewed");
+  Ui.Shot("hold-dialog");
+  Ui.Click("Place the hold");
+
+  Assert.Visible("Holding everything about ann@customer.test");
+  Assert.Visible("Dispute with Ann Archer, 2026");
+  Assert.Visible("Her complaint about the refund may go to court.");
+  Ui.Shot("holds-in-force");
+
+  Ui.Click("Lift the hold on ann@customer.test");
+  Assert.Dialog("Lift the hold on ann@customer.test");
+  Ui.Click("Lift the hold", within: "Lift the hold on ann@customer.test");
+  Assert.Visible("Lifting a legal hold needs a reason");
+  Ui.Shot("lift-dialog-refused");
+  Ui.Fill("Why it can be lifted", "Settled out of court on 3 March.");
+  Ui.Click("Lift the hold", within: "Lift the hold on ann@customer.test");
+
+  Assert.Visible("Lifted. What waited on it");
+  Assert.Visible("Settled out of court on 3 March.", within: "Lifted");
+  Assert.Visible("No legal holds in force");
+  Ui.Shot("holds-lifted");
+}
+
+[Test(Desk)]
+void on_a_phone_in_the_dark_a_hold_due_for_review_says_so() {
+  runas (Ada) { PlaceHold("ann@customer.test", null, "Tax audit 2025", "The tax agency asked for the 2025 books.", DateTime.UtcNow.AddDays(30)); }
+  TestClock.Advance(TimeSpan.FromDays(31));
+  runas (Ada) { Workflow.Settle(LegalHold.Single()); }
+  Ui.Viewport(390, 844);
+  Ui.Theme("dark");
+  Ui.SignInAs(Ada);
+  Ui.Visit("/settings/privacy/holds");
+  Assert.Visible("Review due");
+  Assert.Visible("Keep, and review again…");
+  Assert.NoOverflow();
+  Ui.Shot("holds-phone-dark");
+}
+
+[Test(Desk)]
+void the_settings_sections_run_the_windows_height_beside_a_shorter_page() {
+  // The page is 1000px; the window is 1600px. The sections column runs the window, not the page.
+  Ui.Viewport(1440, 1600);
+  Ui.SignInAs(Ada);
+  Ui.Visit("/settings/test/known-height");
+  Assert.Taller("Settings sections", "A page of a known height");
+  Ui.Shot("settings-frame-full-height");
+}
+
+[Test]
+void a_section_under_another_lights_only_itself_in_the_settings_nav() {
+  List<SettingsLink> sections = [
+    new SettingsLink { Label = "Data retention", To = "/settings/privacy" },
+    new SettingsLink { Label = "Legal holds", To = "/settings/privacy/holds" },
+  ];
+  Assert.Equal("/settings/privacy/holds", CurrentSettingsSection(sections, "/settings/privacy/holds"));
+  Assert.Equal("/settings/privacy", CurrentSettingsSection(sections, "/settings/privacy"));
+  Assert.Equal("/settings/privacy", CurrentSettingsSection(sections, "/settings/privacy/categories"));
+  Assert.Equal("", CurrentSettingsSection(sections, "/settings/privacyx"));
+}
+
+[Test(Desk)]
+void somebody_who_does_not_place_holds_is_not_shown_the_page_and_it_refuses_them() {
+  runas (Ada) { PlaceHold("ann@customer.test", null, "Dispute with Ann Archer, 2026", "Court.", DateTime.UtcNow.AddDays(30)); }
+  Ui.Viewport(1440, 900);
+  Ui.SignInAs(Max);
+  runas (Max) { Assert.False(AnnouncedSettings().Any(l => l.To == "/settings/privacy/holds")); }
+  Ui.Visit("/settings/privacy/holds");
+  Assert.Hidden("Dispute with Ann Archer, 2026");
+  Assert.Hidden("Place a hold");
+}

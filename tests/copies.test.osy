@@ -1,0 +1,27 @@
+// An erasure leaves no trace of the person anywhere the app keeps data — but the copy kept, restricted, for the books.
+
+using PrivacyKitTests;
+using Osysharp.Privacy;
+
+[Test(Desk)]
+[runas(Ada)]
+void an_erased_customer_leaves_no_trace_anywhere_but_the_voucher_kept_for_the_books() {
+  // A word nobody else would write, in everything Dee gave the desk.
+  var dee = new Customer { Number = "C-9", Name = "Dee quillwort-9", Email = "dee@customer.test" };
+  new Note { Customer = dee, Text = "Dee quillwort-9 asked twice." };
+  new Voucher { Number = "V-9", Amount = 40m, IssuedAt = new DateTime(2025, 9, 1), BuyerName = "Dee quillwort-9",
+    BuyerEmail = "dee@customer.test" };
+  UnitOfWork.Commit();
+  Dee_is_found_before_the_erasure();
+
+  var r = FileRequest(RequestKind.Erasure, null, "dee@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.NoTraceOf("quillwort-9");
+  Assert.NoTraceOf("dee@customer.test");
+}
+
+/// The oracle is not passing for want of looking: before the erasure the word is everywhere it was put.
+void Dee_is_found_before_the_erasure() {
+  Assert.Refuses(() => { Assert.NoTraceOf("quillwort-9"); }, "table PrivacyKitTests.Customer");
+}

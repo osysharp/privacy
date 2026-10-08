@@ -1,0 +1,290 @@
+namespace PrivacyKitTests;
+
+using Osysharp.Identity;
+using Osysharp.Inbox;
+using Osysharp.ServiceHours;
+using Osysharp.Privacy;
+
+[Role] enum DeskRole { Authenticator, Admin, Staff, Legal }
+
+policy IsAdmin => RoleGrant.Any(g => g.Member == user && g.Role == DeskRole.Admin);
+policy IsStaff => RoleGrant.Any(g => g.Member == user && (g.Role == DeskRole.Staff || g.Role == DeskRole.Admin));
+/// The kit's one question, answered by the app: admins manage privacy.
+policy ManagesPrivacy => IsAdmin;
+/// …and its second: the people who handle legal matters place and lift legal holds.
+policy PlacesLegalHolds => RoleGrant.Any(g => g.Member == user && g.Role == DeskRole.Legal);
+// A request is inbox work: the desk's staff work the inbox, its admins lead and administer it. Who may READ a request
+// is the kit's own rule (the people managing privacy) — a staff member works the inbox and never sees one.
+policy WorksInbox => IsStaff;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsStaff;
+
+/// The desk's people — signs in with a code, which is all a test needs.
+entity Person : Principal {
+  [MaxLength(200)] string CodeHash = "";
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+    deny read CodeHash when !IsAuthenticator;
+  }
+}
+
+/// A customer of the desk. Their name and address are personal data, said once, on the fields.
+entity Customer {
+  [Required, MaxLength(40)] string Number;
+  [Classification(Personal.Contact), MaxLength(200)] string Name;
+  [Classification(Personal.Contact), MaxLength(320)] string Email;
+  /// An order on its way — erasing the account waits for it.
+  bool OrderOnItsWay;
+  /// A test's lever: the desk's own erasure of this account fails, as a ledger that is locked would.
+  bool RefusesErasure;
+  [ForeignKey(Customer)] Note[] Notes;
+  security { allow read, create, update, delete when IsStaff; }
+}
+
+/// What staff wrote about a customer's requests.
+entity Note {
+  [Required] Customer Customer;
+  [Classification(Personal.Content), MaxLength(2000)] string Text;
+  security { allow read, create, update, delete when IsStaff; }
+}
+
+/// A voucher the desk issued — an accounting record the books keep as issued. It names its buyer by copy, so it stands
+/// when the customer's account is erased.
+entity Voucher {
+  [Required, MaxLength(40)] string Number;
+  decimal Amount;
+  DateTime IssuedAt;
+  [Classification(Personal.Contact), MaxLength(200)] string BuyerName;
+  [Classification(Personal.Contact), MaxLength(320)] string BuyerEmail;
+  security { allow read, create, update, delete when IsStaff; }
+}
+
+/// A customer's visit to the desk — the desk's own record of it, which stays; what it was about is the customer's own
+/// words. It says whose a row is and why it is kept, and the platform writes its holder (D-DATASUBJECT1), keyed by the
+/// app's name: an erasure blanks the subject. The desk's own holder below then says what stands there instead.
+[PersonalData(DeskVisits)]
+entity Visit {
+  [DataSubject] Customer? Customer;
+  [Classification(Personal.Content), MaxLength(200)] string Subject;
+  security { allow read, create, update, delete when IsStaff; }
+}
+
+/// Why the desk keeps a visit.
+public DataCategory DeskVisits() {
+  return new DataCategory { Key = "app.visits", Label = "What your visits to our desk were about", Purpose = "Serving you",
+                            SubjectKind = "customers", Basis = RetentionBasis.Contract };
+}
+
+/// How a request reaches a visit: through the customer the proven address belongs to.
+[FindsDataSubject]
+public class CustomersOf {
+  public List<Customer> Find(DataSubject s) { return Customer.Where(c => s.Emails.Contains(c.Email)).ToList(); }
+}
+
+/// What the desk holds about a person, and why — the app's holder. Nobody wires it: the kit finds it. Its key is its
+/// own: the holder written from `[PersonalData]` (the visits) carries the app's name.
+public class DeskPersonalData : IPersonalDataHolder {
+  public string Key() => "PrivacyKitTests.Desk";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "app.account", Label = "Your customer account: your name and email address",
+      Purpose = "Serving you", SubjectKind = "customers", Basis = RetentionBasis.Contract, Portable = true,
+      // Every other category here is found through the account's address — so it is erased last.
+      Identifies = true },
+    new DataCategory {
+      Key = "app.notes", Label = "What our staff wrote about your requests",
+      Purpose = "Serving you", SubjectKind = "customers", Basis = RetentionBasis.Contract },
+    new DataCategory {
+      Key = "app.vouchers", Label = "Your name and email address on vouchers we issued",
+      Purpose = "Bookkeeping: an issued voucher is kept as issued", SubjectKind = "customers",
+      Basis = RetentionBasis.LegalObligation, BasisDetail = "the bookkeeping law (Bokföringslagen 7 kap. 2 §)",
+      Kind = RecordKind.Bookkeeping, RetainedMonths = 84, RetainedFrom = RetentionStart.EndOfFiscalYearCalendarYear,
+      MinMonths = 36, MaxMonths = 132 },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (c.Key == "app.account") { return Customer.Count(x => s.Emails.Contains(x.Email)); }
+    if (c.Key == "app.notes") { return Note.Count(n => s.Emails.Contains(n.Customer.Email)); }
+    return Voucher.Count(v => s.Emails.Contains(v.BuyerEmail));
+  }
+
+  public string BlockedBy(DataSubject s, DataCategory c) {
+    if (c.Key == "app.account" && Customer.Any(x => s.Emails.Contains(x.Email) && x.OrderOnItsWay)) {
+      return "an order is on its way to you";
+    }
+    // A customer account held as a case — a dispute about this account — is not erased while the hold stands.
+    if (c.Key != "app.vouchers") {
+      foreach (var x in Customer.Where(x => s.Emails.Contains(x.Email)).ToList()) {
+        if (IsCaseHeld(x.Id)) { return HeldSentence(); }
+      }
+    }
+    return "";
+  }
+
+  // Only vouchers are kept restricted here, so only they need keeping out of the purge while a hold stands.
+  public bool Hold(LegalHold hold, DataCategory c, bool held) {
+    if (c.Key != "app.vouchers") { return true; }
+    HoldVouchers(SubjectOfHold(hold).Emails, hold.CaseRow, held);
+    return true;
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (c.Key == "app.notes") {
+      foreach (var n in Note.Where(n => s.Emails.Contains(n.Customer.Email)).ToList()) { n.Delete(); }
+      // A visit stays the desk's record; with what staff wrote about the customer gone, it says it was erased rather
+      // than go blank — the desk's own word over the generic blanking of its subject, which must not land after it.
+      foreach (var v in Visit.Where(v => v.Customer != null && s.Emails.Contains(v.Customer.Email)).ToList()) {
+        v.Subject = "Erased with the customer's notes";
+      }
+    }
+    if (c.Key == "app.account") {
+      foreach (var x in Customer.Where(x => s.Emails.Contains(x.Email)).ToList()) {
+        if (x.RefusesErasure) { throw new Exception("the ledger is locked"); }
+        foreach (var n in x.Notes.ToList()) { n.Delete(); }
+        x.Delete();
+      }
+    }
+  }
+
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
+    DateTime? latest = null;
+    foreach (var v in Voucher.Where(v => s.Emails.Contains(v.BuyerEmail)).ToList()) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, v.IssuedAt);
+      Restriction.Restrict(v, c.Key, until);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    return latest;
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    if (c.Key == "app.account") {
+      return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(
+        Customer.Where(x => s.Emails.Contains(x.Email)).Select(x => new { x.Number, x.Name, x.Email }).ToList()) };
+    }
+    if (c.Key == "app.notes") {
+      return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(
+        Note.Where(n => s.Emails.Contains(n.Customer.Email)).Select(n => new { n.Text }).ToList()) };
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(
+      Voucher.Where(v => s.Emails.Contains(v.BuyerEmail)).Select(v => new { v.Number, v.Amount, v.IssuedAt }).ToList()) };
+  }
+}
+
+/// The bookkeeping export — the one place a kept voucher's buyer is read. Every read is logged.
+[PurposeRead("app.vouchers")]
+public string VoucherForTheBooks(string number) {
+  var v = Voucher.FirstOrDefault(x => x.Number == number);
+  return v == null ? "" : $"{v.Number} {v.Amount} {v.BuyerName}";
+}
+
+/// Keep a held person's kept vouchers — or a held voucher — out of the purge, or give them their period back. A purpose
+/// read: kept vouchers are read for nothing else, and this read is logged too.
+[PurposeRead("app.vouchers")]
+public int HoldVouchers(List<string> emails, Guid? caseRow, bool held) {
+  var n = 0;
+  foreach (var v in Voucher.Where(v => emails.Contains(v.BuyerEmail) || v.Id == caseRow).ToList()) {
+    DateTime? until = held ? null : KeepUntil(CategoryOf("app.vouchers"), v.IssuedAt);
+    if (Restriction.SetUntil(v, until)) { n = n + 1; }
+  }
+  return n;
+}
+
+// Every WorkItem here is a PrivacyRequest, whose reads the kit grants; nothing reads the base table on its own.
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+// The hours a promise could count in: staff read them, admins keep them. (A privacy request's promise is real time.)
+partial entity ServiceHours { security { allow read when WorksInbox; allow create, update, delete when AdministersInbox; } }
+
+/// A stand-in for a sign-in kit's step-up (`Osysharp.Privacy.Accounts` is the real one): the code is always "123456",
+/// and a proof is the signed-in person's own row. Discovered like any implementation — nothing wires it.
+public class DeskProof : IRequesterProof {
+  public string Key() => "desk-test";
+  public ProofStarted Start() {
+    var me = Person.Single(p => p.Id == Session.CurrentUser!.Id);
+    var p = new TestProof { Account = me };
+    UnitOfWork.Commit();
+    return new ProofStarted { Id = p.Id, SentTo = me.Email };
+  }
+  public string Prove(Guid proof, string code) {
+    var p = TestProof.FirstOrDefault(x => x.Id == proof);
+    if (p == null || code != "123456") { return "That is not the code we sent."; }
+    p.ProvenAt = DateTime.UtcNow;
+    UnitOfWork.Commit();
+    return "";
+  }
+  public string Spend(Guid proof, Guid account, TimeSpan within) {
+    var p = TestProof.FirstOrDefault(x => x.Id == proof && x.Account.Id == account && x.ProvenAt != null && x.SpentAt == null);
+    if (p == null || p.ProvenAt!.Value < DateTime.UtcNow - within) { return ""; }
+    p.SpentAt = DateTime.UtcNow;
+    return p.Account.Email;
+  }
+}
+
+/// The stand-in's proofs.
+entity TestProof {
+  [Required] Person Account;
+  DateTime? ProvenAt;
+  DateTime? SpentAt;
+  security { allow read, create, update when IsAuthenticated where Account == user; }
+}
+
+/// A stand-in for proving an ADDRESS, for a customer with no account (`Osysharp.Privacy.Conversations` is the real one,
+/// a code mailed through the desk's channel): the code is always "654321", and a proof belongs to the browser that
+/// asked for it — only that browser confirms it, and only that browser's ask can spend it. Discovered like any
+/// implementation — nothing wires it.
+public class DeskAddressProof : IAddressProof {
+  public string Key() => "desk-address-test";
+  public ProofStarted StartFor(string address) {
+    var p = new TestAddressProof { Address = NormalisedEmail(address), Visit = Visitor.Id ?? "" };
+    UnitOfWork.Commit();
+    return new ProofStarted { Id = p.Id, SentTo = p.Address };
+  }
+  public string Prove(Guid proof, string code) {
+    var p = TestAddressProof.FirstOrDefault(x => x.Id == proof);
+    if (p == null || code != "654321") { return "That is not the code we sent."; }
+    p.ProvenAt = DateTime.UtcNow;
+    UnitOfWork.Commit();
+    return "";
+  }
+  public string SpendForVisit(Guid proof, string visit, TimeSpan within) {
+    var p = TestAddressProof.FirstOrDefault(x => x.Id == proof && x.Visit == visit && x.ProvenAt != null && x.SpentAt == null);
+    if (p == null || p.ProvenAt!.Value < DateTime.UtcNow - within) { return ""; }
+    p.SpentAt = DateTime.UtcNow;
+    return p.Address;
+  }
+}
+
+/// The address stand-in's proofs — each one its browser's own.
+entity TestAddressProof {
+  [Classification(Personal.Contact), MaxLength(320)] string Address;
+  [MaxLength(64)] string Visit;
+  DateTime? ProvenAt;
+  DateTime? SpentAt;
+  security { allow read, create, update when IsAnonymous || IsAuthenticated where Visit == Visitor.Id; }
+}
+
+[AuthMethod]
+string SignInWithCode(string email, string code) {
+  var p = Person.FirstOrDefault(x => x.Email == NormalisedEmail(email));
+  if (p == null || !p.IsActive) { Security.VerifyPassword(code); return ""; }
+  if (!Security.VerifyPassword(code, p.CodeHash)) { return ""; }
+  return Security.IssueJwt(p.Id, p.Email);
+}
+
+app.AuthBootstrap = new AuthBootstrap { Role = DeskRole.Authenticator, Login = SignInWithCode };
+app.Auth = new PasswordAuth { LoginField = Email, PasswordField = CodeHash };
+app.Privacy = new PrivacySetup {
+  Controller = "The Desk AB", FiscalYearEndMonth = 6, FiscalYearEndDay = 30,
+  SupervisoryAuthority = "IMY, imy.se" };
+app = new() {
+  Name = "PrivacyKitTests",
+  // Mapped by ROLE, so the sign-in role is among them: the mail kit's outbox is personal too (`OutgoingMail.To`, its
+  // `Text`), and the sign-in flow reads what it mailed.
+  Classifications = [
+    new Classification(Personal.Contact) { Roles = [DeskRole.Admin, DeskRole.Staff, DeskRole.Legal, DeskRole.Authenticator] },
+    new Classification(Personal.Content) { Roles = [DeskRole.Admin, DeskRole.Staff, DeskRole.Legal, DeskRole.Authenticator] },
+  ],
+};

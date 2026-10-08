@@ -1,0 +1,113 @@
+namespace Osysharp.Privacy;
+
+// ── who holds what: discovered, checked, and listed ───────────────────────────────────────────────────────────────
+
+/// Every holder of personal data in the app — the app's own and every kit's, DISCOVERED (never wired), in a stable order.
+public List<IPersonalDataHolder> Holders() {
+  return App.Implementations<IPersonalDataHolder>();
+}
+
+/// Every category every holder declares.
+public List<DataCategory> AllCategories() {
+  List<DataCategory> all = [];
+  foreach (var h in Holders()) {
+    foreach (var c in h.Categories()) { all.Add(c); }
+  }
+  return all;
+}
+
+/// The category declared under `key` — refused, naming the keys there are, when none is.
+public DataCategory CategoryOf(string key) {
+  var found = AllCategories().FirstOrDefault(c => c.Key == key);
+  if (found == null) {
+    throw new ValidationException($"No holder declares the category '{key}'. The categories are: "
+      + string.Join(", ", AllCategories().Select(c => c.Key)) + ".");
+  }
+  return found!;
+}
+
+/// What is wrong with the declarations, one sentence each — empty when nothing is. A request is not planned while there
+/// is anything here: a category with no key, a key two holders declare, or a KEPT category (legal obligation, legal
+/// claims) with no period — storage limitation (Art. 5(1)(e)) allows no "for ever" nobody chose.
+public List<string> DeclarationProblems() {
+  List<string> problems = [];
+  List<string> seen = [];
+  List<string> holders = [];
+  foreach (var h in Holders()) {
+    // A plan line names its holder by key and a run finds the holder by it — two holders under one key would send one's
+    // lines to the other. The holder the platform writes from `[PersonalData]` takes the app's name, so a holder the app
+    // also writes by hand needs a key of its own.
+    if (holders.Contains(h.Key())) {
+      problems.Add($"Two holders are keyed '{h.Key()}' — a key is one holder. The one written from `[PersonalData]` takes "
+        + "the app's name, so a holder the app also writes by hand needs a key of its own.");
+    }
+    holders.Add(h.Key());
+    foreach (var c in h.Categories()) {
+      if (c.Key.Trim() == "") { problems.Add($"{h.Key()} declares a category with no key."); continue; }
+      if (seen.Contains(c.Key)) { problems.Add($"Two holders declare the category '{c.Key}' — a key is one category."); }
+      seen.Add(c.Key);
+      if ((c.Basis == RetentionBasis.LegalObligation || c.Basis == RetentionBasis.LegalClaims) && c.RetainedMonths <= 0) {
+        problems.Add($"'{c.Key}' is kept on {c.Basis} but declares no period — say how long (RetainedMonths), "
+          + "so nothing is kept longer than its purpose needs.");
+      }
+      if (c.MaxMonths > 0 && c.MinMonths > c.MaxMonths) {
+        problems.Add($"'{c.Key}' declares a minimum of {c.MinMonths} months above its maximum of {c.MaxMonths}.");
+      }
+    }
+  }
+  return problems;
+}
+
+/// One row of the records of processing (GDPR Art. 30) — derived from the declarations and the tenant's settings,
+/// never typed in by hand.
+public class ProcessingRecord {
+  public string Holder = "";
+  public string Category = "";
+  public string Label = "";
+  public string Purpose = "";
+  public string SubjectKind = "";
+  public RetentionBasis Basis = RetentionBasis.None;
+  public string BasisDetail = "";
+  /// "Kept 84 months from the end of the calendar year the fiscal year ended in", or "Erased on request".
+  public string Retention = "";
+  public bool Portable = false;
+  public bool Special = false;
+  /// False while the category waits for the tenant to confirm its period.
+  public bool Confirmed = true;
+  /// The jurisdiction stated for a period outside the kit's limits, or "".
+  public string Jurisdiction = "";
+}
+
+/// The records of processing: one row per category, from the declarations and the settings.
+[Authorize(ManagesPrivacy)]
+public List<ProcessingRecord> RecordsOfProcessing() {
+  List<ProcessingRecord> rows = [];
+  foreach (var h in Holders()) {
+    foreach (var c in h.Categories()) {
+      var r = RetentionOf(c);
+      rows.Add(new ProcessingRecord {
+        Holder = h.Key(), Category = c.Key, Label = c.Label, Purpose = c.Purpose, SubjectKind = c.SubjectKind,
+        Basis = c.Basis, BasisDetail = r.BasisDetail, Retention = RetentionSentence(r), Portable = c.Portable,
+        Special = c.Special, Confirmed = r.Confirmed, Jurisdiction = r.Jurisdiction });
+    }
+  }
+  return rows;
+}
+
+// ⚑ `Translate` on every phrase here: they reach a person's page, an export and a response through values the server
+//   builds, where the text analysis cannot follow them — so they are marked, and read in the reader's language.
+
+/// When a category's period starts, as a phrase: "from the last message in it".
+public string FromPhrase(EffectiveRetention r) {
+  if (r.FromWords != "") { return r.FromWords; }
+  return r.RetainedFrom == RetentionStart.Collected ? Translate("from when it was collected")
+    : r.RetainedFrom == RetentionStart.EndOfCalendarYear ? Translate("from the end of its calendar year")
+    : r.RetainedFrom == RetentionStart.EndOfFiscalYear ? Translate("from the end of its fiscal year")
+    : Translate("from the end of the calendar year its fiscal year ended in");
+}
+
+/// How long a category is kept, in words.
+public string RetentionSentence(EffectiveRetention r) {
+  if (r.RetainedMonths <= 0) { return Translate("Erased on request"); }
+  return Translate($"Kept {r.RetainedMonths} months {FromPhrase(r)}");
+}

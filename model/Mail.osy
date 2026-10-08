@@ -1,0 +1,59 @@
+namespace Osysharp.Privacy;
+
+using Osysharp.Mail;
+
+// ── the mail the app sent: Osysharp.Mail's outbox, as a holder ────────────────────────────────────────────────────
+//
+// Every app that answers privacy requests sends mail (Privacy uses Osysharp.Mail for its answers), so the outbox's
+// holder lives here rather than in the Mail kit — which must not depend on Privacy, Privacy being one of its senders.
+// The outbox keeps who a message went to and what it said; a person's erasure reaches it by exact address
+// (`EraseMailTo`: `ann@x.com` never reaches mail to `joann@x.com`). A conversation's mail is ALSO reached by the
+// Conversations holder through its channel; both are the same erasure, and either finding nothing is fine.
+
+public class MailPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Mail";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "mail.sent", Label = "Mail we sent you", Purpose = Translate("Telling you what you asked us to, and what we must"),
+      SubjectKind = "everyone we mailed", Basis = RetentionBasis.Contract },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    var n = 0;
+    foreach (var e in s.Emails) { n = n + MailToCount(e); }
+    return n;
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    foreach (var e in s.Emails) { EraseMailTo(e); }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<SentMailRow> rows = [];
+    List<ExportItem> items = [];
+    foreach (var e in s.Emails) {
+      foreach (var m in OutgoingMail.Where(m => m.To.ToLower().Contains(e)).ToList()) {
+        if (!Addresses(m.To).Any(t => t.Trim().ToLower() == e)) { continue; }
+        rows.Add(new SentMailRow { At = m.SentAt ?? m.CreatedAt, Subject = m.Subject });
+        items.Add(new ExportItem { At = m.SentAt ?? m.CreatedAt, Title = Translate("Mail we sent you"),
+                                   Fields = [new ExportField { Name = Translate("Subject"), Value = m.Subject }] });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One mail in a person's export — when, and what it was about; its words are the person's own copy, in their mailbox.
+public class SentMailRow {
+  public DateTime At;
+  public string Subject = "";
+}
+
+/// How many outbox messages went to exactly `address`.
+[SuppressWarning("cost-unbounded-read")]   // one person's mail, matched by exact address in memory (a To line may carry several)
+int MailToCount(string address) {
+  var a = address.Trim().ToLower();
+  if (a == "") { return 0; }
+  return OutgoingMail.Where(m => m.To.ToLower().Contains(a)).ToList().Count(m => Addresses(m.To).Any(t => t.Trim().ToLower() == a));
+}

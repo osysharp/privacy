@@ -1,0 +1,470 @@
+namespace Osysharp.Privacy;
+
+using Osysharp.Identity;
+using Osysharp.Inbox;
+using Osysharp.Mail;
+using Osysharp.Workflow;
+
+// ── a request from a person, its plan, its run and its response ────────────────────────────────────────────────────
+//
+// A request is PLANNED the moment it is filed — one line per category of every holder, decided from the declarations
+// (privacy_kit_design §3.4): not held · erase now · keep restricted until a date, on a stated basis · blocked until an
+// event, for a stated reason · kept on compelling grounds a person wrote down · exported. The plan RUNS as a workflow,
+// as the system; a holder that fails fails the whole request, naming the holder — never marked done. A blocked line is
+// asked again daily (and whenever the app says its block cleared) and runs then; the request WAITS, it is never refused.
+//
+// ⚑ A REQUEST IS INBOX WORK (D-INBOX1): `PrivacyRequest : WorkItem`, queued, held and clocked like any other item. Its
+//   promise is the statutory one — an ABSOLUTE `DueAt`, one calendar month from receipt (`StatutoryDue`), at risk and
+//   breached like any clock, moved only by an extension that says why (Art. 12(3)).
+// ⚑ TWO WAYS IN. Staff file one on a person's behalf (`FileRequest`) and record HOW they checked who it is; its plan
+//   waits for approval, and nothing is sent to an address they typed. A person files for themselves (`AskAboutMe`,
+//   Self.osy) after proving it is them NOW — the request is made by the kit's own run, about their own account and the
+//   address the proof reached, and the answer goes only there.
+
+/// What the person asks for (GDPR Arts. 15, 20, 17, 18). ⚠ Appended, never inserted: stored by position.
+public enum RequestKind {
+  /// Art. 15 — a copy of their data, with the purposes, bases and retention of each category.
+  [Label("Access")] Access,
+  /// Art. 20 — the data they provided, machine-readable.
+  [Label("Portability")] Portability,
+  /// Art. 17 — erase it, keeping only what a law or a legal claim requires (restricted).
+  [Label("Erasure")] Erasure,
+  /// Art. 18 — keep it, but only stored: restricted until the restriction is lifted.
+  [Label("Restriction")] Restriction,
+}
+
+/// Where a request stands — tracked by `PrivacyRequestRun`. ⚠ Appended, never inserted.
+public enum RequestState {
+  [Label("Received")] Received,
+  [Label("Waiting for approval")] Review,
+  [Label("Running")] Running,
+  [Label("Waiting for a block to clear")] Waiting,
+  [Label("Done")] Done,
+  [Label("Failed")] Failed,
+}
+
+/// What a plan does with one category. ⚠ Appended, never inserted.
+public enum PlanOutcome {
+  [Label("Not held")] NotHeld,
+  [Label("Erase")] Erase,
+  [Label("Keep restricted")] Restrict,
+  [Label("Blocked")] Blocked,
+  [Label("Keep")] Keep,
+  [Label("Export")] Export,
+}
+
+/// How the person was proven to be who a request is about. ⚠ Appended, never inserted.
+public enum IdentityCheck {
+  /// They asked for themselves, signed in, and proved it again by a code to their account's address.
+  [Label("Signed in, and proved it again")] StepUp,
+  /// Staff sent a code to an address already on file, and it came back.
+  [Label("A code to an address on file")] CodeToKnownAddress,
+  /// Details only they would know, matched against what is on file (an order number and the address on it).
+  [Label("Details only they would know")] KnownDetails,
+  /// An identity document — only where nothing less will do; the copy is not kept.
+  [Label("An identity document")] Document,
+  [Label("BankID")] BankId,
+  [Label("In person")] InPerson,
+  /// They asked for themselves with no account, and proved control of the address they asked about by a code mailed
+  /// there (`IAddressProof`) — the request is about that address alone.
+  [Label("A code to the address they asked about")] CodeToTheirAddress,
+}
+
+/// One request from a person — inbox work. Its rows hold ids, counts and dates — and the address it is about, which is
+/// personal data and is never recorded in the audit trail. Kept as the controller's evidence under `privacy.records`.
+/// Its promise is `DueAt` (WorkItem's absolute due date): one calendar month from `ReceivedAt`. Its `Language`
+/// (WorkItem's) is the one the person asked in — the readable copy of an export is written in it.
+public entity PrivacyRequest : WorkItem {
+  /// What the person asks for. (`WorkItem.Kind` is the inbox's routing key — "privacy" for every request.)
+  RequestKind Right;
+  /// The statutory clock starts here (Art. 12(3)).
+  DateTime ReceivedAt;
+  /// The person, as the principal they sign in as — when they have one.
+  Guid? SubjectAccount;
+  /// The person's proven address — cleared when an erasure finishes, leaving only `SubjectKey`.
+  [Classification(Personal.Contact), MaxLength(320)] string? SubjectEmail;
+  /// Their phone number, when staff checked it is theirs (by calling it) — what reaches the texts the app sent them.
+  /// Cleared when an erasure finishes.
+  [Classification(Personal.Contact), MaxLength(32)] string? SubjectPhone;
+  /// A keyed fingerprint of the address (`Security.Fingerprint`) — the evidence that THIS person asked, which answers
+  /// "did this address ask?" for an address one already has and cannot be turned back into it.
+  [MaxLength(64)] string SubjectKey = "";
+  /// How the person was proven to be who it is about…
+  IdentityCheck Check;
+  /// …in the words of whoever checked: "Matched the order number and the address on it." Required from staff.
+  [MaxLength(500)] string Note = "";
+  /// Filed by staff on the person's behalf — its plan waits for approval, and nothing is sent to an address they typed.
+  bool EnteredByStaff;
+  /// The PROVEN address the answer goes to — the one a step-up reached. Empty for a request staff filed: they deliver it
+  /// through a channel they proved, and the request says so.
+  [Classification(Personal.Contact), MaxLength(320)] string DeliverTo = "";
+  /// When the response (and, for access, the notice that the export is ready) was sent there.
+  DateTime? DeliveredAt;
+  /// An access or portability export can be fetched until then, once; the file is deleted after.
+  DateTime? ExportExpiresAt;
+  /// Art. 12(3): why the deadline was extended — told to the person.
+  [MaxLength(500)] string ExtensionReason = "";
+  bool NeedsReview;
+  RequestState State;
+  /// Why it failed, naming the holder — empty unless it did.
+  [MaxLength(1000)] string Problem = "";
+  /// What the person is told: erased, kept and why, blocked, and where to complain.
+  [MaxLength(8000)] string Response = "";
+  /// Where an access or portability export was written (it goes with the request).
+  [MaxLength(500)] string ExportPath = "";
+  [ForeignKey(Request)] PlanLine[] Plan;
+  security {
+    // The people managing privacy read every request; the person reads their own — what they asked, where it stands,
+    // what they were told — and never the staff side of it.
+    allow read when ManagesPrivacy;
+    allow read where Requester == user;
+    // A person with no account reads the one request their mailed export link names — to fetch its export once.
+    allow read by ExportLink;
+    allow create, update when ManagesPrivacy;
+    deny read Note, Problem, NeedsReview, SubjectKey, EnteredByStaff when !ManagesPrivacy;
+  }
+}
+
+/// One line of a request's plan — a category of a holder and what happens to it. Counts, never content.
+public entity PlanLine {
+  [Required] PrivacyRequest Request;
+  [MaxLength(200)] string Holder;
+  [MaxLength(200)] string Category;
+  PlanOutcome Outcome;
+  /// How many rows the holder has — never what they hold.
+  int Items;
+  /// For a kept line: the first instant after its period — kept through the day before.
+  DateTime? Until;
+  /// Blocked: the holder's sentence. Keep: the grounds a person wrote down.
+  [MaxLength(1000)] string Reason = "";
+  /// Blocked by a legal hold rather than by the holder — runs when the hold is lifted. The person reads the basis
+  /// (`HeldSentence`), never the matter.
+  bool Held;
+  DateTime? DoneAt;
+  security {
+    allow read, create, update when ManagesPrivacy;
+  }
+}
+
+/// The statutory deadline for a request received at `receivedAt`: the same date one calendar month later (the month's
+/// last day when there is no such date — `AddMonths` already says so), moved to the following Monday when it falls on a
+/// weekend (EU Reg. 1182/71 Art. 3, as the EDPB applies it).
+public DateTime StatutoryDue(DateTime receivedAt) {
+  var due = receivedAt.AddMonths(1);
+  if (due.DayOfWeek == DayOfWeek.Saturday) { return due.AddDays(2); }
+  if (due.DayOfWeek == DayOfWeek.Sunday) { return due.AddDays(1); }
+  return due;
+}
+
+/// The person a request is about, as the identifiers it was filed with.
+public DataSubject SubjectOf(PrivacyRequest r) {
+  var s = new DataSubject { Account = r.SubjectAccount };
+  if (r.SubjectEmail != null && r.SubjectEmail != "") { s.Emails.Add(r.SubjectEmail!.Trim().ToLower()); }
+  if (r.SubjectPhone != null && r.SubjectPhone != "") { s.Phones.Add(r.SubjectPhone!.Trim()); }
+  return s;
+}
+
+/// Whether a category is KEPT (restricted) rather than erased when a person asks.
+public bool IsKept(DataCategory c) {
+  return (c.Basis == RetentionBasis.LegalObligation || c.Basis == RetentionBasis.LegalClaims)
+    && RetentionOf(c).RetainedMonths > 0;
+}
+
+/// File a request on a person's behalf (a letter, a call) — saying HOW you checked it is them. Planned at once, then run
+/// once a person managing privacy approves the plan. Nothing is sent to `email`: it was typed, not proven.
+[Authorize(ManagesPrivacy)]
+public PrivacyRequest FileRequest(RequestKind right, Guid? account, string email, IdentityCheck check, string checkedHow,
+                                  string phone = "") {
+  if (check == IdentityCheck.StepUp) {
+    throw new ValidationException("A step-up is the person's own proof on their privacy page — say how YOU checked it is them.");
+  }
+  if (checkedHow.Trim() == "") {
+    throw new ValidationException("Say how you checked it is them — a fraudulent request is a known way to steal someone's data.");
+  }
+  if (email.Trim() == "" && account == null && phone.Trim() == "") {
+    throw new ValidationException("Say who the request is about — their address, their number, or their account.");
+  }
+  var now = DateTime.UtcNow;
+  var address = email.Trim().ToLower();
+  var r = new PrivacyRequest {
+    Right = right, Title = TitleOf(right), Kind = "privacy", Channel = "staff", ArrivedAt = now, ReceivedAt = now,
+    DueAt = StatutoryDue(now), SubjectAccount = account, SubjectEmail = address == "" ? null : address,
+    SubjectPhone = phone.Trim() == "" ? null : phone.Trim(),
+    SubjectKey = address == "" ? "" : Security.Fingerprint(address), Check = check, Note = checkedHow.Trim(),
+    EnteredByStaff = true };
+  if (account != null) { r.Requester = Principal.FirstOrDefault(p => p.Id == account.Value); }
+  // Planned by the request's own run (`Received`), as the system — not here, with this person's access: a holder's rows
+  // the staff member may not read (the mail the app sent, which only the sign-in flow reads) would plan as "not held",
+  // and an erasure would leave them.
+  UnitOfWork.Commit();
+  return r;
+}
+
+/// What a request is called in the queue — the right asked for, never who asked.
+public string TitleOf(RequestKind right) {
+  if (right == RequestKind.Access) { return "Access request — a copy of their data"; }
+  if (right == RequestKind.Portability) { return "Portability request — their data to take elsewhere"; }
+  if (right == RequestKind.Erasure) { return "Erasure request"; }
+  return "Restriction request";
+}
+
+/// Extend a request's deadline by up to two further months (Art. 12(3)) — only before the first month ends, and only
+/// with the reason, which the person is told.
+[Authorize(ManagesPrivacy)]
+public void ExtendRequest(PrivacyRequest r, int months, string reason) { PrivacyRequestRun.RaiseExtend(r, months, reason); }
+
+// The extension, checked and recorded, in the request's run: the inbox's due date moves (saying why, on the item's
+// trail) and the person is told at their proven address.
+internal void ExtendDeadline(PrivacyRequest r, int months, string reason) {
+  if (reason.Trim() == "") { throw new ValidationException("An extension needs its reason — the person is told it."); }
+  if (months < 1 || months > 2) { throw new ValidationException("A deadline may be extended by one or two months, no more."); }
+  if (r.ExtensionReason != "") { throw new ValidationException("This request was already extended."); }
+  if (r.State == RequestState.Done) { throw new ValidationException("This request is answered."); }
+  if (DateTime.UtcNow > StatutoryDue(r.ReceivedAt)) {
+    throw new ValidationException("The first month is over — an extension must be decided, and told, within it.");
+  }
+  var due = StatutoryDue(r.ReceivedAt).AddMonths(months);
+  r.ExtensionReason = reason.Trim();
+  MoveDue(r, due, "Extended (Art. 12(3)): " + reason.Trim());
+  if (r.DeliverTo != "") {
+    SendMail(new MailMessage { To = [r.DeliverTo], Subject = "Your request about your data will take longer",
+      Text = "We need more time to answer your request, and will answer by " + due.ToString("d MMMM yyyy") + ": " + reason.Trim() },
+      "privacy-extended-" + r.Id.ToString());
+  }
+}
+
+/// Run a failed request's plan again — after what failed was fixed. Lines already done stay done.
+[Authorize(ManagesPrivacy)]
+public void RetryRequest(PrivacyRequest r) { PrivacyRequestRun.RaiseRetry(r); }
+
+/// Plan `r`: one line per category every holder declares, decided from the declarations. A plan is not made while
+/// the declarations have a problem — the request fails, saying which.
+public void PlanRequest(PrivacyRequest r) {
+  var problems = DeclarationProblems();
+  if (problems.Count > 0) {
+    r.Problem = "The app's privacy declarations have a problem, so no request is planned: " + string.Join(" ", problems);
+    return;
+  }
+  var subject = SubjectOf(r);
+  var judgement = false;
+  // A legal hold on the person: nothing about them is erased while it stands (`Hold`), whoever filed the request.
+  var held = r.Right == RequestKind.Erasure && IsHeld(subject);
+  foreach (var h in Holders()) {
+    foreach (var c in h.Categories()) {
+      if (r.Right == RequestKind.Portability && !c.Portable) { continue; }
+      var items = h.Count(subject, c);
+      var line = new PlanLine { Request = r, Holder = h.Key(), Category = c.Key, Items = items };
+      if (items == 0) { line.Outcome = PlanOutcome.NotHeld; continue; }
+      if (r.Right == RequestKind.Access || r.Right == RequestKind.Portability) { line.Outcome = PlanOutcome.Export; continue; }
+      if (r.Right == RequestKind.Restriction) { line.Outcome = PlanOutcome.Restrict; continue; }
+      // A kept category is kept restricted as ever — the purge leaves held rows alone; what would be ERASED waits.
+      if (held && !IsKept(c)) { line.Outcome = PlanOutcome.Blocked; line.Reason = HeldSentence(); line.Held = true; continue; }
+      var blocked = h.BlockedBy(subject, c);
+      if (blocked != "") { line.Outcome = PlanOutcome.Blocked; line.Reason = blocked; continue; }
+      if (IsKept(c)) { line.Outcome = PlanOutcome.Restrict; continue; }
+      // Kept beside another kept category — who a kept complaint is from — restricted with it, and told why.
+      var with = h.KeptWith(subject, c);
+      if (with != "") { line.Outcome = PlanOutcome.Restrict; line.Reason = with; continue; }
+      line.Outcome = PlanOutcome.Erase;
+      // A legitimate interest may be overridden on compelling grounds — a judgement somebody must be able to make.
+      if (c.Basis == RetentionBasis.LegitimateInterest) { judgement = true; }
+    }
+  }
+  r.NeedsReview = r.EnteredByStaff || judgement || App.Setting<PrivacySetup>().ReviewPlans == PlanReview.Always;
+}
+
+/// Approve a planned request — it runs now.
+[Authorize(ManagesPrivacy)]
+public void ApproveRequest(PrivacyRequest r) {
+  PrivacyRequestRun.RaiseApprove(r);
+}
+
+/// Keep a legitimate-interest category on compelling grounds (Art. 21(1)) — only before the plan is approved, only with
+/// the grounds written down. The response says it was kept, and why.
+[Authorize(ManagesPrivacy)]
+public void KeepOnCompellingGrounds(PlanLine line, string grounds) {
+  if (grounds.Trim() == "") {
+    throw new ValidationException("Keeping data a person asked to have erased needs the compelling grounds written down — "
+      + "they are told to the person.");
+  }
+  if (line.Request.State != RequestState.Review) {
+    throw new ValidationException("Only a plan waiting for approval can be changed.");
+  }
+  if (CategoryOf(line.Category).Basis != RetentionBasis.LegitimateInterest) {
+    throw new ValidationException($"'{line.Category}' is not held on a legitimate interest, so there are no grounds to weigh.");
+  }
+  line.Outcome = PlanOutcome.Keep;
+  line.Reason = grounds.Trim();
+}
+
+/// Run the plan's open lines, as the system: erase, keep restricted, export. A blocked line is asked again; one whose
+/// block cleared runs now. The first holder that throws stops the run and fails the request, naming the holder.
+[SuppressWarning("cost-unbounded-read")]   // one request's plan lines — one per category the app declares
+public void RunPlan(PrivacyRequest r) {
+  var subject = SubjectOf(r);
+  var now = DateTime.UtcNow;
+  // What says who they are goes last: every other holder finds its rows through it (`DataCategory.Identifies`).
+  // ⚑ AND WHAT IS KEPT IS PUT IN ITS KEPT SHAPE AFTER EVERYTHING ERASED BESIDE IT. One row can be in two categories — a
+  //   ticket's own notes (erased) and the complaint it belongs to (kept for legal claims) — and the erasure blanks every
+  //   personal field the row holds, inherited ones included. Run after the keeping, it blanked what the keeping had just
+  //   written there ("Kept for legal claims", where her subject was).
+  // ⚑ AND WITHIN A PHASE, THE DECLARED HOLDERS' GENERIC ERASURE GOES FIRST (`IPersonalDataHolder.Declared`). The same
+  //   row again: a ticket's own notes (the generated holder blanks its title, a personal field) and its conversation (the
+  //   app's hook writes "Erased conversation" there). Both erase, so the phase did not order them — the lines came back in
+  //   whatever order the store answered, and the title was blanked or not by chance. A hand-written holder says what
+  //   stands in the person's words' place; the generic blank must never land after it. Then the plan's own order, so a
+  //   run is the same run every time.
+  var identifying = AllCategories().Where(c => c.Identifies).Select(c => c.Key).ToList();
+  List<string> order = [];
+  foreach (var h in Holders().Where(x => x.Declared()).ToList()) { foreach (var c in h.Categories()) { order.Add(c.Key); } }
+  foreach (var h in Holders().Where(x => !x.Declared()).ToList()) { foreach (var c in h.Categories()) { order.Add(c.Key); } }
+  var pending = PlanLine.Where(l => l.Request == r && l.DoneAt == null).ToList()
+    .OrderBy(l => identifying.Contains(l.Category) ? 2 : l.Outcome == PlanOutcome.Restrict ? 1 : 0)
+    .ThenBy(l => order.IndexOf(l.Category)).ToList();
+  foreach (var line in pending) {
+    var h = Holders().FirstOrDefault(x => x.Key() == line.Holder);
+    if (h == null) { r.Problem = $"The holder '{line.Holder}' is no longer in the app."; return; }
+    var c = CategoryOf(line.Category);
+    // A hold placed after the plan was made — or still standing — keeps what would be erased: the line waits on it.
+    if (r.Right == RequestKind.Erasure && !IsKept(c) && (line.Outcome == PlanOutcome.Erase || line.Outcome == PlanOutcome.Blocked)
+        && IsHeld(subject)) {
+      line.Outcome = PlanOutcome.Blocked; line.Held = true; line.Reason = HeldSentence();
+      continue;
+    }
+    if (line.Outcome == PlanOutcome.Blocked) {
+      line.Held = false;
+      var still = h.BlockedBy(subject, c);
+      if (still != "") { line.Reason = still; continue; }
+      line.Reason = "";
+      // Nothing of it is left — its period ended while the line waited (a complaint kept for legal claims, purged on its
+      // day): it is gone, and the person is told so, never that it is "kept until you lift it".
+      if (h.Count(subject, c) == 0) { line.Outcome = PlanOutcome.Erase; line.DoneAt = now; continue; }
+      var keptWith = IsKept(c) ? "" : h.KeptWith(subject, c);
+      line.Outcome = IsKept(c) || keptWith != "" ? PlanOutcome.Restrict : PlanOutcome.Erase;
+      if (keptWith != "") { line.Reason = keptWith; }
+    }
+    try {
+      if (line.Outcome == PlanOutcome.Erase) { h.Erase(subject, c); line.DoneAt = now; }
+      else if (line.Outcome == PlanOutcome.Restrict) {
+        line.Until = h.Restrict(subject, c, r.Right == RequestKind.Restriction);
+        line.DoneAt = now;
+      }
+      else if (line.Outcome != PlanOutcome.Export) { line.DoneAt = now; }
+    } catch (Exception e) {
+      r.Problem = $"{h.Key()} could not {line.Outcome.ToString().ToLower()} '{c.Key}': {e.Message}";
+      return;
+    }
+  }
+  if (r.Right == RequestKind.Access || r.Right == RequestKind.Portability) {
+    try { WriteExport(r); } catch (Exception e) { r.Problem = $"The export could not be written: {e.Message}"; return; }
+  }
+  r.Response = ResponseFor(r);
+  // An erasure that is finished keeps no copy of the address it erased — the kit's own records are ids, counts and
+  // dates (privacy_kit_design §4.1); the fingerprint is what proves who asked.
+  if (r.Right == RequestKind.Erasure && !IsWaiting(r)) { r.SubjectEmail = null; r.SubjectPhone = null; }
+}
+
+/// Whether any line still waits on a block.
+public bool IsWaiting(PrivacyRequest r) {
+  return PlanLine.Any(l => l.Request == r && l.Outcome == PlanOutcome.Blocked);
+}
+
+/// Ask every request waiting on a block again — what the daily purge does, and what an app calls when a block clears
+/// (an order delivered).
+[SuppressWarning("cost-unbounded-read")]   // the requests waiting on a block — each asked again, which is what this is for
+public void RecheckWaiting() {
+  foreach (var r in PrivacyRequest.Where(x => x.State == RequestState.Waiting).ToList()) {
+    PrivacyRequestRun.RaiseRecheck(r);
+  }
+}
+
+/// Runs a request's plan: straight away when every line follows from the declarations, after approval otherwise;
+/// waiting while a line is blocked; failed — never done — when a holder fails.
+public workflow PrivacyRequestRun {
+  Tracks    = PrivacyRequest.State;
+  Autostart = true;
+  Initial   = Received;
+
+  event Approve();
+  event Recheck();
+  [Authorize(u => ManagesPrivacy)]
+  event Retry();
+  [Authorize(u => ManagesPrivacy)]
+  event Extend(int months, string reason);
+
+  on Extend(int months, string reason) { ExtendDeadline(this.Item, months, reason); }
+
+  state Received {
+    enter {
+      // A request staff filed arrives unplanned (`FileRequest`); one a person asked for was planned by their intake.
+      if (this.Item.Problem == "" && !PlanLine.Any(l => l.Request == this.Item)) { PlanRequest(this.Item); }
+      if (this.Item.Problem != "") { goto Failed; }
+      if (this.Item.NeedsReview) { goto Review; }
+      goto Running;
+    }
+  }
+  state Review {
+    on Approve { goto Running; }
+  }
+  state Running {
+    enter {
+      RunPlan(this.Item);
+      if (this.Item.Problem != "") { goto Failed; }
+      if (IsWaiting(this.Item)) { goto Waiting; }
+      // Answered: the person is told (only at a proven address), and the inbox's promise is met.
+      Deliver(this.Item);
+      WorkDone(this.Item);
+      goto Done;
+    }
+  }
+  state Waiting {
+    on Recheck { goto Running; }
+  }
+  /// It could not be done — the problem names the holder. It stays owed on the inbox until somebody fixes what failed
+  /// and runs it again (`RetryRequest`); it is never marked done.
+  state Failed {
+    on Retry { this.Item.Problem = ""; goto Running; }
+  }
+  terminal success Done { }
+}
+
+/// What the person is told — what was erased, what is kept and why and until when, what waits, and where to complain.
+[SuppressWarning("cost-unbounded-read")]   // one request's plan lines — one per category the app declares
+public string ResponseFor(PrivacyRequest r) {
+  var setup = App.Setting<PrivacySetup>();
+  // In the order the holders declare their categories — what the person reads should not depend on storage order.
+  var order = AllCategories().Select(c => c.Key).ToList();
+  var lines = PlanLine.Where(l => l.Request == r).ToList().OrderBy(l => order.IndexOf(l.Category)).ToList();
+  var text = "";
+  if (r.Right == RequestKind.Access || r.Right == RequestKind.Portability) {
+    var exported = lines.Where(l => l.Outcome == PlanOutcome.Export).Select(l => CategoryOf(l.Category).Label).ToList();
+    text = "What we hold about you: " + (exported.Count == 0 ? "nothing." : string.Join("; ", exported) + ".");
+  } else {
+    var erased = lines.Where(l => l.Outcome == PlanOutcome.Erase && l.DoneAt != null).Select(l => CategoryOf(l.Category).Label).ToList();
+    if (erased.Count > 0) { text = text + "What we erased: " + string.Join("; ", erased) + ".\n"; }
+    foreach (var l in lines.Where(l => l.Outcome == PlanOutcome.Restrict && l.DoneAt != null)) {
+      var c = CategoryOf(l.Category);
+      var detail = RetentionOf(c).BasisDetail;
+      var basis = detail != "" ? detail : c.Basis.ToString();
+      var until = l.Until == null ? "until you ask us to lift the restriction"
+        : "until " + KeptThrough(l.Until!.Value).ToString("d MMMM yyyy");
+      // A category kept only beside another (`KeptWith`) is kept for THAT one's reason, which the line carries.
+      var why = !IsKept(c) && l.Reason != "" ? l.Reason : $"for {basis}";
+      text = text + $"What we keep, and why: {c.Label}, {why}, {until}. It is used for nothing else, and then deleted.\n";
+    }
+    foreach (var l in lines.Where(l => l.Outcome == PlanOutcome.Keep)) {
+      text = text + $"What we keep on compelling grounds: {CategoryOf(l.Category).Label} — {l.Reason}\n";
+    }
+    foreach (var l in lines.Where(l => l.Outcome == PlanOutcome.Blocked)) {
+      // A hold says its basis and nothing else — never the matter, never that a dispute exists (owner, Q13).
+      var then = l.Held ? "We will erase it when that need ends, and tell you." : "We will finish when it clears, and tell you.";
+      text = text + $"Not yet: {CategoryOf(l.Category).Label} — {l.Reason}. {then}\n";
+    }
+  }
+  var controller = ControllerName();
+  if (controller != "") { text = text + $"\n{controller} is responsible for your data here (the controller)."; }
+  if (setup.SupervisoryAuthority != "") {
+    text = text + $"\nIf you disagree you can complain to the supervisory authority: {setup.SupervisoryAuthority}.";
+  }
+  return text.Trim();
+}

@@ -1,0 +1,63 @@
+// Who is responsible for the data — the controller's legal name, on the settings area (D-SETTINGSREG1), announced to the
+// people managing privacy and served at `/settings/privacy/controller` in the area's frame.
+//
+// ⚑ NOTHING IS SAVED UNTIL SAVE, like every settings page: the name is written on the page's own unit of work and the
+//   `SaveBar` saves it. An empty name is never saved — the bar says why.
+// ⚑ AN APP TAKES THE PAGE OVER BY NAME — a component `ControllerSettings` of its own replaces the kit's.
+
+namespace Osysharp.Privacy;
+
+using Osysharp.Ui;
+
+/// The Privacy kit's "who is responsible" section.
+public class ControllerSettingsSections : ISettingsProvider {
+  public SettingsLink[] Sections() {
+    return [
+      new SettingsLink { Label = "Who is responsible", To = "/settings/privacy/controller", Group = "Privacy",
+                         Icon = Icons.Building, Order = 59, Shown = ManagesPrivacy,
+                         Hint = "The legal entity every privacy answer, and the records of processing, name." },
+    ];
+  }
+}
+
+/// The controller's legal name — named here, saved with the bar. Until it is, privacy answers name "the people who run
+/// it", and the page says so.
+public component ControllerEditor() {
+  live var rows = PrivacyController.ToList();
+  string fallback = "";
+  string authority = "";
+
+  on mount { fallback = ControllerByTheApp(); authority = ComplaintsGoTo(); }
+
+  action Name() { new PrivacyController { LegalName = fallback }; }
+
+  render {
+    Stack(gap: 4, label: "Who is responsible") {
+      SettingsSection("The controller", description: "The legal entity that decides why and how people's data is used here — usually the company running the app. Every answer to a privacy request names it, and so do the records of processing.") {
+        if (rows.Count == 0) {
+          Stack(gap: 2, align: Align.Start) {
+            Text(fallback == "" ? "Not named yet." : "Named by the app as " + fallback + ".", fontWeight: FontWeight.Medium);
+            Text(fallback == ""
+                   ? "Until it is, an answer says it comes from \"the people who run it\" — a person asking about their data is owed a name."
+                   : "Name it here to say it in your own words.",
+                 fontSize: FontSize.Label, color: Colors.TextMuted);
+            Button("Name the controller", onPress: Name, tone: Tone.Primary, size: Size.Sm);
+          }
+        }
+        foreach (var r in rows) {
+          Field("Legal name", value: r.LegalName, placeholder: "As on the company's registration",
+                hint: "Its registered name — what a person would look up.");
+        }
+      }
+      if (authority != "") {
+        SettingsSection("Where a person can complain", description: "Named in every answer, set by the app.") {
+          Text(authority);
+        }
+      }
+      SaveBar(saved: "Saved.", blockedBy: rows.Any(r => r.LegalName.Trim() == "") ? "Write the controller's legal name." : "");
+    }
+  }
+}
+
+[Page("/settings/privacy/controller")] [Layout(SettingsFrame)] [Authorize(ManagesPrivacy)] [Render(CSR)] [Title("Who is responsible")]
+public component ControllerSettings() { render { ControllerEditor(); } }

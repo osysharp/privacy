@@ -1,0 +1,163 @@
+namespace Osysharp.Privacy;
+
+using Osysharp.Identity;
+using Osysharp.Workflow;
+
+// ── nothing is kept past its period: the daily purge ──────────────────────────────────────────────────────────────
+//
+// Storage limitation (GDPR Art. 5(1)(e)) applies to everyone, not only to the people who asked: every day, every
+// holder purges what reached the end of its period, and each category's run is recorded — counts and dates, never
+// content. A holder that throws fails ITS category for that day, recorded with the reason, and is tried again the next.
+
+/// One category's purge on one day — the controller's evidence that nothing is kept past its period.
+public entity PurgeRecord {
+  [MaxLength(200)] string Holder;
+  [MaxLength(200)] string Category;
+  int Count;
+  DateTime At;
+  bool Failed;
+  /// Not purged that day because a legal hold stands and the holder could not say which rows it covers — every row of
+  /// the category kept until it can, or the hold is lifted. `Problem` says why.
+  bool Deferred;
+  [MaxLength(1000)] string Problem = "";
+  security {
+    allow read, create when ManagesPrivacy;
+  }
+}
+
+/// Purge what reached the end of its period, now — what the daily run does, run by the kit's own run as the system
+/// (`ManualPurge`), and recorded with who asked. Answers how many rows went.
+///
+/// ⚑ AS THE SYSTEM, NEVER AS THE PERSON WHO PRESSED IT: a holder's purge writes what no person may (the Conversations
+///   kit records an erasure only from a run — `PartyErasure` is `deny create` for everyone), so a purge run as an admin
+///   failed every such category, recorded, while the daily run succeeded. Guarded by kits/privacy-conversations/tests
+///   `a_conversation_past_its_period_is_purged_for_everyone_unless_a_hold_covers_it`.
+[Authorize(ManagesPrivacy)]
+public int PurgeNow() {
+  var ask = new PurgeAsk { By = Session.CurrentUser, At = DateTime.UtcNow };
+  UnitOfWork.Commit();
+  return PurgeAsk.Single(a => a.Id == ask.Id).Count;
+}
+
+/// Where a purge somebody asked for stands — tracked by `ManualPurge`. ⚠ Appended, never inserted.
+public enum PurgeAskState {
+  [Label("Purging")] Purging,
+  [Label("Purged")] Purged,
+}
+
+/// A purge somebody asked for — who, when, and how many rows went.
+public entity PurgeAsk {
+  Principal? By;
+  DateTime At;
+  int Count;
+  PurgeAskState State;                              // no default — ManualPurge owns it
+  security {
+    allow read, create when ManagesPrivacy;
+    deny create where Count != 0 || By != user;
+    deny update;
+    deny delete;
+  }
+}
+
+/// Runs a purge somebody asked for, as the system — the same purge the daily run does.
+public workflow ManualPurge {
+  Tracks    = PurgeAsk.State;
+  Autostart = true;
+  Initial   = Purging;
+
+  state Purging {
+    enter {
+      var now = DateTime.UtcNow;
+      ExpireExports(now);
+      this.Item.Count = PurgeExpired(now);
+      goto Purged;
+    }
+  }
+  terminal success Purged { }
+}
+
+/// Every holder purges every category whose kept period ended before `now`; one record per category. Run by the daily
+/// watch (as the system) and by `PurgeNow`.
+///
+/// SECURITY-INVARIANT(privacy-a-hold-freezes-purge-and-erasure): before a category is purged, every hold in force is
+/// handed to its holder (`Hold(hold, category, true)`), which keeps the rows it covers out of the purge; a category whose
+/// holder cannot is not purged at all that day — recorded as deferred, never skipped silently, never purged blind. So no
+/// row a hold covers is deleted by the purge (and `PlanRequest`/`RunPlan` keep an erasure from it). Guarded by
+/// tests/holds.test.osy `a_held_persons_kept_voucher_survives_its_purge_date`,
+/// `a_category_its_holder_cannot_hold_is_not_purged_while_held` and `an_erasure_under_a_hold_waits_and_finishes_when_it_is_lifted`.
+internal int PurgeExpired(DateTime now) {
+  var total = 0;
+  var holds = HoldsInForce();
+  foreach (var h in Holders()) {
+    foreach (var c in h.Categories()) {
+      // Every hold in force, handed to the holder first. One it cannot keep — it says so, or it fails — keeps the
+      // whole category: purging blind could delete what the hold is for.
+      var why = "";
+      foreach (var hold in holds) {
+        try {
+          if (!h.Hold(hold, c, true)) { why = $"{h.Key()} cannot say which rows of '{c.Key}' a legal hold covers (it does not implement Hold)"; }
+        } catch (Exception e) {
+          why = $"{h.Key()} could not keep the rows of '{c.Key}' a legal hold covers: {e.Message}";
+        }
+      }
+      if (why != "") {
+        new PurgeRecord { Holder = h.Key(), Category = c.Key, At = now, Deferred = true,
+          Problem = $"Not purged: {why} — so nothing of it is purged until it can, or the hold is lifted." };
+        continue;
+      }
+      try {
+        var n = h.Purge(c, now);
+        total = total + n;
+        new PurgeRecord { Holder = h.Key(), Category = c.Key, Count = n, At = now };
+      } catch (Exception e) {
+        new PurgeRecord { Holder = h.Key(), Category = c.Key, At = now, Failed = true, Problem = e.Message };
+      }
+    }
+  }
+  return total;
+}
+
+/// Where the daily purge stands. ⚠ Appended, never inserted.
+public enum RetentionWatchState {
+  [Label("Purging daily")] Watching,
+  [Label("Stopped")] Stopped,
+}
+
+/// The one row the daily purge runs on — made by `StartDailyPurge`.
+public entity RetentionWatch {
+  RetentionWatchState State;
+  security {
+    allow read, create when ManagesPrivacy;
+  }
+}
+
+/// Start purging daily — once; a second call changes nothing.
+[Authorize(ManagesPrivacy)]
+public void StartDailyPurge() {
+  if (!RetentionWatch.Any()) { new RetentionWatch(); }
+}
+
+/// Every day: purge what reached the end of its period, and ask every request waiting on a block again.
+public workflow DailyPurge {
+  Tracks    = RetentionWatch.State;
+  Autostart = true;
+  Initial   = Watching;
+
+  event Stop();
+
+  state Watching {
+    subscribe Stop() as Stopping {
+      Finished {
+        Within = TimeSpan.FromDays(36500);
+        Remind Purge(After = TimeSpan.FromHours(1), ThenEvery = TimeSpan.FromDays(1)) {
+          ExpireExports(DateTime.UtcNow);
+          PurgeExpired(DateTime.UtcNow);
+          RecheckWaiting();
+        }
+        Unfinished { }
+      }
+    }
+    on Stopping() { goto Stopped; }
+  }
+  terminal cancel Stopped { }
+}

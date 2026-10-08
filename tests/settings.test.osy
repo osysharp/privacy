@@ -1,0 +1,73 @@
+// The tenant's periods: within the kit's limits, or outside them with a jurisdiction and a reason; presets; the fiscal year.
+
+using PrivacyKitTests;
+using Osysharp.Privacy;
+
+[Test(Desk)]
+[runas(Ada)]
+void a_period_below_the_kits_minimum_is_refused_with_the_reason() {
+  var e = Assert.Throws<ValidationException>(() => SetRetention("app.vouchers", 12, RetentionStart.EndOfCalendarYear));
+  Assert.Contains("cannot be kept shorter than 36 months without saying why", e.Message);
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_stated_jurisdiction_allows_a_period_outside_the_limits_and_shows_it() {
+  SetRetention("app.vouchers", 12, RetentionStart.EndOfCalendarYear, "", "XX", "Our accountant's written advice");
+  var row = RecordsOfProcessing().Single(r => r.Category == "app.vouchers");
+  Assert.Equal("XX", row.Jurisdiction);
+  Assert.Equal("Kept 12 months from the end of its calendar year", row.Retention);
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_preset_fills_the_bookkeeping_periods_and_only_those() {
+  Assert.Equal(1, ApplyPreset("DE"));
+  var vouchers = RetentionOf(CategoryOf("app.vouchers"));
+  Assert.Equal(120, vouchers.RetainedMonths);
+  Assert.Equal("DE", vouchers.Jurisdiction);
+  Assert.Equal(0, RetentionOf(CategoryOf("app.notes")).RetainedMonths);
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void an_unknown_preset_names_the_ones_there_are() {
+  var e = Assert.Throws<ValidationException>(() => ApplyPreset("ZZ"));
+  Assert.Contains("SE, DE, FR, NL, DK, FI, UK", e.Message);
+}
+
+[Test(Desk)]
+void the_fiscal_year_end_moves_the_end_of_a_voucher_by_a_year() {
+  var vouchers = CategoryOf("app.vouchers");
+  // August 2025 is in the fiscal year ending 30 June 2026 → that calendar year ends 31 Dec 2026 → + 84 months.
+  Assert.Equal(new DateTime(2034, 1, 1), KeepUntil(vouchers, new DateTime(2025, 8, 15)));
+  Assert.Equal(new DateTime(2033, 12, 31), KeptThrough(KeepUntil(vouchers, new DateTime(2025, 8, 15))));
+  // March 2025 is in the fiscal year ending 30 June 2025 → the calendar year 2025 → a year earlier.
+  Assert.Equal(new DateTime(2033, 1, 1), KeepUntil(vouchers, new DateTime(2025, 3, 15)));
+}
+
+[Test(Desk)]
+[runas(Raj)]
+void only_the_people_managing_privacy_set_a_period() {
+  Assert.Throws<NotAuthorized>(() => SetRetention("app.vouchers", 120, RetentionStart.EndOfCalendarYear));
+}
+
+// ── the settings area (D-SETTINGSREG1) ──────────────────────────────────────────────────────────────────────────────
+
+[Test(Desk)]
+[runas(Ada)]
+void the_kit_announces_its_retention_page_to_the_people_managing_privacy() {
+  var page = AnnouncedSettings().Single(l => l.To == "/settings/privacy");
+  Assert.Equal("Data retention", page.Label);
+  // The page lists every declared category — the one waiting for a decision first.
+  var rows = RetentionRows();
+  Assert.Equal(AllCategories().Count, rows.Count);
+  Assert.True(rows.Any(r => r.Key == "app.vouchers" && r.Bookkeeping));
+}
+
+[Test(Desk)]
+[runas(Raj)]
+void nobody_else_is_shown_it_and_its_rows_refuse_them() {
+  Assert.False(AnnouncedSettings().Any(l => l.To == "/settings/privacy"));
+  Assert.Throws<NotAuthorized>(() => RetentionRows());
+}

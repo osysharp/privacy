@@ -1,0 +1,275 @@
+// Legal holds in the app's settings area (D-SETTINGSREG1), for the people who place them: the holds in force, placing
+// one on a person (a case is held from its own record's page — `HoldControl`), lifting one with a reason, confirming a
+// lift as the second person when the app or its organisation requires one, keeping a hold past its review date, and
+// what was lifted, by whom and why. Every change goes through the kit's functions and the hold's own run.
+//
+// ⚑ AN APP TAKES THE PAGE OVER BY NAME — a component `LegalHoldsSettings` of its own replaces the kit's.
+
+namespace Osysharp.Privacy;
+
+using Osysharp.Ui;
+
+/// The holds page's section — announced to the people who place holds.
+public class LegalHoldSettingsSections : ISettingsProvider {
+  public SettingsLink[] Sections() {
+    return [
+      new SettingsLink { Label = "Legal holds", To = "/settings/privacy/holds", Group = "Privacy", Icon = Icons.Lock,
+                         Order = 61, Shown = PlacesLegalHolds,
+                         Hint = "Keep what a dispute or an audit needs from being erased or purged." },
+    ];
+  }
+}
+
+/// One hold as the page shows it.
+public class HoldRow {
+  public Guid Id;
+  /// "ann@customer.test", or the case: "Order 1042".
+  public string On = "";
+  public bool IsCase = false;
+  public string Matter = "";
+  public string Reason = "";
+  public HoldState State;
+  public string PlacedBy = "";
+  public DateTime PlacedAt;
+  public DateTime ReviewBy;
+  public bool ReviewDue = false;
+  public string LiftRequestedBy = "";
+  /// The person looking asked for this lift — so they cannot be its second person.
+  public bool AskedByMe = false;
+  public string LiftReason = "";
+  public string LiftedBy = "";
+  public DateTime? LiftedAt;
+}
+
+/// What the holds page shows: the holds in force first (review due, then waiting for a second person, then by review
+/// date), then the lifted ones, newest first.
+[Authorize(PlacesLegalHolds)]
+[SuppressWarning("cost-unbounded-read")]   // the tenant's legal holds — placed by hand, a few a year
+public List<HoldRow> HoldRows() {
+  var me = Session.CurrentUser;
+  List<HoldRow> rows = [];
+  foreach (var h in LegalHold.Where(h => h.State != HoldState.Expired).ToList()) {
+    rows.Add(new HoldRow {
+      Id = h.Id, On = h.CaseRow != null ? h.CaseLabel : (h.SubjectEmail ?? "an account"), IsCase = h.CaseRow != null,
+      Matter = h.Matter, Reason = h.Reason, State = h.State,
+      PlacedBy = h.PlacedBy == null ? "" : h.PlacedBy.DisplayName, PlacedAt = h.PlacedAt, ReviewBy = h.ReviewBy,
+      ReviewDue = h.State == HoldState.ReviewDue,
+      LiftRequestedBy = h.LiftRequestedBy == null ? "" : h.LiftRequestedBy.DisplayName,
+      AskedByMe = me != null && h.LiftRequestedBy != null && h.LiftRequestedBy.Id == me.Id,
+      LiftReason = h.LiftReason, LiftedBy = h.LiftedBy == null ? "" : h.LiftedBy.DisplayName, LiftedAt = h.LiftedAt });
+  }
+  var inForce = rows.Where(r => r.State != HoldState.Lifted).OrderBy(r => r.ReviewBy).ToList()
+    .OrderBy(r => r.State == HoldState.LiftPending ? 1 : 2).ToList().OrderBy(r => r.ReviewDue ? 0 : 1).ToList();
+  var lifted = rows.Where(r => r.State == HoldState.Lifted).OrderByDescending(r => r.LiftedAt).ToList();
+  foreach (var r in lifted) { inForce.Add(r); }
+  return inForce;
+}
+
+/// How lifting a hold works in this app, in words, and who decides it.
+public class HoldLiftFacts {
+  public bool SecondPerson = false;
+  public bool SetByOrganization = false;
+}
+
+[Authorize(PlacesLegalHolds)]
+public HoldLiftFacts HoldLiftNow() {
+  return new HoldLiftFacts { SecondPerson = HoldLiftNeedsSecondPerson(),
+    SetByOrganization = SetByOrganization<PrivacySetup>(p => p.HoldLiftNeedsSecondPerson) };
+}
+
+/// A date picked on a page, as the instant a hold is reviewed: the start of that day.
+public DateTime StartOfDay(DateOnly day) { return new DateTime(day.Year, day.Month, day.Day); }
+
+/// The legal holds page: what is held and why, placing a hold on a person, lifting one with a reason (confirmed by a
+/// second person when the app requires it), and keeping one past its review date.
+/// In a test: `Ui.Click("Place a hold")`, then the dialog's fields by label, then `Ui.Click("Place the hold")`.
+[Composable]
+public component LegalHoldsEditor() {
+  List<HoldRow> rows = [];
+  HoldLiftFacts facts = new HoldLiftFacts();
+  bool loaded = false;
+  string problem = "";
+  string done = "";
+  // Placing
+  bool placing = false;
+  string email = "";
+  string matter = "";
+  string reason = "";
+  DateOnly? reviewOn = null;
+  string placeProblem = "";
+  // Asked to place without a review date. The sentence is DERIVED from it and the date (`reviewOn == null`), never
+  // stored: a stored one stayed on screen after the date was picked, telling the person to do what they had done.
+  bool askedWithoutDate = false;
+  // Lifting / reviewing one hold
+  Guid? lifting = null;
+  string liftOn = "";
+  string liftReason = "";
+  string liftProblem = "";
+  Guid? reviewing = null;
+  DateOnly? nextReview = null;
+  string reviewProblem = "";
+  on mount { Load(); }
+
+  action Load() {
+    try { rows = HoldRows(); facts = HoldLiftNow(); }
+    catch (Exception ex) { problem = ex.Message; }
+    loaded = true;
+  }
+  action OpenPlace() { placing = true; email = ""; matter = ""; reason = ""; reviewOn = null; placeProblem = ""; askedWithoutDate = false; done = ""; }
+  action ClosePlace() { placing = false; }
+  action Place() {
+    placeProblem = "";
+    if (reviewOn == null) { askedWithoutDate = true; return; }
+    try {
+      var h = PlaceHold(email, null, matter, reason, StartOfDay(reviewOn!.Value));
+      placing = false;
+      done = "Holding everything about " + email.Trim().ToLower() + ". Nothing about them is erased or purged until the hold is lifted.";
+      Load();
+    } catch (Exception ex) { placeProblem = ex.Message; }
+  }
+  action OpenLift(HoldRow r) { lifting = r.Id; liftOn = r.On; liftReason = ""; liftProblem = ""; done = ""; }
+  action CloseLift() { lifting = null; }
+  action Lift() {
+    liftProblem = "";
+    try {
+      LiftHold(LegalHold.Single(h => h.Id == lifting!.Value), liftReason);
+      lifting = null;
+      done = facts.SecondPerson ? "The lift waits for a second person to confirm it — the hold stays in force until then."
+                                : "Lifted. What waited on it — an erasure, a purge — runs now.";
+      Load();
+    } catch (Exception ex) { liftProblem = ex.Message; }
+  }
+  action Confirm(HoldRow r) {
+    problem = ""; done = "";
+    try { ConfirmHoldLift(LegalHold.Single(h => h.Id == r.Id)); done = "Lifted. What waited on it runs now."; Load(); }
+    catch (Exception ex) { problem = ex.Message; }
+  }
+  action KeepIt(HoldRow r) {
+    problem = ""; done = "";
+    try { KeepHolding(LegalHold.Single(h => h.Id == r.Id)); done = "The lift was withdrawn — the hold stays in force."; Load(); }
+    catch (Exception ex) { problem = ex.Message; }
+  }
+  action OpenReview(HoldRow r) { reviewing = r.Id; nextReview = null; reviewProblem = ""; done = ""; }
+  action CloseReview() { reviewing = null; }
+  action Review() {
+    reviewProblem = "";
+    if (nextReview == null) { reviewProblem = "Pick the next review date."; return; }
+    try {
+      ReviewHold(LegalHold.Single(h => h.Id == reviewing!.Value), StartOfDay(nextReview!.Value));
+      reviewing = null;
+      done = "Kept, and reviewed again on " + nextReview!.Value.ToString("d MMMM yyyy") + ".";
+      Load();
+    } catch (Exception ex) { reviewProblem = ex.Message; }
+  }
+
+  render {
+    SettingsPage("Legal holds", description: "A hold keeps everything about a person — or one case — from being erased or purged while a dispute, a claim or an audit needs it. A request to erase it waits, and the person is told only that it is kept for legal claims.") {
+      Row(justify: Justify.End) { Button("Place a hold", onPress: OpenPlace, tone: Tone.Primary); }
+      if (problem != "") { Alert(problem, tone: Tone.Warning); }
+      if (done != "") { Alert(done, tone: Tone.Success); }
+      if (!loaded) { Skeleton(); }
+      if (loaded && problem == "" && !rows.Any(x => x.State != HoldState.Lifted)) {
+        EmptyState("No legal holds in force", body: "Nothing is held now. When a dispute, a claim or an audit needs a person's data kept, place a hold here — or on a case from its own page.");
+      }
+      foreach (var r in rows.Where(x => x.State != HoldState.Lifted).ToList()) {
+        SettingsSection(r.On, description: r.Matter) {
+          Stack(gap: 2) {
+            Row(gap: 2, align: Align.Center, wrap: Wrapping.Wrap) {
+              if (r.ReviewDue) { Badge("Review due", tone: Tone.Warning); }
+              else if (r.State == HoldState.LiftPending) { Badge("Lift waiting for a second person", tone: Tone.Warning); }
+              else { Badge("Holding", tone: Tone.Primary); }
+              if (r.IsCase) { Badge("Case"); }
+            }
+            Text(r.Reason);
+            Text("Placed by " + r.PlacedBy + " on " + r.PlacedAt.ToString("d MMMM yyyy") + " · review by " + r.ReviewBy.ToString("d MMMM yyyy"),
+                 fontSize: FontSize.Caption, color: Colors.TextMuted);
+            if (r.State == HoldState.LiftPending) {
+              Text(r.LiftRequestedBy + " asked to lift it: “" + r.LiftReason + "”", fontSize: FontSize.Caption);
+            }
+            Row(gap: 2, wrap: Wrapping.Wrap) {
+              if (r.State == HoldState.LiftPending) {
+                if (!r.AskedByMe) {
+                  Button("Confirm the lift", onPress: () => Confirm(r), tone: Tone.Primary, size: Size.Sm, announceAs: "Confirm the lift on " + r.On);
+                }
+                Button("Keep holding", onPress: () => KeepIt(r), tone: Tone.Ghost, size: Size.Sm, announceAs: "Keep holding " + r.On);
+              } else {
+                Button("Lift…", onPress: () => OpenLift(r), size: Size.Sm, announceAs: "Lift the hold on " + r.On);
+              }
+              Button(r.ReviewDue ? "Keep, and review again…" : "Change the review date…", onPress: () => OpenReview(r),
+                     tone: Tone.Ghost, size: Size.Sm, announceAs: "Review the hold on " + r.On);
+            }
+          }
+        }
+      }
+      // Said where it is decided: the organisation's policy when it sets it, else the app's own code (`app.Privacy`).
+      SettingsSection("Lifting a hold",
+                      description: (facts.SecondPerson ? "A second person who places holds confirms every lift — never the person who asked."
+                                                       : "One person who places holds lifts a hold, with a reason that is recorded.")
+                                   + (facts.SetByOrganization ? "" : " Set in the app's own code."),
+                      setByOrganization: facts.SetByOrganization) {
+        Badge(facts.SecondPerson ? "Second person required" : "No second person", tone: facts.SecondPerson ? Tone.Primary : Tone.Default);
+      }
+      if (rows.Any(x => x.State == HoldState.Lifted)) {
+        SettingsSection("Lifted", description: "Kept as a record — who lifted each hold, when and why — then forgotten after the period the kit's own records are kept.") {
+          Stack(gap: 3) {
+            foreach (var r in rows.Where(x => x.State == HoldState.Lifted).ToList()) {
+              Stack(gap: 0) {
+                Text(r.On + " — " + r.Matter);
+                Text("Lifted by " + r.LiftedBy + (r.LiftedAt == null ? "" : " on " + r.LiftedAt!.Value.ToString("d MMMM yyyy")) + ": “" + r.LiftReason + "”",
+                     fontSize: FontSize.Caption, color: Colors.TextMuted);
+              }
+            }
+          }
+        }
+      }
+    }
+    if (placing) {
+      Dialog("Place a legal hold", onDismiss: ClosePlace,
+             subtitle: "Everything held about this person is kept — not erased on request, not purged — until the hold is lifted.") {
+        Stack(gap: 4) {
+          Field("Their email address", value: email, placeholder: "ann@example.com", type: "email");
+          Field("Matter", value: matter, placeholder: "Dispute with Acme AB, 2026", hint: "Never shown to the person.");
+          Field("Why it must be kept", value: reason, placeholder: "The complaint may go to court.");
+          DatePicker("Review by", value: reviewOn, hint: "When somebody looks at it again — a hold is never kept for ever unseen.");
+          if (askedWithoutDate && reviewOn == null) {
+            Alert("Pick the date the hold is reviewed — a hold is never kept for ever unseen.", tone: Tone.Danger);
+          }
+          if (placeProblem != "") { Alert(placeProblem, tone: Tone.Danger); }
+          Row(gap: 3, justify: Justify.End) {
+            Button("Cancel", onPress: ClosePlace);
+            Button("Place the hold", onPress: Place, tone: Tone.Primary);
+          }
+        }
+      }
+    }
+    if (lifting != null) {
+      Dialog("Lift the hold on " + liftOn, onDismiss: CloseLift,
+             subtitle: facts.SecondPerson ? "A second person confirms the lift. Until then it stays in force."
+                                          : "Erasures that waited on it run, and anything past its period is purged at the next run.") {
+        Stack(gap: 4) {
+          Field("Why it can be lifted", value: liftReason, placeholder: "Settled out of court on 3 March.", hint: "Recorded with your name.");
+          if (liftProblem != "") { Alert(liftProblem, tone: Tone.Danger); }
+          Row(gap: 3, justify: Justify.End) {
+            Button("Cancel", onPress: CloseLift);
+            Button(facts.SecondPerson ? "Ask to lift it" : "Lift the hold", onPress: Lift, tone: Tone.Danger);
+          }
+        }
+      }
+    }
+    if (reviewing != null) {
+      Dialog("Review the hold", onDismiss: CloseReview, subtitle: "It stays in force; somebody looks at it again on the date you pick.") {
+        Stack(gap: 4) {
+          DatePicker("Next review", value: nextReview);
+          if (reviewProblem != "") { Alert(reviewProblem, tone: Tone.Danger); }
+          Row(gap: 3, justify: Justify.End) {
+            Button("Cancel", onPress: CloseReview);
+            Button("Keep it", onPress: Review, tone: Tone.Primary);
+          }
+        }
+      }
+    }
+  }
+}
+
+[Page("/settings/privacy/holds")] [Layout(SettingsFrame)] [Authorize(PlacesLegalHolds)] [Render(CSR)] [Title("Legal holds")]
+public component LegalHoldsSettings() { render { LegalHoldsEditor(); } }

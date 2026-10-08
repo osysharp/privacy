@@ -1,0 +1,236 @@
+// Legal holds: nothing a dispute needs is erased or purged while it lasts; only the people who place holds place or
+// lift one, a lift says why, and a hold is reviewed — so it never becomes keeping for ever.
+
+using PrivacyKitTests;
+using Osysharp.Privacy;
+
+LegalHold HoldOnAnn() {
+  return PlaceHold("Ann@Customer.test", null, "Dispute with Ann Archer, 2026", "Her complaint may go to court.",
+    DateTime.UtcNow.AddDays(90));
+}
+
+LegalHold HoldNamed(Guid id) { return LegalHold.Single(h => h.Id == id); }
+
+[Test(Desk)]
+[runas(Ada)]
+void a_hold_is_placed_in_force_and_records_who_and_when() {
+  var h = HoldNamed(HoldOnAnn().Id);
+  Assert.Equal(HoldState.Holding, h.State);
+  Assert.Equal("ada@desk.test", h.PlacedBy!.Email);
+  Assert.Equal("ann@customer.test", h.SubjectEmail);
+  Assert.True(IsHeld(new DataSubject { Emails = ["ann@customer.test"] }));
+  Assert.False(IsHeld(new DataSubject { Emails = ["bo@customer.test"] }));
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_hold_needs_a_matter_a_reason_and_a_review_date_in_the_future() {
+  Assert.Throws<ValidationException>(() => PlaceHold("ann@customer.test", null, "", "Why", DateTime.UtcNow.AddDays(9)));
+  Assert.Throws<ValidationException>(() => PlaceHold("ann@customer.test", null, "Matter", " ", DateTime.UtcNow.AddDays(9)));
+  var e = Assert.Throws<ValidationException>(() => PlaceHold("ann@customer.test", null, "Matter", "Why", DateTime.UtcNow.AddDays(-1)));
+  Assert.Contains("review date in the future", e.Message);
+  Assert.Equal(0, LegalHold.Count());
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_hold_cannot_be_lifted_without_a_reason() {
+  var h = HoldOnAnn();
+  var e = Assert.Throws<ValidationException>(() => LiftHold(h, "   "));
+  Assert.Contains("needs a reason", e.Message);
+  // Nor by raising the run's event directly — the reason is checked in the run, not only by the function.
+  Assert.Throws<ValidationException>(() => LegalHoldRun.RaiseLift(h, ""));
+  Assert.Equal(HoldState.Holding, HoldNamed(h.Id).State);
+  Assert.True(IsHeld(new DataSubject { Emails = ["ann@customer.test"] }));
+}
+
+[Test(Desk)]
+void a_person_who_does_not_place_holds_cannot_lift_one() {
+  LegalHold? h = null;
+  runas (Ada) { h = HoldOnAnn(); }
+  // Max manages privacy — and handles no legal matter.
+  runas (Max) {
+    Assert.Throws<NotAuthorized>(() => LiftHold(HoldNamed(h!.Id), "Settled"));
+    Assert.Denied(() => LegalHoldRun.RaiseLift(HoldNamed(h!.Id), "Settled"));
+    Assert.Throws<NotAuthorized>(() => PlaceHold("bo@customer.test", null, "Matter", "Why", DateTime.UtcNow.AddDays(9)));
+  }
+  runas (Ada) { Assert.Equal(HoldState.Holding, HoldNamed(h!.Id).State); }
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_hold_cannot_be_written_or_deleted_directly() {
+  var id = HoldOnAnn().Id;
+  Assert.Denied(() => { var h = HoldNamed(id); h.ReviewBy = DateTime.UtcNow.AddDays(1); UnitOfWork.Commit(); });
+  Assert.Denied(() => { var h = HoldNamed(id); h.LiftedAt = DateTime.UtcNow; UnitOfWork.Commit(); });
+  Assert.Denied(() => { HoldNamed(id).Delete(); UnitOfWork.Commit(); });
+  // Nor made already lifted, or in somebody else's name.
+  Assert.Denied(() => {
+    new LegalHold { Matter = "M", Reason = "R", PlacedBy = Session.CurrentUser, ReviewBy = DateTime.UtcNow.AddDays(9),
+                    LiftedAt = DateTime.UtcNow, LiftReason = "Never held" };
+    UnitOfWork.Commit();
+  });
+  Assert.Denied(() => {
+    new LegalHold { Matter = "M", Reason = "R", PlacedBy = Person.Single(p => p.Email == "lou@desk.test"),
+                    ReviewBy = DateTime.UtcNow.AddDays(9) };
+    UnitOfWork.Commit();
+  });
+  Assert.Equal(HoldState.Holding, HoldNamed(id).State);
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void an_erasure_under_a_hold_waits_and_finishes_when_it_is_lifted() {
+  var h = HoldOnAnn();
+  var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+
+  var waiting = PrivacyRequest.Single(x => x.Id == r.Id);
+  Assert.Equal(RequestState.Waiting, waiting.State);
+  var account = PlanLine.Single(l => l.Request == r && l.Category == "app.account");
+  Assert.Equal(PlanOutcome.Blocked, account.Outcome);
+  Assert.True(account.Held);
+  // What the books keep is kept restricted as ever — the purge leaves held rows alone.
+  Assert.Equal(PlanOutcome.Restrict, PlanLine.Single(l => l.Request == r && l.Category == "app.vouchers").Outcome);
+  Assert.Equal(1, Customer.Count(c => c.Number == "C-1"));
+  Assert.Equal(2, Note.Count());
+  // The person reads the basis — never the matter, never that there is a dispute (owner, Q13).
+  Assert.Contains("Not yet: Your customer account: your name and email address — kept for the establishment, exercise or defence of legal claims. We will erase it when that need ends, and tell you.",
+    waiting.Response);
+  Assert.DoesNotContain("Dispute", waiting.Response);
+  Assert.DoesNotContain("court", waiting.Response);
+
+  LiftHold(h, "The complaint was settled out of court.");
+
+  var lifted = HoldNamed(h.Id);
+  Assert.Equal(HoldState.Lifted, lifted.State);
+  Assert.Equal("ada@desk.test", lifted.LiftedBy!.Email);
+  Assert.Equal("The complaint was settled out of court.", lifted.LiftReason);
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.Equal(0, Customer.Count(c => c.Number == "C-1"));
+  Assert.Equal(0, Note.Count());
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_hold_placed_after_the_plan_still_keeps_what_it_would_erase() {
+  var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  Assert.Equal(PlanOutcome.Erase, PlanLine.Single(l => l.Request == r && l.Category == "app.notes").Outcome);
+  HoldOnAnn();
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Waiting, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.True(PlanLine.Single(l => l.Request == r && l.Category == "app.notes").Held);
+  Assert.Equal(2, Note.Count());
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_held_persons_kept_voucher_survives_its_purge_date() {
+  var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);                                       // the voucher is kept for the books until 1 Jan 2034
+  var h = PlaceHold("ann@customer.test", null, "Tax audit 2033", "The tax agency asked for the 2025 books.",
+    new DateTime(2040, 1, 1));
+
+  TestClock.Set(new DateTime(2034, 1, 1, 0, 30, 0));       // past its period — but held
+  PurgeNow();
+  Assert.Equal("V-1 120 Ann Archer", VoucherForTheBooks("V-1"));
+
+  LiftHold(HoldNamed(h.Id), "The audit closed without findings.");
+  // Its period is given back — and it has ended, so the next purge takes it.
+  PurgeNow();
+  Assert.Equal(1, PurgeRecord.Count(p => p.Category == "app.vouchers" && p.Count == 1));
+  Assert.Equal("", VoucherForTheBooks("V-1"));
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_category_its_holder_cannot_hold_is_not_purged_while_held() {
+  var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  PlaceHold("ann@customer.test", null, "Tax audit 2033", "The tax agency asked for the 2025 books.", new DateTime(2040, 1, 1));
+  // The desk's bookkeeping archive is offline: it cannot say which vouchers the hold covers.
+  HoldVouchers.Stub((List<string> emails, Guid? caseRow, bool held) => { throw new Exception("the archive is offline"); });
+
+  TestClock.Set(new DateTime(2034, 1, 1, 0, 30, 0));
+  Assert.Equal(0, PurgeNow());
+  var deferred = PurgeRecord.Single(p => p.Category == "app.vouchers");
+  Assert.True(deferred.Deferred);
+  Assert.Contains("the archive is offline", deferred.Problem);
+  // Nothing of the category was purged blind…
+  Assert.Equal(1, Restriction.Count("app.vouchers"));
+  // …and every other category was purged as on any day.
+  Assert.False(PurgeRecord.Any(p => p.Category != "app.vouchers" && p.Deferred));
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_case_hold_keeps_one_account_from_erasure() {
+  var ann = Customer.Single(c => c.Number == "C-1");
+  PlaceCaseHold("Customer", ann.Id, "Customer C-1", "Chargeback dispute", "The card issuer's chargeback is open.",
+    DateTime.UtcNow.AddDays(60));
+  Assert.True(IsCaseHeld(ann.Id));
+  var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Waiting, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.Equal(HeldSentence(), PlanLine.Single(l => l.Request == r && l.Category == "app.account").Reason);
+  Assert.Equal(1, Customer.Count(c => c.Number == "C-1"));
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void a_hold_past_its_review_date_is_marked_for_review_and_stays_in_force() {
+  var h = PlaceHold("ann@customer.test", null, "Dispute", "Her complaint may go to court.", DateTime.UtcNow.AddDays(30));
+  TestClock.Advance(TimeSpan.FromDays(31));
+  Workflow.Settle(HoldNamed(h.Id));
+  Assert.Equal(HoldState.ReviewDue, HoldNamed(h.Id).State);
+  Assert.True(IsHeld(new DataSubject { Emails = ["ann@customer.test"] }));
+
+  ReviewHold(HoldNamed(h.Id), DateTime.UtcNow.AddDays(90));
+  Assert.Equal(HoldState.Holding, HoldNamed(h.Id).State);
+}
+
+[Test(Desk)]
+void a_second_person_confirms_a_lift_when_the_app_requires_one() {
+  HoldLiftNeedsSecondPerson.Stub(() => true);
+  LegalHold? h = null;
+  runas (Ada) {
+    h = HoldOnAnn();
+    LiftHold(HoldNamed(h!.Id), "Settled.");
+    Assert.Equal(HoldState.LiftPending, HoldNamed(h!.Id).State);
+    // Still in force while it waits.
+    Assert.True(IsHeld(new DataSubject { Emails = ["ann@customer.test"] }));
+    // Never the person who asked.
+    Assert.Denied(() => ConfirmHoldLift(HoldNamed(h!.Id)));
+  }
+  runas (Lou) { ConfirmHoldLift(HoldNamed(h!.Id)); }
+  runas (Ada) {
+    var lifted = HoldNamed(h!.Id);
+    Assert.Equal(HoldState.Lifted, lifted.State);
+    Assert.Equal("ada@desk.test", lifted.LiftRequestedBy!.Email);
+    Assert.Equal("lou@desk.test", lifted.LiftedBy!.Email);
+  }
+}
+
+[Test(Desk)]
+void the_people_managing_privacy_see_that_a_person_is_held_but_never_why() {
+  runas (Ada) { HoldOnAnn(); }
+  runas (Max) {
+    var h = LegalHold.Single();
+    Assert.Equal("ann@customer.test", h.SubjectEmail);
+    Assert.Null(h.Matter);
+    Assert.Null(h.Reason);
+  }
+  runas (Raj) { Assert.Equal(0, LegalHold.Count()); }
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void an_access_export_never_mentions_a_hold() {
+  HoldOnAnn();
+  var r = FileRequest(RequestKind.Access, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+  var export = ExportOf(PrivacyRequest.Single(x => x.Id == r.Id));
+  Assert.Contains("Ann Archer", export);
+  Assert.DoesNotContain("Dispute", export);
+  Assert.DoesNotContain("court", export);
+}

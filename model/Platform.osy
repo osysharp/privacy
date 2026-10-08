@@ -1,0 +1,68 @@
+namespace Osysharp.Privacy;
+
+using Osysharp.Inbox;
+using Osysharp.Storage;
+
+// ── the platform's own holder: copies the platform and this kit keep ──────────────────────────────────────────────
+//
+// Declared so the records of processing and every response name them, and so the kit's own evidence has a period:
+//   · privacy.records — the requests and plans this kit keeps (Art. 5(2) accountability): ids, counts, dates and the
+//     address a request was about; LEGAL CLAIMS, 36 months from receipt by default, then purged.
+//   · platform.model-calls — the text sent to an AI model on the app's behalf: the platform clears it after 30 days
+//     (the app may say up to 365 — `app.Audit.LlmCallRecord.ContentRetention`). Not findable by person, so a request
+//     plans it "not held"; the bound is what keeps it short.
+// The audit trail holds no personal value at all (fields classified `Personal.*` are recorded as changed, never as
+// themselves), so it has nothing to declare.
+
+public class PlatformPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Privacy";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "privacy.records", Label = "Your requests to us about your data, and what we did about them",
+      Purpose = Translate("Showing that we answered your requests (GDPR Art. 5(2))"), SubjectKind = "everyone who asked",
+      Basis = RetentionBasis.LegalClaims, BasisDetail = "the establishment, exercise or defence of legal claims",
+      RetainedMonths = 36, RetainedFrom = RetentionStart.Collected, MinMonths = 12, MaxMonths = 120,
+      RetainedFromWords = Translate("from when you asked") },
+    new DataCategory {
+      Key = "platform.model-calls", Label = "Text sent to an AI model on your behalf",
+      Purpose = Translate("Running and auditing the app's AI features"), SubjectKind = "everyone",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = "cleared by the platform after 30 days",
+      OnErasureWords = Translate("Cleared by the platform within 30 days of being sent — it cannot be found by person."),
+      FoundByPerson = false },
+  ];
+
+  /// A request's own records are never what a request plans: the evidence of an erasure is not erased by it. They go
+  /// at the end of their period, by `Purge`. Model calls cannot be found by person.
+  public int Count(DataSubject subject, DataCategory category) => 0;
+
+  public void Erase(DataSubject subject, DataCategory category) { }
+
+  public ExportSection Export(DataSubject subject, DataCategory category) {
+    if (category.Key != "privacy.records") { return new ExportSection { Category = category.Key }; }
+    var email = subject.Emails.Count > 0 ? subject.Emails[0] : "";
+    var key = email == "" ? "-" : Security.Fingerprint(email);
+    var mine = PrivacyRequest.Where(r => r.SubjectKey == key || (subject.Account != null && r.SubjectAccount == subject.Account))
+      .Select(r => new { r.Right, r.ReceivedAt, r.State }).ToList();
+    return new ExportSection { Category = category.Key, Json = JsonSerializer.Serialize(mine) };
+  }
+
+  /// Requests finished longer ago than their period, with their plans and files.
+  public int Purge(DataCategory category, DateTime now) {
+    if (category.Key != "privacy.records") { return 0; }
+    var gone = 0;
+    foreach (var r in PrivacyRequest.Where(r => r.State == RequestState.Done || r.State == RequestState.Failed).ToList()) {
+      if (KeepUntil(category, r.ReceivedAt) > now) { continue; }
+      // A held person's requests are evidence too: kept while the hold stands.
+      if (IsKeyHeld(r.SubjectKey, r.SubjectAccount)) { continue; }
+      foreach (var l in PlanLine.Where(l => l.Request == r).ToList()) { l.Delete(); }
+      foreach (var f in ExportFetch.Where(f => f.Request == r).ToList()) { f.Delete(); }
+      foreach (var a in PrivacyAsk.Where(a => a.Request == r).ToList()) { a.Delete(); }
+      File.DeleteAbout(r);
+      // A request is inbox work: its holding history and its clock name it, so they go with it.
+      ForgetWorkItem(r);
+      gone = gone + 1;
+    }
+    return gone;
+  }
+}

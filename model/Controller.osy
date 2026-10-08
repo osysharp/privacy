@@ -1,0 +1,34 @@
+namespace Osysharp.Privacy;
+
+// ── who is responsible: the controller, as the tenant names it ─────────────────────────────────────────────────────
+//
+// GDPR's "controller" is the legal entity that decides why and how people's data is used — the company running the app,
+// not the app. Every answer a person gets names it, and so do the records of processing (Art. 30). It is the TENANT's
+// to say: the app's code may suggest one (`app.Privacy = new PrivacySetup { Controller = "…" }`), and the people
+// managing privacy name it on the settings area, which wins. Until either says, nothing is invented: the answers say
+// "the people who run it", and a desk can show that it is missing (`ControllerName() == ""`).
+
+/// The legal entity responsible for the personal data this app holds, as the people managing privacy named it. One row.
+public entity PrivacyController {
+  /// Its registered name, as it appears on its own documents.
+  [MaxLength(200)] string LegalName = "";
+  security {
+    // Everyone reads it: who is responsible for your data is part of the privacy notice every person is owed (Art. 13).
+    allow read when IsAnonymous || IsAuthenticated;
+    // The people managing privacy name it — staged on the settings page and saved with its SaveBar, recorded.
+    allow create, update when ManagesPrivacy;
+  }
+}
+
+/// The controller's name — the tenant's, else the app's default (`PrivacySetup.Controller`), else "" (not named yet).
+public string ControllerName() {
+  var named = PrivacyController.Where(c => c.LegalName != "").Select(c => c.LegalName).FirstOrDefault();
+  if (named != null && named.Trim() != "") { return named.Trim(); }
+  return App.Setting<PrivacySetup>().Controller.Trim();
+}
+
+/// The controller the app's code suggests (`PrivacySetup.Controller`), or "".
+public string ControllerByTheApp() { return App.Setting<PrivacySetup>().Controller.Trim(); }
+
+/// Where a person who disagrees may complain (`PrivacySetup.SupervisoryAuthority`), or "".
+public string ComplaintsGoTo() { return App.Setting<PrivacySetup>().SupervisoryAuthority.Trim(); }
