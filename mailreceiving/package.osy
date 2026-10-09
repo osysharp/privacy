@@ -1,0 +1,20 @@
+// Osysharp.Privacy.MailReceiving — what an app's watched mailboxes hold about a person, as Osysharp.Privacy's holder:
+// the mail they sent, as it arrived (`ReceivedMail` and its original), erased when they ask.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: Mail.Receiving does not force privacy requests (and the Inbox
+//   under them) on an app that only reads a mailbox. An app using both gets it by itself — `completes` below, and `osy lock` says so —
+//   the holder is DISCOVERED, nothing is wired. (A conversation's mail is ALSO reached through Osysharp.Privacy.
+//   Conversations, by its channel; both are the same erasure.)
+package Osysharp.Privacy.MailReceiving {
+  version     "0.2.0";
+  minPlatform "0.9.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.Mail.Receiving — the mail a person sent to the app's watched mailboxes, as it arrived, in their copy of their data and erased when they ask.";
+  completes   Osysharp.Privacy@0, Osysharp.Mail.Receiving@0;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Mail@0;
+  use Osysharp.Mail.Receiving@0;
+  use Osysharp.Privacy@0;
+  use Osysharp.Storage;
+  tests "tests";
+}

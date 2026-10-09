@@ -1,0 +1,45 @@
+namespace Osysharp.Privacy.MailReceiving;
+
+using Osysharp.Mail.Receiving;
+using Osysharp.Privacy;
+
+/// What the app's watched mailboxes received from a person — found by the address they sent from, exactly.
+public class ReceivedMailPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Mail.Receiving";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "mail.received", Label = "Mail you sent us, as it arrived", Purpose = Translate("Receiving what you write to us"),
+      SubjectKind = "everyone who mailed us", Basis = RetentionBasis.Contract, Portable = true },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    var n = 0;
+    foreach (var e in s.Emails) { n = n + ReceivedMail.Count(r => r.From == e); }
+    return n;
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    foreach (var e in s.Emails) { EraseMailFrom(e); }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<ReceivedMailRow> rows = [];
+    List<ExportItem> items = [];
+    foreach (var e in s.Emails) {
+      foreach (var r in ReceivedMail.Where(r => r.From == e).OrderBy(r => r.CreatedAt).ToList()) {
+        rows.Add(new ReceivedMailRow { At = r.CreatedAt, To = r.Mailbox, Subject = r.Subject });
+        items.Add(new ExportItem { At = r.CreatedAt, Title = Translate("Mail you sent us"),
+          Fields = [new ExportField { Name = Translate("To"), Value = r.Mailbox }, new ExportField { Name = Translate("Subject"), Value = r.Subject }] });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One received mail in a person's export.
+public class ReceivedMailRow {
+  public DateTime At;
+  public string To = "";
+  public string Subject = "";
+}

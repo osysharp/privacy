@@ -1,0 +1,40 @@
+// What a mailbox received from a person, under their privacy request.
+
+using Osysharp.Identity;
+using Osysharp.Mail.Receiving;
+using Osysharp.Privacy;
+using Osysharp.Privacy.MailReceiving;
+using PrivacyMailReceivingKitTests;
+
+/// The desk: Ada manages privacy. The mailbox received two mails from Ann and one from Joann.
+[TestFixture]
+void Desk() {
+  var ada = new Person { Email = "ada@desk.test", DisplayName = "Ada" };
+  new RoleGrant { Member = ada, Role = DeskRole.Admin };
+  new ReceivedMail { Mailbox = "support@desk.test", ProviderId = "p1", From = "ann@x.test", Subject = "Where is OKRA1" };
+  new ReceivedMail { Mailbox = "support@desk.test", ProviderId = "p2", From = "ann@x.test", Subject = "Still OKRA1" };
+  new ReceivedMail { Mailbox = "support@desk.test", ProviderId = "p3", From = "joann@x.test", Subject = "Unrelated" };
+}
+
+principal Ada => Person.Single(p => p.Email == "ada@desk.test");
+
+[Test(Desk)]
+[runas(Ada)]
+void her_erasure_takes_the_mail_she_sent_and_never_mail_from_an_address_containing_hers() {
+  var r = FileRequest(RequestKind.Erasure, null, "ann@x.test", IdentityCheck.CodeToKnownAddress, "A code to her address came back.");
+  Assert.Equal(2, PlanLine.Single(l => l.Request == r && l.Category == "mail.received").Items);
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.Equal(0, ReceivedMail.Count(m => m.From == "ann@x.test"));
+  Assert.Equal(1, ReceivedMail.Count(m => m.From == "joann@x.test"));
+  Assert.NoTraceOf("OKRA1");
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void her_copy_lists_what_she_sent_us() {
+  var h = new ReceivedMailPersonalData();
+  var json = h.Export(new DataSubject { Emails = ["ann@x.test"] }, CategoryOf("mail.received")).Json;
+  Assert.Contains("Where is OKRA1", json);
+  Assert.DoesNotContain("Unrelated", json);
+}
