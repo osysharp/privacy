@@ -1,5 +1,5 @@
 // Osysharp.Privacy — what the app holds about a person, why it may keep it and for how long, and what a request from
-// that person does to it (D-PRIVACY1, Docs/OsySharp/privacy_kit_design.md).
+// that person does to it.
 //
 // Every kit that holds personal data — and the app, for its own entities — implements ONE contract,
 // `IPersonalDataHolder`, and declares what it holds as CATEGORIES: each with a retention BASIS (consent, contract, a
@@ -22,7 +22,7 @@
 //   says WHY a row is kept and for how long; the platform keeps a restricted row out of every ordinary read, logs every
 //   purpose read of it (`[PurposeRead("<category>")]`) and never records a personal value in the audit trail.
 package Osysharp.Privacy {
-  version     "0.8.3";
+  version "0.8.4";
   minPlatform "0.9.0";
   summary     "what the app holds about a person and why it may keep it — a versioned holder contract every kit implements, categories with a retention basis and a period the tenant sets within declared limits (with jurisdiction presets and a fiscal-year-aware end date), requests that plan erase / keep restricted until a date / blocked per category and run as a workflow, a response that says what was erased and what was kept and why, an access and portability export, and a daily purge.";
   model "model/**/*.osy";
@@ -39,7 +39,7 @@ package Osysharp.Privacy {
   use Osysharp.Workflow;
   use Osysharp.Observability;
   use Osysharp.Storage;
-  // The settings area's contract and frame — the retention page (D-SETTINGSREG1).
+  // The settings area's contract and frame — the retention page.
   use Osysharp.Ui;
   tests "tests";
 }

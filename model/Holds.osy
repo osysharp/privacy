@@ -8,7 +8,7 @@ using Osysharp.Workflow;
 // A HOLD is placed on a PERSON (every category about them) or on a CASE (one row the app names — an order, a
 // conversation, a candidacy). While it stands:
 //   · an erasure plan does not erase what it covers — the line WAITS, "kept for the establishment, exercise or defence
-//     of legal claims" (the matter is never named to the person, owner Q13), and runs the day the hold is lifted;
+//     of legal claims" (the matter is never named to the person), and runs the day the hold is lifted;
 //   · the daily purge does not delete it — every holder is asked to keep the held rows out of the purge first
 //     (`IPersonalDataHolder.Hold`), and a category whose holder cannot say which rows the hold covers is not purged AT
 //     ALL while the hold stands, recorded every day (never a silent gap).
@@ -84,7 +84,7 @@ public entity LegalHold {
   }
 }
 
-/// The sentence a person reads for what a hold keeps — the basis, never the matter (owner, Q13).
+/// The sentence a person reads for what a hold keeps — the basis, never the matter.
 public string HeldSentence() { return "kept for the establishment, exercise or defence of legal claims"; }
 
 /// Place a hold on a person — every category about them — until it is lifted. `reviewBy`: when somebody must look at

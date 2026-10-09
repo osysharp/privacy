@@ -63,7 +63,7 @@ entity Voucher {
 }
 
 /// A customer's visit to the desk — the desk's own record of it, which stays; what it was about is the customer's own
-/// words. It says whose a row is and why it is kept, and the platform writes its holder (D-DATASUBJECT1), keyed by the
+/// words. It says whose a row is and why it is kept, and the platform writes its holder, keyed by the
 /// app's name: an erasure blanks the subject. The desk's own holder below then says what stands there instead.
 [PersonalData(DeskVisits)]
 entity Visit {

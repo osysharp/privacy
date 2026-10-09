@@ -1,4 +1,4 @@
-// Legal holds in the app's settings area (D-SETTINGSREG1), for the people who place them: the holds in force, placing
+// Legal holds in the app's settings area, for the people who place them: the holds in force, placing
 // one on a person (a case is held from its own record's page — `HoldControl`), lifting one with a reason, confirming a
 // lift as the second person when the app or its organisation requires one, keeping a hold past its review date, and
 // what was lifted, by whom and why. Every change goes through the kit's functions and the hold's own run.

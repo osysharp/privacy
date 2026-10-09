@@ -52,7 +52,7 @@ void only_the_people_managing_privacy_set_a_period() {
   Assert.Throws<NotAuthorized>(() => SetRetention("app.vouchers", 120, RetentionStart.EndOfCalendarYear));
 }
 
-// ── the settings area (D-SETTINGSREG1) ──────────────────────────────────────────────────────────────────────────────
+// ── the settings area ───────────────────────────────────────────────────────────────────────────────────────────────
 
 [Test(Desk)]
 [runas(Ada)]

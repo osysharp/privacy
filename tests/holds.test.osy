@@ -94,7 +94,7 @@ void an_erasure_under_a_hold_waits_and_finishes_when_it_is_lifted() {
   Assert.Equal(PlanOutcome.Restrict, PlanLine.Single(l => l.Request == r && l.Category == "app.vouchers").Outcome);
   Assert.Equal(1, Customer.Count(c => c.Number == "C-1"));
   Assert.Equal(2, Note.Count());
-  // The person reads the basis — never the matter, never that there is a dispute (owner, Q13).
+  // The person reads the basis — never the matter, never that there is a dispute.
   Assert.Contains("Not yet: Your customer account: your name and email address — kept for the establishment, exercise or defence of legal claims. We will erase it when that need ends, and tell you.",
     waiting.Response);
   Assert.DoesNotContain("Dispute", waiting.Response);

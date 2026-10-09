@@ -2,7 +2,7 @@ namespace Osysharp.Privacy;
 
 // ── the contract every holder of personal data implements ──────────────────────────────────────────────────────────
 //
-// ⚑ VERSIONED (D-CONTRACTS1): a member added later carries a default body, so a holder written against 0.1.0 keeps
+// ⚑ VERSIONED: a member added later carries a default body, so a holder written against 0.1.0 keeps
 //   compiling. Removing or re-signing a member is a MAJOR version.
 
 /// The legal basis a category is held on (GDPR Art. 6(1), 17(3)). ⚠ Appended, never inserted: stored by position.
@@ -182,7 +182,7 @@ public interface IPersonalDataHolder {
   bool Declared() => false;
 }
 
-// ── declared personal data: the platform writes the holder (D-DATASUBJECT1) ─────────────────────────────────────────
+// ── declared personal data: the platform writes the holder ─────────────────────────────────────────────────────────
 //
 //   DataCategory TicketNotes() => new DataCategory { Key = "app.tickets", Label = "…", Basis = RetentionBasis.Contract };
 //   [PersonalData(TicketNotes)] entity Ticket { [DataSubject] Customer Customer; [Classification(Personal.Content)] string? Notes; }

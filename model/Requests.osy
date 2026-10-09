@@ -8,12 +8,12 @@ using Osysharp.Workflow;
 // ── a request from a person, its plan, its run and its response ────────────────────────────────────────────────────
 //
 // A request is PLANNED the moment it is filed — one line per category of every holder, decided from the declarations
-// (privacy_kit_design §3.4): not held · erase now · keep restricted until a date, on a stated basis · blocked until an
+// of the app and its kits: not held · erase now · keep restricted until a date, on a stated basis · blocked until an
 // event, for a stated reason · kept on compelling grounds a person wrote down · exported. The plan RUNS as a workflow,
 // as the system; a holder that fails fails the whole request, naming the holder — never marked done. A blocked line is
 // asked again daily (and whenever the app says its block cleared) and runs then; the request WAITS, it is never refused.
 //
-// ⚑ A REQUEST IS INBOX WORK (D-INBOX1): `PrivacyRequest : WorkItem`, queued, held and clocked like any other item. Its
+// ⚑ A REQUEST IS INBOX WORK: `PrivacyRequest : WorkItem`, queued, held and clocked like any other item. Its
 //   promise is the statutory one — an ABSOLUTE `DueAt`, one calendar month from receipt (`StatutoryDue`), at risk and
 //   breached like any clock, moved only by an extension that says why (Art. 12(3)).
 // ⚑ TWO WAYS IN. Staff file one on a person's behalf (`FileRequest`) and record HOW they checked who it is; its plan
@@ -360,7 +360,7 @@ public void RunPlan(PrivacyRequest r) {
   }
   r.Response = ResponseFor(r);
   // An erasure that is finished keeps no copy of the address it erased — the kit's own records are ids, counts and
-  // dates (privacy_kit_design §4.1); the fingerprint is what proves who asked.
+  // dates; the fingerprint is what proves who asked.
   if (r.Right == RequestKind.Erasure && !IsWaiting(r)) { r.SubjectEmail = null; r.SubjectPhone = null; }
 }
 
@@ -456,7 +456,7 @@ public string ResponseFor(PrivacyRequest r) {
       text = text + $"What we keep on compelling grounds: {CategoryOf(l.Category).Label} — {l.Reason}\n";
     }
     foreach (var l in lines.Where(l => l.Outcome == PlanOutcome.Blocked)) {
-      // A hold says its basis and nothing else — never the matter, never that a dispute exists (owner, Q13).
+      // A hold says its basis and nothing else — never the matter, never that a dispute exists.
       var then = l.Held ? "We will erase it when that need ends, and tell you." : "We will finish when it clears, and tell you.";
       text = text + $"Not yet: {CategoryOf(l.Category).Label} — {l.Reason}. {then}\n";
     }

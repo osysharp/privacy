@@ -1,9 +1,9 @@
-// The Privacy kit's part of the app's settings area (D-SETTINGSREG1): how long each category of personal data is kept,
+// The Privacy kit's part of the app's settings area: how long each category of personal data is kept,
 // confirming the periods only the tenant can decide, a jurisdiction's bookkeeping preset, and how plans are reviewed.
 // ANNOUNCED (`ISettingsProvider`), so `SettingsArea()` lists it with no wiring, and served at `/settings/privacy` in the
 // area's frame (`SettingsFrame`).
 //
-// ⚑ NOTHING IS SAVED UNTIL SAVE (D-SETTINGSSWEEP1), like every settings page: a period changed, a category confirmed and
+// ⚑ NOTHING IS SAVED UNTIL SAVE, like every settings page: a period changed, a category confirmed and
 //   a preset applied are all staged on the page's own unit of work, and the page's `SaveBar` saves them together. The
 //   bar is held back (`blockedBy`) by the check `SetRetention` makes (`RetentionLimitRefusal`), asked as the person
 //   types: a period outside the kit's limits saves only with the jurisdiction that allows it and the reason, both
@@ -50,8 +50,7 @@ public class RetentionRow {
 }
 
 // ⚑ A PERIOD IS NEVER "SET BY YOUR ORGANIZATION": `RetainedMonths` is `OrgPolicyMode.Range` — an organisation BOUNDS it
-//   and the app still chooses within — so the page keeps its Change button. Saying the bounds is D-ORGPOLICY1's, once an
-//   organisation can state them.
+//   and the app still chooses within — so the page keeps its Change button.
 
 /// Every category every holder declares, as the retention page shows it — the ones waiting for confirmation first.
 [Authorize(ManagesPrivacy)]

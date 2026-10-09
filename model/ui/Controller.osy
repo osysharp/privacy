@@ -1,4 +1,4 @@
-// Who is responsible for the data — the controller's legal name, on the settings area (D-SETTINGSREG1), announced to the
+// Who is responsible for the data — the controller's legal name, on the settings area, announced to the
 // people managing privacy and served at `/settings/privacy/controller` in the area's frame.
 //
 // ⚑ NOTHING IS SAVED UNTIL SAVE, like every settings page: the name is written on the page's own unit of work and the
