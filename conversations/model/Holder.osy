@@ -305,6 +305,23 @@ internal int HoldClaims(LegalHold hold, bool held) {
   return moved;
 }
 
+/// A person in a conversation kept for a claim, restricted at their own request (their contact-points category): who
+/// they are, as the claim reads them. ⚑ THE SPECIFIC READ A CLAIM NEEDS (arg-rule-kits, owner 2026-10-09) — a purpose
+/// read of that one category, by id, so the person is never handed across as a row the caller cannot read (which the
+/// platform refuses: before that rule the claim listed them with an empty name, silently).
+[PurposeRead("conversations.contact-points")]
+[Authorize(HandlesClaims)]
+internal string RestrictedClaimant(Guid party) {
+  var p = Party.FirstOrDefault(x => x.Id == party);
+  return p == null ? "" : ClaimantLine(Survivor(p!));
+}
+
+/// A claimant as a claim lists them: their name, and the addresses and numbers they wrote from.
+internal string ClaimantLine(Party p) {
+  var points = ContactPoint.Where(x => x.Party == p && x.Kind != ContactPointKind.Visitor).Select(x => x.Value).ToList();
+  return points.Count == 0 ? p.DisplayName : $"{p.DisplayName} — {string.Join(", ", points)}";
+}
+
 /// A conversation kept for a legal claim, as whoever handles claims reads it — every entry, notes included, and who the
 /// customers in it are. The ONE way the desk reads a kept conversation; each read is written to the access trail.
 /// Answers what the claim needs, never the rows.
@@ -315,10 +332,13 @@ public ClaimTranscript ConversationForAClaim(Guid conversation) {
   var c = Conversation.FirstOrDefault(x => x.Id == conversation);
   if (c == null) { throw new ValidationException("No conversation is kept under that id."); }
   var t = new ClaimTranscript { Conversation = c!.Id, Subject = c!.Subject ?? "", StartedAt = c!.StartedAt };
-  foreach (var seat in Participant.Where(x => x.Conversation == c && x.Party != null).ToList()) {
-    var p = Survivor(seat.Party!);
-    var points = ContactPoint.Where(x => x.Party == p && x.Kind != ContactPointKind.Visitor).Select(x => x.Value).ToList();
-    t.People.Add(points.Count == 0 ? p.DisplayName : $"{p.DisplayName} — {string.Join(", ", points)}");
+  // Who the customers are. An erasure keeps them WITH the claim (this purpose reads them); a restriction at their own
+  // request keeps them under their contact-points category instead, which a claim may still read (Art. 18(2)) — through
+  // `RestrictedClaimant`, the one read of that category this holder makes for a claim, written to the trail as well.
+  var seats = Participant.Where(x => x.Conversation == c && x.Party != null).Select(x => x.Party!.Id).ToList();
+  foreach (var id in seats) {
+    var held = Party.FirstOrDefault(x => x.Id == id);
+    t.People.Add(held != null ? ClaimantLine(Survivor(held!)) : RestrictedClaimant(id));
   }
   // Its messages and events read once each, and matched to the entries in memory — not two reads per entry.
   var messages = Message.Where(x => x.Conversation == c).ToList();

@@ -345,8 +345,12 @@ void a_restriction_keeps_all_her_conversations_out_of_use_until_she_lifts_it() {
     Assert.Equal(0, PartyErasure.Count());
     Assert.Null(KeptMark.Single(k => k.Conversation == complaint).Until);
   }
-  // The complaint is still there for a claim.
-  runas (Lou) { Assert.True(ConversationForAClaim(complaint).Entries.Any(e => e.Text.Contains("klagomal HERON8"))); }
+  // The complaint is still there for a claim — and so is who made it (a claim names the claimant, Art. 18(2)).
+  runas (Lou) {
+    var claim = ConversationForAClaim(complaint);
+    Assert.True(claim.Entries.Any(e => e.Text.Contains("klagomal HERON8")));
+    Assert.True(claim.People.Any(p => p.Contains("ana@example.test")), $"the claimant: {string.Join(" | ", claim.People)}");
+  }
 }
 
 /// D-RTL2 Q2 — a timeline line keeps WHO it names as a fact (classified, with which party), never inside a sentence, so

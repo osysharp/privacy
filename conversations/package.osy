@@ -20,7 +20,7 @@
 //   holds), every read logged. The app keeps what it holds beside it the same way (`ConversationPrivacyRules.Kept`).
 //   The daily purge lifts it and erases it on its day, and then who they were.
 package Osysharp.Privacy.Conversations {
-  version     "0.6.1";
+  version     "0.6.2";
   minPlatform "0.9.0";
   summary     "Osysharp.Privacy's holder for Osysharp.Conversations — complaints kept RESTRICTED for legal claims — read only for a claim, every read logged — while the rest of a person's conversations, their contact points and the redacted copies are erased on request, a daily purge that ends every conversation's period, the app's own say on which conversations concern a claim, and a person with no account proving their address to ask for themselves.";
   completes   Osysharp.Privacy@0, Osysharp.Conversations@0;

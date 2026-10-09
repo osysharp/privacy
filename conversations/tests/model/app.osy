@@ -119,6 +119,7 @@ public class DeskParties : PartyKinds {
 /// What the mail channel was handed — one row per send. It keeps the address it sent to, which is what
 /// `EraseCopiesTo` must reach.
 entity Carried {
+  [CreatedAt] DateTime? CreatedAt;
   [Classification(Personal.Contact), MaxLength(255)] string To = "";
   [Classification(Personal.Content), MaxLength(300)] string Subject = "";
   [Classification(Personal.Content)] string Text = "";
