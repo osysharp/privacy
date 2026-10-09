@@ -36,6 +36,7 @@ partial entity ServiceHours { security { allow read, create, update, delete when
 /// itself) and why it is kept, and the platform writes its privacy holder (D-DATASUBJECT1) — counted, exported, erased.
 [PersonalData(ClubPreferences, OnErasure.DeleteRow)]
 entity Preference {
+  [CreatedAt] DateTime? CreatedAt;
   [DataSubject(Identifier.Email), Classification(Personal.Contact), MaxLength(320)] string Email;
   bool Newsletter;
   security { allow read, create, update, delete when IsAdmin; }
@@ -44,6 +45,7 @@ entity Preference {
 /// What the club wrote down when a member called — found through their preference, deleted with it.
 [PersonalData(ClubCalls, OnErasure.DeleteRow)]
 entity Call {
+  [CreatedAt] DateTime? CreatedAt;
   [DataSubject] Preference Member;
   DateTime At;
   [Classification(Personal.Content), MaxLength(2000)] string? Notes;
