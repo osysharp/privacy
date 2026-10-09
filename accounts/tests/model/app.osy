@@ -33,7 +33,7 @@ app = new() {
 partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }
 
 /// What the club holds about a member: their newsletter preference, on their address. It says whose a row is (the address
-/// itself) and why it is kept, and the platform writes its privacy holder (D-DATASUBJECT1) — counted, exported, erased.
+/// itself) and why it is kept, and the platform writes its privacy holder — counted, exported, erased.
 [PersonalData(ClubPreferences, OnErasure.DeleteRow)]
 entity Preference {
   [CreatedAt] DateTime? CreatedAt;

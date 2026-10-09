@@ -5,7 +5,7 @@ with `Osysharp.Accounts` and answers privacy requests with `Osysharp.Privacy`.
 
 ```osy
 app Club {
-  use Osysharp.Accounts@0;
+  use Osysharp.Accounts@1;
   use Osysharp.Privacy@0;
   // Osysharp.Privacy.Accounts is not written: it arrives by itself, because the app uses what it completes (`osy lock` says so)
 }

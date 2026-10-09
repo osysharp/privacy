@@ -6,12 +6,12 @@
     {
       "name": "Osysharp.Accounts",
       "kind": "package",
-      "version": "0.12.0",
-      "hash": "sha256:f498d5a5d2d71eebdb25b47f463f6fb7816568aa79c8140ae80dce57b08ce533",
+      "version": "1.0.0",
+      "hash": "sha256:255191db83d3be6d5f11bcede79d98dea5864d4713e9cf00e4a52b9b05b47f51",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/accounts",
-      "constraint": "0"
+      "constraint": "1"
     },
     {
       "name": "Osysharp.Identity",
@@ -160,8 +160,8 @@
     {
       "name": "Osysharp.Privacy.Accounts",
       "kind": "package",
-      "version": "0.2.1",
-      "hash": "sha256:3cb11186e59db686f754b51e68e7be92d3c2455fa8c09197eb4a867ed3a0e60f",
+      "version": "0.3.0",
+      "hash": "sha256:1930a87402a42485f5a9c3890d09caa4a6a9ad356731543061f6fbc8e6faa3e0",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/privacy-accounts",

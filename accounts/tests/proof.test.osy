@@ -88,7 +88,7 @@ void another_members_proof_files_nothing() {
   runas (Ada) { Assert.Equal(0, PrivacyRequest.Count()); }
 }
 
-/// The club's own rows are declared (D-DATASUBJECT1): a preference found by the member's address, and the notes of their
+/// The club's own rows are declared: a preference found by the member's address, and the notes of their
 /// calls found through it — each in the plan by name, and both erased, the calls first.
 [Test(Club)]
 void a_members_erasure_reaches_the_clubs_own_rows_through_what_says_whose_they_are() {
