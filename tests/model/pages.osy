@@ -31,7 +31,7 @@ component DeskFrame() {
 }
 
 /// A view of the work.
-[Page("/inbox/{view}")] [Layout(DeskFrame)] [Authorize(WorksInbox)] [Render(CSR)] [Title("Inbox")]
+[Route("/inbox/{view}")] [Layout(DeskFrame)] [Authorize(WorksInbox)] [Render(CSR)] [Title("Inbox")]
 component InboxPage(string view) {
   render {
     InboxPanes(view, r => "/inbox/" + view + "/i/" + r.Id, Guid.Empty) { InboxOverview(view, noun: "request"); }
@@ -39,7 +39,7 @@ component InboxPage(string view) {
 }
 
 /// An item open beside the list — a privacy request gets the Privacy kit's pane.
-[Page("/inbox/{view}/i/{id}")] [Layout(DeskFrame)] [Authorize(WorksInbox)] [Render(CSR)] [Title("Item")]
+[Route("/inbox/{view}/i/{id}")] [Layout(DeskFrame)] [Authorize(WorksInbox)] [Render(CSR)] [Title("Item")]
 component ItemPage(string view, Guid id) {
   live var items = WorkItem.Where(w => w.Id == id).Include(w => w.Queue).Include(w => w.Assignee).ToList();
   render {
@@ -56,7 +56,7 @@ component ItemPage(string view, Guid id) {
 
 /// A settings page with a known height — taller than the sections column's own links, shorter than the window a test
 /// gives it — so a test can tell a nav that runs the window's height from one that stops where the page stops.
-[Page("/settings/test/known-height")] [Layout(SettingsFrame)] [Authorize(ManagesPrivacy)] [Render(CSR)] [Title("Known height")]
+[Route("/settings/test/known-height")] [Layout(SettingsFrame)] [Authorize(ManagesPrivacy)] [Render(CSR)] [Title("Known height")]
 component KnownHeightSettingsPage() {
   render { Box(label: "A page of a known height", h: "1000px", w: "100%") { Text("Nothing else is on this page."); } }
 }

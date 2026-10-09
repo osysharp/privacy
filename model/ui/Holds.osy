@@ -271,5 +271,5 @@ public component LegalHoldsEditor() {
   }
 }
 
-[Page("/settings/privacy/holds")] [Layout(SettingsFrame)] [Authorize(PlacesLegalHolds)] [Render(CSR)] [Title("Legal holds")]
+[Route("/settings/privacy/holds")] [Layout(SettingsFrame)] [Authorize(PlacesLegalHolds)] [Render(CSR)] [Title("Legal holds")]
 public component LegalHoldsSettings() { render { LegalHoldsEditor(); } }

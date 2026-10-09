@@ -67,6 +67,7 @@ entity Voucher {
 /// app's name: an erasure blanks the subject. The desk's own holder below then says what stands there instead.
 [PersonalData(DeskVisits)]
 entity Visit {
+  [CreatedAt] DateTime? CreatedAt;
   [DataSubject] Customer? Customer;
   [Classification(Personal.Content), MaxLength(200)] string Subject;
   security { allow read, create, update, delete when IsStaff; }

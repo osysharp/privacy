@@ -305,7 +305,7 @@ public component AskChoice(string title, string body, Action onPress, bool picke
   }
 }
 
-[Page("/privacy")] [Authorize] [Render(CSR)] [Title("Your privacy")]
+[Route("/privacy")] [Authorize] [Render(CSR)] [Title("Your privacy")]
 public component MyPrivacyPage() { render { MyPrivacy(); } }
 
 /// Make my request with no account, about the address I just proved — answers the sentence to show: "" when it was
@@ -415,11 +415,11 @@ public component AskWithoutAnAccount() {
   }
 }
 
-[Page("/privacy/ask")] [AllowAnonymous] [Render(CSR)] [Title("Ask about your data")]
+[Route("/privacy/ask")] [AllowAnonymous] [Render(CSR)] [Title("Ask about your data")]
 public component AskWithoutAnAccountPage() { render { AskWithoutAnAccount(); } }
 
 /// The page an export link opens — a person with no account downloads their data once.
-[Page("/privacy/export/{link}")] [AllowAnonymous] [Render(CSR)] [Title("Your data")]
+[Route("/privacy/export/{link}")] [AllowAnonymous] [Render(CSR)] [Title("Your data")]
 public component ExportByLinkPage(ExportLink link) {
   string problem = "";
   ExportLinks? fetched = null;

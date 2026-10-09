@@ -252,5 +252,5 @@ public component RetentionEditor() {
   }
 }
 
-[Page("/settings/privacy")] [Layout(SettingsFrame)] [Authorize(ManagesPrivacy)] [Render(CSR)] [Title("Data retention")]
+[Route("/settings/privacy")] [Layout(SettingsFrame)] [Authorize(ManagesPrivacy)] [Render(CSR)] [Title("Data retention")]
 public component PrivacySettings() { render { RetentionEditor(); } }
