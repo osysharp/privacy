@@ -6,7 +6,7 @@
 //   tells people things, and Privacy does not force a bell on its apps. An app using both gets it by itself —
 //   `completes` below, and `osy lock` says so — the holder is DISCOVERED, nothing is wired.
 package Osysharp.Privacy.Notifications {
-  version     "0.2.0";
+  version     "0.2.1";
   minPlatform "0.9.0";
   summary     "Osysharp.Privacy's holder for Osysharp.Notifications — a person's notifications and their preferences, found by their account, in their copy of their data, kept restricted on request and erased when they ask.";
   completes   Osysharp.Privacy@0, Osysharp.Notifications@1;
