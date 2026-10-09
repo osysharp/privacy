@@ -10,7 +10,7 @@ using Osysharp.Privacy;
 // has only ever written FROM it), and the party linked to their account. Their conversations are the ones those parties
 // have a seat in. Each erasure is RECORDED as a `PartyErasure`, and the Conversations kit's own run does the writes.
 //
-// ⚑ A CONVERSATION KEPT FOR LEGAL CLAIMS IS RESTRICTED, NOT LEFT IN USE (D-PRIVACY1 R1, owner 2026-10-02). When a person
+// ⚑ A CONVERSATION KEPT FOR LEGAL CLAIMS IS RESTRICTED, NOT LEFT IN USE. When a person
 //   asks to be erased, a conversation the app says concerns a claim (`ConcernsAClaim`) is kept — its entries, their
 //   renderings, files and deliveries, and the person themselves (their party and contact points: a complaint is a
 //   complaint BY somebody) — stamped with the category `conversations.claims` and the end of its period. From then on
@@ -306,9 +306,9 @@ internal int HoldClaims(LegalHold hold, bool held) {
 }
 
 /// A person in a conversation kept for a claim, restricted at their own request (their contact-points category): who
-/// they are, as the claim reads them. ⚑ THE SPECIFIC READ A CLAIM NEEDS (arg-rule-kits, owner 2026-10-09) — a purpose
-/// read of that one category, by id, so the person is never handed across as a row the caller cannot read (which the
-/// platform refuses: before that rule the claim listed them with an empty name, silently).
+/// they are, as the claim reads them. ⚑ THE SPECIFIC READ A CLAIM NEEDS — a purpose read
+/// of that one category, by id, so the person is never handed across as a row the caller cannot read (which the
+/// platform refuses).
 [PurposeRead("conversations.contact-points")]
 [Authorize(HandlesClaims)]
 internal string RestrictedClaimant(Guid party) {
@@ -459,7 +459,7 @@ internal List<Party> PeopleOf(Party party) {
 // ── who and which ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /// How a request finds a party — so an app's own row that names one (`[DataSubject] Customer Customer;` on a ticket, where
-/// `Customer : Party`) is found from what the request proved, with no holder written for it (D-DATASUBJECT1): the parties
+/// `Customer : Party`) is found from what the request proved, with no holder written for it: the parties
 /// `PartiesOf` reaches, and every party merged into one of them (a ticket names the party it was opened by, which a merge
 /// may since have folded into another).
 [FindsDataSubject]

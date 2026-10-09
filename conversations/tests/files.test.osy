@@ -1,5 +1,5 @@
-// Files under a person's erasure: a file goes because the desk said it is ABOUT them, never because they sent it
-// (owner, Privacy Q7). The original their message arrived as IS their message, and goes with their words.
+// Files under a person's erasure: a file goes because the desk said it is ABOUT them, never because they sent it.
+// The original their message arrived as IS their message, and goes with their words.
 
 using Osysharp.Identity;
 using Osysharp.Conversations;

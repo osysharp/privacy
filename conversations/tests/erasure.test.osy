@@ -353,7 +353,7 @@ void a_restriction_keeps_all_her_conversations_out_of_use_until_she_lifts_it() {
   }
 }
 
-/// D-RTL2 Q2 — a timeline line keeps WHO it names as a fact (classified, with which party), never inside a sentence, so
+/// A timeline line keeps WHO it names as a fact (classified, with which party), never inside a sentence, so
 /// erasing who she is reaches it: two records of Ana merged put her name on both timelines, and once she is erased
 /// nothing of her name is left anywhere the app keeps data.
 [Test(Desk)]

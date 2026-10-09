@@ -51,7 +51,7 @@ app = new() { Classifications = [ new Classification(Personal.Contact) { Open = 
   …;`) — answers the transcript and who the customers in it are; every read is written to the access trail. Nothing else
   on the desk reads it: the conversation, its messages and the person are absent from every ordinary read.
 - **The app keeps what it holds beside a conversation the same way** — `ConversationPrivacyRules.Kept(conversation,
-  category, until)` (Harbour marks the ticket "Kept for legal claims until …" and restricts the answers and drafts on it).
+  category, until)` (the [Harbour helpdesk](https://osyrin.com/templates/helpdesk/) marks the ticket "Kept for legal claims until …" and restricts the answers and drafts on it).
 - **An Art. 18 restriction** keeps every conversation of theirs, and who they are, out of use until they lift it.
 - **Nothing reaches the audit trail.** The Conversations kit classifies its fields `Personal.*`, which the trail records
   as changed, never as themselves — so an app keeps no `app.Audit.Redact` list for them. The kit announces its levels in

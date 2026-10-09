@@ -12,7 +12,7 @@
 //   adds `use Osysharp.Privacy.Conversations@0;` — the holder is DISCOVERED, nothing is wired. The erasure itself is the
 //   Conversations kit's own run (`PartyErasure`); this kit only says what the plan erases, and when a period ended.
 //
-// ⚑ A COMPLAINT IS KEPT RESTRICTED, NOT LEFT IN USE (D-PRIVACY1 R1, owner 2026-10-02). The Conversations kit classifies
+// ⚑ A COMPLAINT IS KEPT RESTRICTED, NOT LEFT IN USE. The Conversations kit classifies
 //   its fields `Personal.*`, and every app maps those levels (`{ Open = true }`: whoever may read the row reads them), so
 //   a customer still reads their own words. When they ask to be erased, a conversation that concerns a claim is
 //   RESTRICTED — its entries, renderings, files and deliveries, and who they are — until its period ends: absent from
@@ -20,7 +20,7 @@
 //   holds), every read logged. The app keeps what it holds beside it the same way (`ConversationPrivacyRules.Kept`).
 //   The daily purge lifts it and erases it on its day, and then who they were.
 package Osysharp.Privacy.Conversations {
-  version     "0.6.2";
+  version "0.6.3";
   minPlatform "0.9.0";
   summary     "Osysharp.Privacy's holder for Osysharp.Conversations — complaints kept RESTRICTED for legal claims — read only for a claim, every read logged — while the rest of a person's conversations, their contact points and the redacted copies are erased on request, a daily purge that ends every conversation's period, the app's own say on which conversations concern a claim, and a person with no account proving their address to ask for themselves.";
   completes   Osysharp.Privacy@0, Osysharp.Conversations@0;
