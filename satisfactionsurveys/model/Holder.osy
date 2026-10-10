@@ -1,0 +1,83 @@
+namespace Osysharp.Privacy.SatisfactionSurveys;
+
+using Osysharp.Identity;
+using Osysharp.SatisfactionSurveys;
+using Osysharp.Privacy;
+
+/// What a person answered when they were asked how it went — found by the account the question was asked of, or by an
+/// address their request PROVED (the question was mailed there). Each question and answer is wholly theirs, so an
+/// erasure deletes it; the app's own record of the work (a ticket's timeline line saying what they answered) is the
+/// app's holder's to erase.
+public class FeedbackPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.SatisfactionSurveys";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "feedback.answers", Label = Translate("What you told us when we asked how it went"),
+      Purpose = Translate("Learning how well we served you, and putting right what did not go well"),
+      SubjectKind = "people we asked", Basis = RetentionBasis.Consent, Portable = true },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) { return AsksOf(s).Count; }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    foreach (var a in AsksOf(s)) {
+      foreach (var r in FeedbackReply.Where(r => r.Ask == a).ToList()) { r.Delete(); }
+      a.Delete();
+    }
+  }
+
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
+    DateTime? latest = null;
+    foreach (var a in AsksOf(s)) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, a.AskedAt);
+      Restriction.Restrict(a, c.Key, until);
+      foreach (var r in FeedbackReply.Where(r => r.Ask == a).ToList()) { Restriction.Restrict(r, c.Key, until); }
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    return untilLifted ? null : latest;
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<AnswerRow> rows = [];
+    List<ExportItem> items = [];
+    foreach (var a in AsksOf(s).OrderBy(a => a.AskedAt).ToList()) {
+      var said = a.Rating == null ? Translate("Not answered")
+        : (a.Rating == FeedbackRating.Good ? Translate("Good") : Translate("Bad"));
+      rows.Add(new AnswerRow { AskedAt = a.AskedAt, About = a.Title, MailedTo = a.Address, Answer = said,
+                               Comment = a.Comment ?? "", AnsweredAt = a.AnsweredAt });
+      items.Add(new ExportItem { At = a.AskedAt, Title = a.Title == "" ? Translate("How did we do?") : a.Title,
+                                 Body = a.Comment == null || a.Comment == "" ? said : said + " — " + a.Comment });
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// The questions `s` was asked — by their account, or mailed to an address their request proved.
+[SuppressWarning("cost-unbounded-read")]   // one person's questions — an export or erasure must reach every one of them
+List<FeedbackAsk> AsksOf(DataSubject s) {
+  List<FeedbackAsk> found = [];
+  if (s.Account != null) {
+    var id = s.Account.Value;
+    found.AddRange(FeedbackAsk.Where(a => a.Person != null && a.Person.Id == id).ToList());
+  }
+  foreach (var address in s.Emails) {
+    var proven = address.Trim().ToLower();
+    if (proven == "") { continue; }
+    foreach (var a in FeedbackAsk.Where(a => a.Address == proven).ToList()) {
+      if (!found.Any(x => x.Id == a.Id)) { found.Add(a); }
+    }
+  }
+  return found;
+}
+
+/// One question and its answer, in a person's export.
+public class AnswerRow {
+  public DateTime AskedAt;
+  /// What the work was.
+  public string About = "";
+  public string MailedTo = "";
+  public string Answer = "";
+  public string Comment = "";
+  public DateTime? AnsweredAt;
+}

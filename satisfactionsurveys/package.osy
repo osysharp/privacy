@@ -1,0 +1,18 @@
+// Osysharp.Privacy.SatisfactionSurveys — what a person answered when they were asked how it went, as Osysharp.Privacy's holder:
+// their questions and answers, found by their account or by an address their request proved, in their copy of their
+// data, kept restricted when they ask, and erased when they ask.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: Feedback does not force privacy requests on an app that only asks
+//   how it went, and Privacy does not force feedback on its apps. An app using both gets it by itself —
+//   `completes` below, and `osy lock` says so — the holder is DISCOVERED, nothing is wired.
+package Osysharp.Privacy.SatisfactionSurveys {
+  version     "0.2.1";
+  minPlatform "0.9.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.SatisfactionSurveys — a person's questions and answers about how it went, found by their account or a proven address, in their copy of their data, kept restricted on request and erased when they ask.";
+  completes   Osysharp.Privacy@0, Osysharp.SatisfactionSurveys@0;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.SatisfactionSurveys@0;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}
