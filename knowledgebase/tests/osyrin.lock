@@ -1,0 +1,57 @@
+{
+  "platform": {
+    "version": "0.9.0"
+  },
+  "entries": [
+    {
+      "name": "Osysharp.Privacy.KnowledgeBase",
+      "kind": "package",
+      "shadow": "app-forkable",
+      "source": "workspace:kits/privacy-knowledge-base",
+      "included": "completes Osysharp.Privacy \u002B Osysharp.KnowledgeBase"
+    }
+  ],
+  "bridges": {
+    "searched": [
+      "workspace",
+      "platform"
+    ],
+    "skipped": [
+      "github: offline \u2014 the public catalog was not searched for bridges. Run \u0060osy lock\u0060 with a network to look."
+    ],
+    "notIncluded": [
+      {
+        "name": "Osysharp.WorkQueues.Notifications",
+        "reason": "completes Osysharp.WorkQueues \u002B Osysharp.Notifications, and this app does not use \u0060Osysharp.Notifications\u0060."
+      },
+      {
+        "name": "Osysharp.WorkQueues.Reports",
+        "reason": "completes Osysharp.WorkQueues \u002B Osysharp.Reports, and this app does not use \u0060Osysharp.Reports\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.UserAccounts",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.UserAccounts, and this app does not use \u0060Osysharp.UserAccounts\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Conversations",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Conversations, and this app does not use \u0060Osysharp.Conversations\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.SatisfactionSurveys",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.SatisfactionSurveys, and this app does not use \u0060Osysharp.SatisfactionSurveys\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.MailReceiving",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Mail.Receiving, and this app does not use \u0060Osysharp.Mail.Receiving\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Notifications",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Notifications, and this app does not use \u0060Osysharp.Notifications\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Sms",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Sms, and this app does not use \u0060Osysharp.Sms\u0060."
+      }
+    ]
+  }
+}

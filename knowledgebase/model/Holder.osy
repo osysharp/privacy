@@ -1,0 +1,92 @@
+namespace Osysharp.Privacy.KnowledgeBase;
+
+using Osysharp.Identity;
+using Osysharp.KnowledgeBase;
+using Osysharp.Privacy;
+
+/// Who wrote and who reviewed the knowledge base's articles — found by the person's ACCOUNT (only people with an account
+/// write or review). What is about them is the link from an article, a version or a step to them, and the notes they
+/// wrote in a review; the articles' words are the organisation's, read by everyone, and stay when the person goes.
+public class KnowledgePersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.KnowledgeBase";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "knowledge.authorship", Label = Translate("The articles you wrote or reviewed, and what you said in reviews"),
+      Purpose = Translate("Knowing who wrote and who checked what our readers are told"),
+      SubjectKind = "people who write or review articles", Basis = RetentionBasis.LegitimateInterest, Portable = false },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    return KnowledgeArticle.Count(a => a.Author != null && a.Author.Id == id)
+         + KnowledgeRevision.Count(r => (r.Author != null && r.Author.Id == id) || (r.PublishedBy != null && r.PublishedBy.Id == id))
+         + KnowledgeStep.Count(x => x.By != null && x.By.Id == id);
+  }
+
+  /// Their name comes off every article, version and step, and what they wrote in a review is erased. The articles, their
+  /// versions and the trail's shape stay — a step reads "Somebody no longer here".
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    var id = s.Account.Value;
+    foreach (var a in KnowledgeArticle.Where(a => a.Author != null && a.Author.Id == id).ToList()) { a.Author = null; }
+    foreach (var r in KnowledgeRevision.Where(r => r.Author != null && r.Author.Id == id).ToList()) { r.Author = null; }
+    foreach (var r in KnowledgeRevision.Where(r => r.PublishedBy != null && r.PublishedBy.Id == id).ToList()) { r.PublishedBy = null; }
+    foreach (var x in KnowledgeStep.Where(x => x.By != null && x.By.Id == id).ToList()) {
+      x.By = null;
+      x.Note = null;
+    }
+  }
+
+  /// Their review steps — and the notes on them — are kept out of every ordinary read. Their name on an article or a
+  /// version stays readable: restricting the version would take the article from its readers, which is not what a
+  /// restriction of the writer's data asks for.
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
+    if (s.Account == null) { return null; }
+    var id = s.Account.Value;
+    DateTime? latest = null;
+    foreach (var x in KnowledgeStep.Where(x => x.By != null && x.By.Id == id).ToList()) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, x.At);
+      Restriction.Restrict(x, c.Key, until);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    return untilLifted ? null : latest;
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<AuthorshipRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var r in KnowledgeRevision.Where(r => (r.Author != null && r.Author.Id == id) || (r.PublishedBy != null && r.PublishedBy.Id == id))
+                                         .OrderBy(r => r.CreatedAt).ToList()) {
+        var wrote = r.Author != null && r.Author.Id == id;
+        var what = wrote ? Translate("You wrote it") : Translate("You published it");
+        rows.Add(new AuthorshipRow { At = r.PublishedAt ?? r.CreatedAt, Article = r.Title, Language = r.Language, Version = r.Number,
+                                     What = what });
+        items.Add(new ExportItem { At = r.PublishedAt ?? r.CreatedAt, Title = r.Title, Body = what + $" — {r.Language}, version {r.Number}" });
+      }
+      foreach (var x in KnowledgeStep.Where(x => x.By != null && x.By.Id == id).OrderBy(x => x.At).ToList()) {
+        var title = x.Revision == null ? x.Article.Slug : x.Revision.Title;
+        rows.Add(new AuthorshipRow { At = x.At, Article = title, Language = x.Revision == null ? "" : x.Revision.Language,
+                                     Version = x.Revision == null ? 0 : x.Revision.Number, What = x.Kind.Label, Note = x.Note ?? "" });
+        items.Add(new ExportItem { At = x.At, Title = title,
+                                   Body = x.Note == null || x.Note == "" ? x.Kind.Label : x.Kind.Label + " — " + x.Note });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One thing a person did with an article, in their export.
+public class AuthorshipRow {
+  public DateTime At;
+  public string Article = "";
+  public string Language = "";
+  public int Version;
+  /// What they did — wrote it, published it, sent it back…
+  public string What = "";
+  /// What they said with it.
+  public string Note = "";
+}

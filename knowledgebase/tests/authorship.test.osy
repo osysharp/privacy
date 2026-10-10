@@ -1,0 +1,104 @@
+// What a guide wrote and reviewed, under her privacy request — reached by her account; her name comes off, the articles
+// stay.
+using Osysharp.Identity;
+using Osysharp.KnowledgeBase;
+using Osysharp.Privacy;
+using Osysharp.Privacy.KnowledgeBase;
+using PrivacyKnowledgeKitTests;
+
+/// The museum: Ada manages privacy and reviews; Gil and Sol are guides. Gil wrote an article Ada published, and Ada sent
+/// one of Sol's back with a note.
+[TestFixture]
+void Museum() {
+  var ada = new Person { Email = "ada@museum.test", DisplayName = "Ada" };
+  new RoleGrant { Member = ada, Role = MuseumRole.Admin };
+  var gil = new Person { Email = "gil@museum.test", DisplayName = "Gil" };
+  new RoleGrant { Member = gil, Role = MuseumRole.Guide };
+  var sol = new Person { Email = "sol@museum.test", DisplayName = "Sol" };
+  new RoleGrant { Member = sol, Role = MuseumRole.Guide };
+  var visit = new KnowledgeCategory { Name = "Your visit", Slug = "your-visit", Position = 1 };
+  new KnowledgeSection { Category = visit, Name = "Tickets", Slug = "tickets", Position = 1 };
+}
+
+principal Ada => Person.Single(p => p.Email == "ada@museum.test");
+principal Gil => Person.Single(p => p.Email == "gil@museum.test");
+principal Sol => Person.Single(p => p.Email == "sol@museum.test");
+
+Guid AccountOf(string email) {
+  Guid id = Guid.Empty;
+  runas (Ada) { id = Person.Single(p => p.Email == email).Id; }
+  return id;
+}
+
+/// Gil writes "Free entry on Sundays" and Ada publishes it; Sol writes "Group tickets" and Ada sends it back.
+void Written() {
+  runas (Gil) {
+    var d = NewKnowledgeArticle(KnowledgeSection.Single(s => s.Slug == "tickets"), "Free entry on Sundays");
+    d.Body = "Entry is free on the first Sunday of every month.";
+    UnitOfWork.Commit();
+    SendKnowledgeForReview(d, "Checked with the front desk.");
+  }
+  runas (Sol) {
+    var d = NewKnowledgeArticle(KnowledgeSection.Single(s => s.Slug == "tickets"), "Group tickets");
+    d.Body = "Groups of ten or more book ahead.";
+    UnitOfWork.Commit();
+    SendKnowledgeForReview(d);
+  }
+  Background.Settle();
+  runas (Ada) {
+    PublishKnowledge(KnowledgeRevision.Single(r => r.Title == "Free entry on Sundays"));
+    SendKnowledgeBack(KnowledgeRevision.Single(r => r.Title == "Group tickets"), "Say how far ahead, Sol.");
+  }
+  Background.Settle();
+}
+
+[Test(Museum)]
+void her_copy_lists_what_she_wrote_and_said() {
+  Written();
+  runas (Ada) {
+    var gil = new DataSubject { Account = AccountOf("gil@museum.test") };
+    var section = new KnowledgePersonalData().Export(gil, CategoryOf("knowledge.authorship"));
+    Assert.Contains("Free entry on Sundays", section.Json);
+    Assert.Contains("Checked with the front desk.", section.Json);
+    Assert.DoesNotContain("Group tickets", section.Json);
+    Assert.Equal(3, new KnowledgePersonalData().Count(gil, CategoryOf("knowledge.authorship")));
+    // Nobody with only an address wrote anything.
+    Assert.Equal(0, new KnowledgePersonalData().Count(new DataSubject { Emails = ["gil@museum.test"] }, CategoryOf("knowledge.authorship")));
+  }
+}
+
+[Test(Museum)]
+void an_erasure_takes_her_name_and_notes_and_leaves_the_articles() {
+  Written();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, AccountOf("gil@museum.test"), "", IdentityCheck.InPerson, "Gil left and asked in person.");
+    Assert.Equal(3, PlanLine.Single(l => l.Request == r && l.Category == "knowledge.authorship").Items);
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  runas (Ada) {
+    var article = KnowledgeArticle.Single(a => a.Slug == "free-entry-on-sundays");
+    Assert.Null(article.Author);
+    var v = KnowledgeRevision.Single(x => x.Title == "Free entry on Sundays");
+    Assert.Null(v.Author);
+    Assert.Equal(KnowledgeStage.Published, v.Stage);
+    var sent = KnowledgeStep.Single(x => x.Article.Id == article.Id && x.Kind == KnowledgeStepKind.Submit);
+    Assert.Null(sent.By);
+    Assert.Null(sent.Note);
+    // Ada's own step and note on Sol's article stay hers.
+    Assert.Equal("Say how far ahead, Sol.", KnowledgeStep.Single(x => x.Kind == KnowledgeStepKind.SendBack).Note);
+  }
+  // Readers still read the article.
+  Assert.True(KnowledgeArticleView("free-entry-on-sundays").Found);
+}
+
+[Test(Museum)]
+void a_restriction_keeps_her_review_notes_out_of_use_and_the_article_readable() {
+  Written();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Restriction, AccountOf("ada@museum.test"), "", IdentityCheck.InPerson, "She asked us to stop using her data.");
+    ApproveRequest(r);
+  }
+  runas (Sol) { Assert.Equal(0, KnowledgeStep.Count(x => x.Kind == KnowledgeStepKind.SendBack)); }
+  Assert.True(KnowledgeArticleView("free-entry-on-sundays").Found);
+}
