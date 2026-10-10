@@ -1,6 +1,6 @@
 namespace Osysharp.Privacy;
 
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 using Osysharp.Storage;
 
 // ── the platform's own holder: copies the platform and this kit keep ──────────────────────────────────────────────

@@ -3,7 +3,7 @@
 
 using PrivacyKitTests;
 using Osysharp.Identity;
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 using Osysharp.Privacy;
 
 [TestFixture]

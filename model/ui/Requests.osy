@@ -10,7 +10,7 @@
 namespace Osysharp.Privacy;
 
 using Osysharp.Identity;
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 using Osysharp.Ui;
 
 /// One of the person's requests, as their privacy page shows it.

@@ -1,7 +1,7 @@
 namespace PrivacyKitTests;
 
 using Osysharp.Identity;
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 using Osysharp.ServiceHours;
 using Osysharp.Privacy;
 
@@ -199,7 +199,7 @@ public int HoldVouchers(List<string> emails, Guid? caseRow, bool held) {
 // The hours a promise could count in: staff read them, admins keep them. (A privacy request's promise is real time.)
 partial entity ServiceHours { security { allow read when WorksInbox; allow create, update, delete when AdministersInbox; } }
 
-/// A stand-in for a sign-in kit's step-up (`Osysharp.Privacy.Accounts` is the real one): the code is always "123456",
+/// A stand-in for a sign-in kit's step-up (`Osysharp.Privacy.UserAccounts` is the real one): the code is always "123456",
 /// and a proof is the signed-in person's own row. Discovered like any implementation — nothing wires it.
 public class DeskProof : IRequesterProof {
   public string Key() => "desk-test";

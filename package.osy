@@ -22,7 +22,7 @@
 //   says WHY a row is kept and for how long; the platform keeps a restricted row out of every ordinary read, logs every
 //   purpose read of it (`[PurposeRead("<category>")]`) and never records a personal value in the audit trail.
 package Osysharp.Privacy {
-  version "0.8.4";
+  version "0.8.5";
   minPlatform "0.9.0";
   summary     "what the app holds about a person and why it may keep it — a versioned holder contract every kit implements, categories with a retention basis and a period the tenant sets within declared limits (with jurisdiction presets and a fiscal-year-aware end date), requests that plan erase / keep restricted until a date / blocked per category and run as a workflow, a response that says what was erased and what was kept and why, an access and portability export, and a daily purge.";
   model "model/**/*.osy";
@@ -33,7 +33,7 @@ package Osysharp.Privacy {
   // Who placed a legal hold, and who lifted it.
   use Osysharp.Identity@0;
   // A request is inbox work: queued, held and clocked to its statutory due date like any other item.
-  use Osysharp.Inbox@0;
+  use Osysharp.WorkQueues@0;
   // The answer, and the notice that an export is ready, go by mail — only to an address a proof reached.
   use Osysharp.Mail@0;
   use Osysharp.Workflow;

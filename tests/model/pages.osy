@@ -1,10 +1,10 @@
 // The desk's screens as an app places the kits' components: the inbox, where a privacy request is worked like any other
-// item (the Privacy kit's pane beside the Inbox kit's header), and the customer's own privacy page (the kit's, at
+// item (the Privacy kit's pane beside the WorkQueues kit's header), and the customer's own privacy page (the kit's, at
 // `/privacy`). Everything here is the APP's; every control on it is a kit's.
 namespace PrivacyKitTests;
 
 using Osysharp.Identity;
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 using Osysharp.Privacy;
 using Osysharp.Ui;
 

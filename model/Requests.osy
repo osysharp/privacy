@@ -1,7 +1,7 @@
 namespace Osysharp.Privacy;
 
 using Osysharp.Identity;
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 using Osysharp.Mail;
 using Osysharp.Workflow;
 

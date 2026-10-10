@@ -15,8 +15,8 @@ using Osysharp.Workflow;
 // notice that an export is ready, go to that address and to their privacy page; the export is fetched once, within
 // seven days, and then deleted.
 
-/// Proving the signed-in person, now — implemented by the sign-in kit (`Osysharp.Privacy.Accounts` for
-/// `Osysharp.Accounts`), DISCOVERED. With none, a person cannot ask for themselves, and the privacy page says how to ask.
+/// Proving the signed-in person, now — implemented by the sign-in kit (`Osysharp.Privacy.UserAccounts` for
+/// `Osysharp.UserAccounts`), DISCOVERED. With none, a person cannot ask for themselves, and the privacy page says how to ask.
 public interface IRequesterProof {
   string Key();
   /// Start proving the signed-in person: a code goes to the address their account holds.

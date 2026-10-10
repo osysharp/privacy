@@ -2,7 +2,7 @@
 
 using PrivacyKitTests;
 using Osysharp.Identity;
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 using Osysharp.Privacy;
 
 /// A desk: Ada manages privacy and places legal holds, Lou places them too, Max manages privacy only, Raj is staff. Ann has an account, two notes and a voucher issued in August 2025 — inside

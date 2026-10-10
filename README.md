@@ -38,7 +38,7 @@ public class DeskPersonalData : IPersonalDataHolder { … }   // what the app ho
 
 - **Requests on the Inbox** (0.3.0): `PrivacyRequest : WorkItem`, due one calendar month after receipt (an absolute
   `DueAt`), extendable with a reason. Staff record how they checked who it is; a signed-in person asks on `/privacy`
-  after a step-up (Osysharp.Privacy.Accounts, which arrives by itself in an app that also uses Accounts), and the answer goes only to the address they
+  after a step-up (Osysharp.Privacy.UserAccounts, which arrives by itself in an app that also uses Accounts), and the answer goes only to the address they
   proved; exports are fetched once, within seven days.
 
 **Works with the other kits.** Each kit that holds personal data answers for it through its own small holder kit:
@@ -46,6 +46,6 @@ public class DeskPersonalData : IPersonalDataHolder { … }   // what the app ho
 [Osysharp.Privacy.MailReceiving](https://osyrin.com/templates/kits/privacy-mail-receiving/),
 [Osysharp.Privacy.Notifications](https://osyrin.com/templates/kits/privacy-notifications/),
 [Osysharp.Privacy.Sms](https://osyrin.com/templates/kits/privacy-sms/), and
-[Osysharp.Privacy.Accounts](https://osyrin.com/templates/kits/privacy-accounts/) for the signed-in step-up. A person without an account asks
+[Osysharp.Privacy.UserAccounts](https://osyrin.com/templates/kits/privacy-user-accounts/) for the signed-in step-up. A person without an account asks
 the desk: staff file the request on their behalf (`FileRequest`), record how they checked who it is, and deliver the
 answer themselves.

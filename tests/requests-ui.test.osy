@@ -2,7 +2,7 @@
 // `osy test --pixels` photographs each.
 
 using PrivacyKitTests;
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 using Osysharp.Privacy;
 
 [Test(Desk)]

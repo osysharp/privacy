@@ -2,123 +2,7 @@
   "platform": {
     "version": "0.9.0"
   },
-  "entries": [
-    {
-      "name": "Osysharp.Collaboration",
-      "kind": "package",
-      "version": "0.1.2",
-      "hash": "sha256:ff89f12aa16a64fcaccfb4688c0e22c2827915473e6b37f29bc23e0ae2fd225c",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:kits/collaboration",
-      "constraint": "0"
-    },
-    {
-      "name": "Osysharp.Identity",
-      "kind": "package",
-      "version": "0.8.1",
-      "hash": "sha256:83723f5577bbbb2aea58fbee2360a4e00db5c2cfd35f8532ce7be70be153b6fd",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:kits/identity",
-      "constraint": "0"
-    },
-    {
-      "name": "Osysharp.Observability",
-      "kind": "package",
-      "version": "1.0.1",
-      "hash": "sha256:240f2b9d4a764186a4511669df519ad88399cc771ed87a643089a65ec25778f3",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Observability"
-    },
-    {
-      "name": "Osysharp.Ui",
-      "kind": "package",
-      "version": "2.18.1",
-      "hash": "sha256:5dae9b4103cc649967664228cc945c2d8b5bd9ff8d45e62bf9b67d9db079545e",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Ui"
-    },
-    {
-      "name": "Osysharp.Inbox",
-      "kind": "package",
-      "version": "0.21.1",
-      "hash": "sha256:971b34ca6e7096303d93bcda895cd0bda3f35244398034db63ce0872d860d151",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:kits/inbox",
-      "constraint": "0"
-    },
-    {
-      "name": "Osysharp.Organizations",
-      "kind": "package",
-      "version": "0.4.2",
-      "hash": "sha256:3cc98f3d1592db8de5867a5c074386efdc9993be542937e4a17dd1e673e10846",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:kits/organizations",
-      "constraint": "0"
-    },
-    {
-      "name": "Osysharp.Organizations.Accounts",
-      "kind": "package",
-      "version": "0.2.2",
-      "hash": "sha256:5c626ccb73cc7d5525652de4f0583b3660c8f13e27623defd41461739b730a7f",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:kits/organizations-accounts",
-      "constraint": "0"
-    },
-    {
-      "name": "Osysharp.Workflow",
-      "kind": "package",
-      "version": "1.0.1",
-      "hash": "sha256:9f7ccf1f6dbf22b62e551b015333d41c46431491acd812fb626762531e2a97f8",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Workflow"
-    },
-    {
-      "name": "Osysharp.ServiceHours",
-      "kind": "package",
-      "version": "1.0.1",
-      "hash": "sha256:90a832068871ca1916ed1ac09ba15187e49610ec6101e5acf1b383915fa5c4f5",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/ServiceHours"
-    },
-    {
-      "name": "Osysharp.Mail",
-      "kind": "package",
-      "version": "0.10.1",
-      "hash": "sha256:91984e0e4b6a052ade5b492a43569667354454a61f845a7123024ae2d2f27065",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:kits/mail",
-      "constraint": "0"
-    },
-    {
-      "name": "Osysharp.Privacy",
-      "kind": "package",
-      "version": "0.8.4",
-      "hash": "sha256:81fd35aefc92a38b553775a057ade02e1f56fad63af6ae3f92877895c0a65ec7",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:kits/privacy",
-      "constraint": "0"
-    },
-    {
-      "name": "Osysharp.Storage",
-      "kind": "package",
-      "version": "1.2.1",
-      "hash": "sha256:a344786f4417d7005fb72cb752389bc62ae3e8623fb2cce4b3982fc9b3c7699d",
-      "minPlatform": "0.9.0",
-      "shadow": "app-forkable",
-      "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Storage"
-    }
-  ],
+  "entries": [],
   "bridges": {
     "searched": [
       "workspace",
@@ -129,28 +13,28 @@
     ],
     "notIncluded": [
       {
-        "name": "Osysharp.Inbox.Notifications",
-        "reason": "completes Osysharp.Inbox \u002B Osysharp.Notifications, and this app does not use \u0060Osysharp.Notifications\u0060."
+        "name": "Osysharp.WorkQueues.Notifications",
+        "reason": "completes Osysharp.WorkQueues \u002B Osysharp.Notifications, and this app does not use \u0060Osysharp.Notifications\u0060."
       },
       {
-        "name": "Osysharp.Inbox.Reports",
-        "reason": "completes Osysharp.Inbox \u002B Osysharp.Reports, and this app does not use \u0060Osysharp.Reports\u0060."
+        "name": "Osysharp.WorkQueues.Reports",
+        "reason": "completes Osysharp.WorkQueues \u002B Osysharp.Reports, and this app does not use \u0060Osysharp.Reports\u0060."
       },
       {
-        "name": "Osysharp.Privacy.Accounts",
-        "reason": "completes Osysharp.Privacy \u002B Osysharp.Accounts, and this app does not use \u0060Osysharp.Accounts\u0060."
+        "name": "Osysharp.Privacy.UserAccounts",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.UserAccounts, and this app does not use \u0060Osysharp.UserAccounts\u0060."
       },
       {
         "name": "Osysharp.Privacy.Conversations",
         "reason": "completes Osysharp.Privacy \u002B Osysharp.Conversations, and this app does not use \u0060Osysharp.Conversations\u0060."
       },
       {
-        "name": "Osysharp.Privacy.Feedback",
-        "reason": "completes Osysharp.Privacy \u002B Osysharp.Feedback, and this app does not use \u0060Osysharp.Feedback\u0060."
+        "name": "Osysharp.Privacy.SatisfactionSurveys",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.SatisfactionSurveys, and this app does not use \u0060Osysharp.SatisfactionSurveys\u0060."
       },
       {
-        "name": "Osysharp.Privacy.Knowledge",
-        "reason": "completes Osysharp.Privacy \u002B Osysharp.Knowledge, and this app does not use \u0060Osysharp.Knowledge\u0060."
+        "name": "Osysharp.Privacy.KnowledgeBase",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.KnowledgeBase, and this app does not use \u0060Osysharp.KnowledgeBase\u0060."
       },
       {
         "name": "Osysharp.Privacy.MailReceiving",

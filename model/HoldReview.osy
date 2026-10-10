@@ -1,7 +1,7 @@
 namespace Osysharp.Privacy;
 
 using Osysharp.Identity;
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 
 // ── a hold due for review is WORK on the Inbox ─────────────────────────────────────────────────────────────────────
 //
