@@ -1,0 +1,21 @@
+// Osysharp.Privacy.UserAccounts — the step-up a person proves themselves with before asking for themselves, for an app that
+// signs people in with Osysharp.UserAccounts. It implements Osysharp.Privacy's `IRequesterProof` with Accounts' step-up
+// (`StartStepUp` / `ProveStepUp` / `SpendStepUp`, `CodePurpose.PrivacyRequest`): a code mailed to the address the
+// account holds, typed back, spent once by the request's own run.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: Privacy does not force a sign-in kit on its apps, and Accounts does
+//   not force privacy requests (and the Inbox under them) on every app that signs people in. An app using both gets it by itself —
+//   `completes` below, and `osy lock` says so — the implementation is DISCOVERED, nothing is wired. Without it, the privacy page
+//   says a person cannot ask for themselves here yet, and how to ask.
+package Osysharp.Privacy.UserAccounts {
+  version     "0.4.0";
+  minPlatform "0.9.0";
+  summary     "Osysharp.Privacy's part for Osysharp.UserAccounts — the step-up for self-service requests (a code to the account's own address, typed back, spent once by the request's run), and accounts made for somebody who never signs in: in their guardian's copy of their data, and erased with the person they were made for.";
+  completes   Osysharp.Privacy@0, Osysharp.UserAccounts@1;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.UserAccounts@1;
+  use Osysharp.Privacy@0;
+  use Osysharp.Workflow;
+  tests "tests";
+}

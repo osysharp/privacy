@@ -1,0 +1,109 @@
+// A member asks for themselves: the code goes to their account's own address, and the request reaches only them.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.Mail;
+using Osysharp.Privacy;
+using Osysharp.Privacy.UserAccounts;
+
+[TestFixture]
+void Club() {
+  var ann = new User { Email = "ann@club.test", DisplayName = "Ann", PasswordHash = Security.HashPassword("correct-horse-1"),
+                       EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = ann, Role = AppRole.Member };
+  var ada = new User { Email = "ada@club.test", DisplayName = "Ada", PasswordHash = Security.HashPassword("correct-horse-2"),
+                       EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = ada, Role = AppRole.Admin };
+  new Preference { Email = "ann@club.test", Newsletter = true };
+}
+
+principal Ann => User.Single(u => u.Email == "ann@club.test");
+principal Ada => User.Single(u => u.Email == "ada@club.test");
+
+/// The six-digit code in the newest mail to `to`, read as the sign-in flow reads the outbox.
+string CodeTo(string to) {
+  var code = "";
+  runas (AuthBootstrap) {
+    var m = OutgoingMail.Where(x => x.To == to && x.Text != null && x.Text.Contains("Type this code where you were asked for it: "))
+      .OrderByDescending(x => x.CreatedAt).FirstOrDefault();
+    if (m != null) {
+      var text = m.Text ?? "";
+      var at = text.IndexOf("Type this code where you were asked for it: ") + "Type this code where you were asked for it: ".Length;
+      code = text.Substring(at, 6);
+    }
+  }
+  return code;
+}
+
+[Test(Club)]
+void the_accounts_step_up_is_found_without_being_wired() {
+  runas (Ann) { Assert.True(CanAskForMyself()); }
+}
+
+[Test(Club)]
+void a_member_proves_it_is_them_by_a_code_to_their_own_address_and_asks() {
+  ProofStarted? proof = null;
+  runas (Ann) {
+    proof = ProveItIsMe();
+    Assert.Equal("a•••@club.test", proof!.SentTo);
+    Workflow.Settle(StepUp.Single(s => s.Id == proof!.Id));
+  }
+  var code = CodeTo("ann@club.test");
+  Assert.NotEqual("", code);
+  runas (Ann) {
+    Assert.Contains("not right", ConfirmItIsMe(proof!.Id, "000000"));
+    Assert.Equal("", ConfirmItIsMe(proof!.Id, code));
+    var ask = AskAboutMe(RequestKind.Access, proof!.Id);
+    Workflow.Settle(ask);
+    Assert.NotNull(PrivacyAsk.Single(a => a.Id == ask.Id).Request);
+  }
+  runas (Ada) {
+    var r = PrivacyRequest.Single();
+    Assert.Equal("ann@club.test", r.SubjectEmail);
+    Assert.Equal("ann@club.test", r.DeliverTo);
+    Assert.Equal(PlanOutcome.Export, PlanLine.Single(l => l.Request == r && l.Category == "club.preferences").Outcome);
+    // The proof was spent by the request: asking again with it files nothing.
+  }
+  runas (Ann) {
+    var again = AskAboutMe(RequestKind.Erasure, proof!.Id);
+    Workflow.Settle(again);
+    Assert.Equal(AskState.Refused, PrivacyAsk.Single(a => a.Id == again.Id).State);
+  }
+}
+
+[Test(Club)]
+void another_members_proof_files_nothing() {
+  ProofStarted? adas = null;
+  runas (Ada) {
+    adas = ProveItIsMe();
+    Workflow.Settle(StepUp.Single(s => s.Id == adas!.Id));
+  }
+  var code = CodeTo("ada@club.test");
+  runas (Ada) { Assert.Equal("", ConfirmItIsMe(adas!.Id, code)); }
+  runas (Ann) {
+    var ask = AskAboutMe(RequestKind.Erasure, adas!.Id);
+    Workflow.Settle(ask);
+    Assert.Equal(AskState.Refused, PrivacyAsk.Single(a => a.Id == ask.Id).State);
+  }
+  runas (Ada) { Assert.Equal(0, PrivacyRequest.Count()); }
+}
+
+/// The club's own rows are declared: a preference found by the member's address, and the notes of their
+/// calls found through it — each in the plan by name, and both erased, the calls first.
+[Test(Club)]
+void a_members_erasure_reaches_the_clubs_own_rows_through_what_says_whose_they_are() {
+  runas (Ada) {
+    var pref = Preference.Single(p => p.Email == "ann@club.test");
+    new Call { Member = pref, At = DateTime.UtcNow, Notes = "Asked about the MARMOT6 trip." };
+    UnitOfWork.Commit();
+    var r = FileRequest(RequestKind.Erasure, null, "ann@club.test", IdentityCheck.CodeToKnownAddress, "A code came back.");
+    Assert.Equal(1, PlanLine.Single(l => l.Request.Id == r.Id && l.Category == "club.calls").Items);
+    Assert.Equal(1, PlanLine.Single(l => l.Request.Id == r.Id && l.Category == "club.preferences").Items);
+    Assert.Equal("PrivacyAccountsKitTests", PlanLine.Single(l => l.Request.Id == r.Id && l.Category == "club.calls").Holder);
+    ApproveRequest(PrivacyRequest.Single(x => x.Id == r.Id));
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+    Assert.Equal(0, Preference.Count(p => p.Email == "ann@club.test"));
+    Assert.Equal(0, Call.Count());
+    Assert.NoTraceOf("MARMOT6");
+  }
+}
