@@ -8,9 +8,9 @@
 //   `completes` below, and `osy lock` says so — the implementation is DISCOVERED, nothing is wired. Without it, the privacy page
 //   says a person cannot ask for themselves here yet, and how to ask.
 package Osysharp.Privacy.Accounts {
-  version     "0.3.1";
+  version     "0.4.0";
   minPlatform "0.9.0";
-  summary     "the step-up for Osysharp.Privacy's self-service requests, from Osysharp.Accounts — a code to the account's own address, typed back, spent once by the request's run.";
+  summary     "Osysharp.Privacy's part for Osysharp.Accounts — the step-up for self-service requests (a code to the account's own address, typed back, spent once by the request's run), and accounts made for somebody who never signs in: in their guardian's copy of their data, and erased with the person they were made for.";
   completes   Osysharp.Privacy@0, Osysharp.Accounts@1;
   model "model/*.osy";
   use Osysharp.Identity@0;

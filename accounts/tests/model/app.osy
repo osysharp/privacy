@@ -16,6 +16,8 @@ policy LeadsInbox => IsAdmin;
 policy AdministersInbox => IsAdmin;
 policy ManagesOrganizations => IsAdmin;
 policy CollaboratesOnRecords => IsAdmin;
+// A member may make an account for a family member they book for (tests/managed.test.osy).
+policy MakesManagedAccounts => RoleGrant.Any(g => g.Member == user && g.Role == AppRole.Member);
 
 app.Accounts = new AccountsSetup { AppName = "Member Club", SignupRole = AppRole.Member };
 app.Privacy = new PrivacySetup { Controller = "Member Club Ltd", SupervisoryAuthority = "IMY, imy.se" };

@@ -1,0 +1,64 @@
+namespace Osysharp.Privacy.Accounts;
+
+using Osysharp.Identity;
+using Osysharp.Accounts;
+using Osysharp.Privacy;
+
+/// Accounts made for somebody who never signs in themselves (Osysharp.Accounts' `MakeManagedAccount`) — found by the
+/// person they were made FOR (their account) and by the person who looks after them (the guardian). Discovered by
+/// Osysharp.Privacy, so a request names this data, copies it out and erases it like any other.
+///
+/// ⚑ BOTH SIDES ARE PERSONAL DATA, of different people. The record says who a child is (their name, when the account was
+///   made) — the child's; and that a parent looks after them — the parent's too. Erasing the CHILD erases their account
+///   (`EraseAccount`, which also clears the name the record kept); erasing the PARENT ends the link — the child's
+///   account stays theirs, looked after by nobody until the app gives it a guardian again.
+public class ManagedAccountsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Accounts.Managed";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "accounts.managed", Label = "Accounts made for somebody who does not sign in, and who looks after them",
+      Purpose = Translate("Keeping the account of somebody who is booked for by somebody else"),
+      SubjectKind = "people with an account made for them, and the people who look after them",
+      Basis = RetentionBasis.Contract },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    return ManagedAccountRequest.Count(r => (r.Account != null && r.Account.Id == id) || (r.Guardian != null && r.Guardian.Id == id));
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    var id = s.Account.Value;
+    foreach (var r in ManagedAccountRequest.Where(r => r.Guardian != null && r.Guardian.Id == id).ToList()) { r.Guardian = null; }
+    foreach (var r in ManagedAccountRequest.Where(r => r.Account != null && r.Account.Id == id).ToList()) {
+      if (r.Account != null) { EraseAccount(r.Account!); }
+    }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<ManagedAccountRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var r in ManagedAccountRequest.Where(r => r.Account != null && r.Account.Id == id).OrderBy(r => r.MadeAt).ToList()) {
+        rows.Add(new ManagedAccountRow { At = r.MadeAt, Name = r.Name, MadeForYou = true });
+        items.Add(new ExportItem { At = r.MadeAt, Title = Translate("Your account was made for you"), Body = r.Name });
+      }
+      foreach (var r in ManagedAccountRequest.Where(r => r.Guardian != null && r.Guardian.Id == id).OrderBy(r => r.MadeAt).ToList()) {
+        rows.Add(new ManagedAccountRow { At = r.MadeAt, Name = r.Name, MadeForYou = false });
+        items.Add(new ExportItem { At = r.MadeAt, Title = Translate("An account you look after"), Body = r.Name });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One managed account in a person's export: the one made for them, or one they look after.
+public class ManagedAccountRow {
+  public DateTime At;
+  public string Name = "";
+  public bool MadeForYou;
+}
