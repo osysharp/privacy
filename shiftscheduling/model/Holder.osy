@@ -1,0 +1,72 @@
+namespace Osysharp.Privacy.ShiftScheduling;
+
+using Osysharp.Identity;
+using Osysharp.ShiftScheduling;
+using Osysharp.Privacy;
+
+/// A person's place on the rota — found by their account: the shifts they were on, the time off they asked for, the
+/// hours of the week they are not free, and the cover they asked for or took. Discovered by Osysharp.Privacy, so a
+/// request names this data, copies it out and erases it.
+///
+/// ⚑ ERASING FREES THEIR PLACES. Shifts still to come lose them and show a free place again; the shifts themselves, and
+///   everybody else's places on them, stay.
+public class ShiftSchedulingPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.ShiftScheduling";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "rota", Label = "Your shifts and time off",
+      Purpose = Translate("Planning who works when, and the time off you asked for"),
+      SubjectKind = "everyone on the rota", Basis = RetentionBasis.Contract, Portable = true },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    return ShiftAssignment.Count(a => a.Worker.Id == id) + TimeOffRequest.Count(r => r.Worker.Id == id)
+         + Unavailability.Count(u => u.Worker.Id == id) + ShiftCoverRequest.Count(r => r.From.Id == id);
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    var id = s.Account.Value;
+    var person = Principal.FirstOrDefault(p => p.Id == id);
+    if (person != null) { EraseRotaDataOf(person!); }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<RotaRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var a in ShiftAssignment.Include(a => a.Shift).Where(a => a.Worker.Id == id).OrderBy(a => a.Shift.StartsAt).Take(5000).ToList()) {
+        var detail = a.Shift.Title + " · " + a.Shift.StartsAt.ToString("yyyy-MM-dd HH:mm") + "–" + a.Shift.EndsAt.ToString("HH:mm") + " UTC"
+                     + (a.Shift.State == ShiftState.Cancelled ? " · cancelled" : "");
+        rows.Add(new RotaRow { At = a.Shift.StartsAt, What = "Shift", Detail = detail });
+        items.Add(new ExportItem { At = a.Shift.StartsAt, Title = "A shift you were on", Body = detail });
+      }
+      foreach (var r in TimeOffRequest.Where(r => r.Worker.Id == id).OrderBy(r => r.From).Take(1000).ToList()) {
+        var detail = r.From.ToString("yyyy-MM-dd") + " to " + r.To.ToString("yyyy-MM-dd") + " · " + r.State.Label + (r.Reason != "" ? " · " + r.Reason : "");
+        rows.Add(new RotaRow { At = r.RequestedAt, What = "Time off", Detail = detail });
+        items.Add(new ExportItem { At = r.RequestedAt, Title = "Time off you asked for", Body = detail });
+      }
+      foreach (var u in Unavailability.Where(u => u.Worker.Id == id).Take(100).ToList()) {
+        rows.Add(new RotaRow { At = DateTime.UtcNow, What = "Not free", Detail = UnavailabilityText(u) });
+        items.Add(new ExportItem { At = DateTime.UtcNow, Title = "When you said you are not free", Body = UnavailabilityText(u) });
+      }
+      foreach (var r in ShiftCoverRequest.Include(r => r.Assignment.Shift).Where(r => r.From.Id == id).OrderBy(r => r.At).Take(1000).ToList()) {
+        var detail = r.Assignment.Shift.Title + " · " + r.State.Label + (r.Reason != "" ? " · " + r.Reason : "");
+        rows.Add(new RotaRow { At = r.At, What = "Cover asked for", Detail = detail });
+        items.Add(new ExportItem { At = r.At, Title = "Cover you asked for", Body = detail });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One line of a person's rota in their export.
+public class RotaRow {
+  public DateTime At;
+  public string What = "";
+  public string Detail = "";
+}

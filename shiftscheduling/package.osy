@@ -1,0 +1,18 @@
+// Osysharp.Privacy.ShiftScheduling — a person's place on the rota as Osysharp.Privacy's holder: the shifts they were on, the
+// time off they asked for, the hours they said they are not free and the cover they asked for or took — in their copy of
+// their data and erased when they ask.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: ShiftScheduling does not force privacy requests on an app that only
+//   plans shifts, and Privacy does not force a rota on its apps. An app using both gets it by itself — `completes`
+//   below, and `osy lock` says so — the holder is DISCOVERED, nothing is wired.
+package Osysharp.Privacy.ShiftScheduling {
+  version     "0.1.0";
+  minPlatform "0.9.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.ShiftScheduling — a person's shifts, time off, the hours they are not free and their cover requests, in their copy of their data and erased when they ask.";
+  completes   Osysharp.Privacy@0, Osysharp.ShiftScheduling@0;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.ShiftScheduling@0;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}

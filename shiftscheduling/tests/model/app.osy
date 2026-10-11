@@ -1,0 +1,35 @@
+// Everything this kitchen says: its roles, who manages privacy and works the inbox, and who runs the rota.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.WorkQueues;
+using Osysharp.Privacy;
+using Osysharp.ServiceHours;
+using Osysharp.ShiftScheduling;
+
+[Role] enum KitchenRole { Authenticator, Volunteer, Coordinator }
+
+policy IsCoordinator => RoleGrant.Any(g => g.Member == user && g.Role == KitchenRole.Coordinator);
+policy IsVolunteer => RoleGrant.Any(g => g.Member == user && g.Role == KitchenRole.Volunteer);
+policy ManagesPrivacy => IsCoordinator;
+policy PlacesLegalHolds => IsCoordinator;
+policy WorksInbox => IsCoordinator;
+policy LeadsInbox => IsCoordinator;
+policy AdministersInbox => IsCoordinator;
+policy ManagesOrganizations => IsCoordinator;
+policy CollaboratesOnRecords => IsCoordinator;
+policy ManagesShifts => IsCoordinator;
+policy WorksShifts => IsVolunteer;
+
+app.Accounts = new AccountsSetup { AppName = "Eastside Community Kitchen", SignupRole = KitchenRole.Volunteer };
+app.Privacy = new PrivacySetup { Controller = "Eastside Community Kitchen", SupervisoryAuthority = "ICO, ico.org.uk" };
+app = new() {
+  Name = "PrivacyShiftSchedulingKitTests",
+  Classifications = [
+    new Classification(Personal.Contact) { Roles = [KitchenRole.Coordinator, KitchenRole.Authenticator] },
+    new Classification(Personal.Content) { Open = true },
+  ],
+};
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsCoordinator; } }

@@ -1,0 +1,67 @@
+// A volunteer's rota under their privacy request: counted, copied out, and erased — theirs only.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.Privacy;
+using Osysharp.ShiftScheduling;
+using Osysharp.Privacy.ShiftScheduling;
+
+[TestFixture]
+void Kitchen() {
+  TestClock.Set(new DateTime(2026, 11, 2, 8, 0, 0));
+  var ann = new User { Email = "ann@kitchen.test", DisplayName = "Ann", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = ann, Role = KitchenRole.Volunteer };
+  var bo = new User { Email = "bo@kitchen.test", DisplayName = "Bo", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = bo, Role = KitchenRole.Volunteer };
+  var cat = new User { Email = "cat@kitchen.test", DisplayName = "Cat", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = cat, Role = KitchenRole.Coordinator };
+  new Shift { Title = "Lunch service", StartsAt = new DateTime(2026, 11, 4, 11, 0, 0), EndsAt = new DateTime(2026, 11, 4, 15, 0, 0),
+              Needed = 3, State = ShiftState.Published };
+  new Shift { Title = "Food delivery", StartsAt = new DateTime(2026, 11, 6, 9, 0, 0), EndsAt = new DateTime(2026, 11, 6, 12, 0, 0),
+              State = ShiftState.Published };
+}
+
+principal Ann => User.Single(u => u.Email == "ann@kitchen.test");
+principal Bo => User.Single(u => u.Email == "bo@kitchen.test");
+principal Cat => User.Single(u => u.Email == "cat@kitchen.test");
+
+/// Ann is on lunch and the delivery, asked for a day off and for cover; Bo is on lunch too.
+void Planned() {
+  runas(Ann) {
+    ClaimShift(Shift.Single(s => s.Title == "Lunch service"));
+    var delivery = ClaimShift(Shift.Single(s => s.Title == "Food delivery")).Assignment!;
+    RequestTimeOff(new DateOnly(2026, 11, 20), new DateOnly(2026, 11, 20), "Hospital appointment");
+    RequestCover(delivery, "Car in for repair");
+  }
+  runas(Bo) { ClaimShift(Shift.Single(s => s.Title == "Lunch service")); }
+}
+
+[Test(Kitchen)]
+[runas(Cat)]
+void her_copy_lists_her_shifts_time_off_and_cover_and_nobody_elses() {
+  Planned();
+  var holder = new ShiftSchedulingPersonalData();
+  var ann = new DataSubject { Account = Ann.Id };
+  Assert.Equal(4, holder.Count(ann, CategoryOf("rota")));
+  var copy = holder.Export(ann, CategoryOf("rota"));
+  Assert.Contains("Lunch service", copy.Json);
+  Assert.Contains("Hospital appointment", copy.Json);
+  Assert.Contains("Car in for repair", copy.Json);
+  Assert.Equal(4, copy.Items.Count);
+  Assert.Equal(1, holder.Count(new DataSubject { Account = Bo.Id }, CategoryOf("rota")));
+}
+
+[Test(Kitchen)]
+[runas(Cat)]
+void an_erasure_frees_her_places_and_leaves_his() {
+  Planned();
+  var r = FileRequest(RequestKind.Erasure, Ann.Id, "", IdentityCheck.InPerson, "Asked at the kitchen.");
+  Assert.Equal(4, PlanLine.Single(l => l.Request == r && l.Category == "rota").Items);
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.Equal(0, ShiftsOf(Ann).Count);
+  Assert.Equal(0, TimeOffRequest.Count(x => x.Worker == Ann));
+  Assert.Equal(1, ShiftsOf(Bo).Count);
+  Assert.Equal(2, OpenPlaces(Shift.Single(s => s.Title == "Lunch service")));
+  Assert.NoTraceOf("Hospital appointment");
+}
