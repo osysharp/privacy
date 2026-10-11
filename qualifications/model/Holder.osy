@@ -1,0 +1,66 @@
+namespace Osysharp.Privacy.Qualifications;
+
+using Osysharp.Identity;
+using Osysharp.Qualifications;
+using Osysharp.Privacy;
+
+/// A person's qualifications — found by their account: each one they hold (in force, lapsed, revoked or turned down), the
+/// text they signed and the name they signed with, and the files behind them. Discovered by Osysharp.Privacy, so a
+/// request names this data, copies it out and erases it.
+///
+/// ⚑ ERASING TAKES THEM ALL, FILES TOO. A person erased holds nothing here afterwards, so any check of them answers
+///   "nothing on record". A signed waiver an organisation must keep for legal claims is the app's to say: it sets this
+///   category's retention (`SetRetention`) and the request keeps it restricted until that ends.
+public class QualificationsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Qualifications";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "qualifications", Label = "Your qualifications and what you signed",
+      Purpose = Translate("Knowing what you hold — licences, certificates, inductions, signed agreements — and until when"),
+      SubjectKind = "everyone holding a qualification", Basis = RetentionBasis.Contract, Portable = true },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    return Qualification.Count(x => x.Holder.Id == id) + QualificationEvidence.Count(e => e.Qualification.Holder.Id == id);
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    var id = s.Account.Value;
+    var person = Principal.FirstOrDefault(p => p.Id == id);
+    if (person != null) { EraseQualificationsOf(person!); }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<QualificationRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var x in Qualification.Include(x => x.Kind).Where(x => x.Holder.Id == id).OrderBy(x => x.IssuedOn).Take(1000).ToList()) {
+        var detail = x.Kind.Name + " · " + x.Status.Label + " · from " + x.IssuedOn.ToString("yyyy-MM-dd")
+                     + (x.ValidUntil != null ? " until " + x.ValidUntil.Value.ToString("yyyy-MM-dd") : "")
+                     + (x.Reference != "" ? " · no. " + x.Reference : "") + (x.IssuedBy != "" ? " · issued by " + x.IssuedBy : "")
+                     + (x.Reason != "" ? " · " + x.Reason : "");
+        var signed = x.Text == null ? "" : "Signed as \"" + x.SignedName + "\" on text version " + x.Text!.Version + ":\n\n" + x.Text!.Body;
+        rows.Add(new QualificationRow { At = x.RecordedAt, What = x.Kind.Name, Detail = detail, Signed = signed });
+        items.Add(new ExportItem { At = x.RecordedAt, Title = x.Kind.Name, Body = signed == "" ? detail : detail + "\n\n" + signed });
+      }
+      foreach (var e in QualificationEvidence.Include(e => e.Qualification.Kind).Where(e => e.Qualification.Holder.Id == id).Take(1000).ToList()) {
+        rows.Add(new QualificationRow { At = e.AddedAt, What = "Evidence", Detail = e.Qualification.Kind.Name + " · " + e.Name });
+        items.Add(new ExportItem { At = e.AddedAt, Title = "A file behind your " + e.Qualification.Kind.Name, Body = e.Name });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One line of a person's qualifications in their export.
+public class QualificationRow {
+  public DateTime At;
+  public string What = "";
+  public string Detail = "";
+  public string Signed = "";
+}

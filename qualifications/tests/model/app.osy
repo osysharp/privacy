@@ -1,0 +1,33 @@
+// Everything this makerspace says: its roles, who manages privacy and works the inbox, and who records qualifications.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.WorkQueues;
+using Osysharp.Privacy;
+using Osysharp.ServiceHours;
+using Osysharp.Qualifications;
+
+[Role] enum SpaceRole { Authenticator, Member, Steward }
+
+policy IsSteward => RoleGrant.Any(g => g.Member == user && g.Role == SpaceRole.Steward);
+policy ManagesPrivacy => IsSteward;
+policy PlacesLegalHolds => IsSteward;
+policy WorksInbox => IsSteward;
+policy LeadsInbox => IsSteward;
+policy AdministersInbox => IsSteward;
+policy ManagesOrganizations => IsSteward;
+policy CollaboratesOnRecords => IsSteward;
+policy IssuesQualifications => IsSteward;
+
+app.Accounts = new AccountsSetup { AppName = "Northgate Makerspace", SignupRole = SpaceRole.Member };
+app.Privacy = new PrivacySetup { Controller = "Northgate Makerspace CIC", SupervisoryAuthority = "ICO, ico.org.uk" };
+app = new() {
+  Name = "PrivacyQualificationsKitTests",
+  Classifications = [
+    new Classification(Personal.Contact) { Roles = [SpaceRole.Steward, SpaceRole.Authenticator] },
+    new Classification(Personal.Content) { Open = true },
+  ],
+};
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsSteward; } }
