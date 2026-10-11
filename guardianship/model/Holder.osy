@@ -1,0 +1,141 @@
+namespace Osysharp.Privacy.Guardianship;
+
+using Osysharp.Identity;
+using Osysharp.Guardianship;
+using Osysharp.Privacy;
+
+/// What Osysharp.Guardianship holds about a person — found by their account (and, for invitations, by their address).
+///
+/// ⚑ A LINK IS TWO PEOPLE'S DATA. That a parent looks after a child is the child's and the parent's alike, so either one's
+///   erasure removes the link. What belongs to the child alone — their date of birth, care notes, emergency contacts and
+///   the consents answered for them — goes with the child's erasure, and stays when a parent who answered one is erased:
+///   the answer is the child's record.
+public class GuardianshipPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Guardianship";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "guardianship.links", Label = "Who looks after you, and whom you look after",
+      Purpose = Translate("Letting the people who look after someone act for them"),
+      SubjectKind = "the people looked after, and their guardians", Basis = RetentionBasis.Contract },
+    new DataCategory {
+      Key = "guardianship.profile", Label = "Your date of birth, and the care notes staff read",
+      Purpose = Translate("Knowing when someone comes of age, and looking after them safely on site"),
+      SubjectKind = "the people looked after", Basis = RetentionBasis.Contract, Special = true },
+    new DataCategory {
+      Key = "guardianship.consents", Label = "Consents given or refused for you",
+      Purpose = Translate("Knowing what you, or your guardian, agreed to"),
+      SubjectKind = "the people looked after, and adults who answer for themselves", Basis = RetentionBasis.Consent,
+      OnErasureWords = "Erased. An answer you gave for someone you look after is their record, and stays with it." },
+    new DataCategory {
+      Key = "guardianship.contacts", Label = "Your emergency contacts, and who may collect you",
+      Purpose = Translate("Reaching someone if something happens, and handing a child over safely"),
+      SubjectKind = "the people looked after", Basis = RetentionBasis.Contract },
+    new DataCategory {
+      Key = "guardianship.invitations", Label = "Invitations to look after someone",
+      Purpose = Translate("Inviting a second guardian"),
+      SubjectKind = "people invited, and the people who invited them", Basis = RetentionBasis.Contract },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    var id = s.Account;
+    if (c.Key == "guardianship.invitations") {
+      var n = 0;
+      foreach (var e in s.Emails) { n = n + GuardianInvitation.Count(i => i.Email == e.Trim().ToLower()); }
+      if (id != null) { n = n + GuardianInvitation.Count(i => i.Dependant.Id == id.Value || i.InvitedBy.Id == id.Value); }
+      return n;
+    }
+    if (id == null) { return 0; }
+    var who = id.Value;
+    if (c.Key == "guardianship.links") { return Guardianship.Count(g => g.Guardian.Id == who || g.Dependant.Id == who); }
+    if (c.Key == "guardianship.profile") { return DependantProfile.Count(p => p.Person.Id == who); }
+    if (c.Key == "guardianship.consents") { return Consent.Count(x => x.Person.Id == who); }
+    if (c.Key == "guardianship.contacts") { return EmergencyContact.Count(x => x.Person.Id == who); }
+    return 0;
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    var id = s.Account;
+    if (c.Key == "guardianship.invitations") {
+      foreach (var e in s.Emails) {
+        var address = e.Trim().ToLower();
+        foreach (var i in GuardianInvitation.Where(i => i.Email == address).ToList()) { i.Delete(); }
+      }
+      if (id != null) {
+        var who = id.Value;
+        foreach (var i in GuardianInvitation.Where(i => i.Dependant.Id == who || i.InvitedBy.Id == who).ToList()) { i.Delete(); }
+      }
+      return;
+    }
+    if (id == null) { return; }
+    var person = id.Value;
+    if (c.Key == "guardianship.links") {
+      foreach (var g in Guardianship.Where(g => g.Guardian.Id == person || g.Dependant.Id == person).ToList()) { g.Delete(); }
+    } else if (c.Key == "guardianship.profile") {
+      foreach (var p in DependantProfile.Where(p => p.Person.Id == person).ToList()) { p.Delete(); }
+    } else if (c.Key == "guardianship.consents") {
+      foreach (var x in Consent.Where(x => x.Person.Id == person).ToList()) { x.Delete(); }
+    } else if (c.Key == "guardianship.contacts") {
+      foreach (var x in EmergencyContact.Where(x => x.Person.Id == person).ToList()) { x.Delete(); }
+    }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<GuardianshipExportRow> rows = [];
+    List<ExportItem> items = [];
+    var id = s.Account;
+    if (c.Key == "guardianship.invitations") {
+      foreach (var e in s.Emails) {
+        var address = e.Trim().ToLower();
+        foreach (var i in GuardianInvitation.Where(i => i.Email == address).OrderBy(i => i.SentAt).ToList()) {
+          rows.Add(new GuardianshipExportRow { At = i.SentAt, What = "Invited to look after", Who = i.Dependant.DisplayName, Detail = i.State.Label });
+          items.Add(new ExportItem { At = i.SentAt, Title = Translate("An invitation to look after someone"), Body = i.Dependant.DisplayName });
+        }
+      }
+      if (id != null) {
+        var who = id.Value;
+        foreach (var i in GuardianInvitation.Where(i => i.InvitedBy.Id == who).OrderBy(i => i.SentAt).ToList()) {
+          rows.Add(new GuardianshipExportRow { At = i.SentAt, What = "You invited", Who = i.Email, Detail = i.State.Label });
+          items.Add(new ExportItem { At = i.SentAt, Title = Translate("An invitation you sent"), Body = i.Email });
+        }
+      }
+    } else if (id != null) {
+      var person = id.Value;
+      if (c.Key == "guardianship.links") {
+        foreach (var g in Guardianship.Where(g => g.Dependant.Id == person).OrderBy(g => g.LinkedOn).ToList()) {
+          rows.Add(new GuardianshipExportRow { At = g.LinkedOn, What = "Looks after you", Who = g.Guardian.DisplayName, Detail = g.Standing.Label });
+          items.Add(new ExportItem { At = g.LinkedOn, Title = Translate("Someone who looks after you"), Body = g.Guardian.DisplayName + " — " + g.Standing.Label });
+        }
+        foreach (var g in Guardianship.Where(g => g.Guardian.Id == person).OrderBy(g => g.LinkedOn).ToList()) {
+          rows.Add(new GuardianshipExportRow { At = g.LinkedOn, What = "You look after", Who = g.Dependant.DisplayName, Detail = g.Standing.Label });
+          items.Add(new ExportItem { At = g.LinkedOn, Title = Translate("Someone you look after"), Body = g.Dependant.DisplayName + " — " + g.Standing.Label });
+        }
+      } else if (c.Key == "guardianship.profile") {
+        foreach (var p in DependantProfile.Where(p => p.Person.Id == person).ToList()) {
+          var born = p.BornOn == null ? "" : p.BornOn.Value.ToString("yyyy-MM-dd");
+          rows.Add(new GuardianshipExportRow { What = "Date of birth and care notes", Who = born, Detail = p.CareNotes ?? "" });
+          items.Add(new ExportItem { Title = Translate("Your date of birth and care notes"), Body = born + (p.CareNotes == null ? "" : " — " + p.CareNotes) });
+        }
+      } else if (c.Key == "guardianship.consents") {
+        foreach (var x in Consent.Where(x => x.Person.Id == person).OrderBy(x => x.AnsweredAt).ToList()) {
+          rows.Add(new GuardianshipExportRow { At = x.AnsweredAt, What = x.Form.Title, Who = x.AnsweredBy.DisplayName, Detail = x.Answer.Label + ": " + x.Wording });
+          items.Add(new ExportItem { At = x.AnsweredAt, Title = x.Form.Title, Body = x.Answer.Label + " — " + x.Wording });
+        }
+      } else if (c.Key == "guardianship.contacts") {
+        foreach (var x in EmergencyContact.Where(x => x.Person.Id == person).OrderBy(x => x.Priority).ToList()) {
+          rows.Add(new GuardianshipExportRow { What = x.MayCollect ? "Emergency contact, may collect you" : "Emergency contact", Who = x.Name, Detail = x.Phone });
+          items.Add(new ExportItem { Title = Translate("An emergency contact"), Body = x.Name + " — " + x.Phone });
+        }
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One row of a person's guardianship data, in their export.
+public class GuardianshipExportRow {
+  public DateTime? At;
+  public string What = "";
+  public string Who = "";
+  public string Detail = "";
+}

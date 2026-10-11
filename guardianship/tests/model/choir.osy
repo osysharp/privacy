@@ -1,0 +1,33 @@
+// Everything the choir says: its roles, who manages privacy and families, and who may add a child.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.WorkQueues;
+using Osysharp.Privacy;
+using Osysharp.ServiceHours;
+
+[Role] enum AppRole { Authenticator, Member, Admin }
+
+policy IsAdmin => RoleGrant.Any(g => g.Member == user && g.Role == AppRole.Admin);
+policy ManagesPrivacy => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+policy ManagesGuardianships => IsAdmin;
+policy MakesManagedAccounts => RoleGrant.Any(g => g.Member == user && g.Role == AppRole.Member);
+
+app.Accounts = new AccountsSetup { AppName = "Riverside Youth Choir", SignupRole = AppRole.Member };
+app.Privacy = new PrivacySetup { Controller = "Riverside Youth Choir", SupervisoryAuthority = "IMY, imy.se" };
+app = new() {
+  Name = "PrivacyGuardianshipKitTests",
+  Classifications = [
+    new Classification(Personal.Contact) { Roles = [AppRole.Admin, AppRole.Authenticator] },
+    new Classification(Personal.Content) { Open = true },
+  ],
+};
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }

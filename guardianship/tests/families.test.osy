@@ -1,0 +1,112 @@
+// What the choir holds about a family, under a privacy request: counted, copied out, and erased — the child's data with
+// the child, the link with either side.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.Privacy;
+using Osysharp.Guardianship;
+using Osysharp.Privacy.Guardianship;
+
+/// Pia looks after Max (11), whose care notes, contacts and a consent the choir keeps; she has invited Ola to help. Eva runs
+/// the choir.
+[TestFixture]
+void Choir() {
+  var pia = new User { Email = "pia@choir.test", DisplayName = "Pia", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = pia, Role = AppRole.Member };
+  var eva = new User { Email = "eva@choir.test", DisplayName = "Eva", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = eva, Role = AppRole.Admin };
+  var ola = new User { Email = "ola@choir.test", DisplayName = "Ola", EmailVerifiedAt = DateTime.UtcNow };
+  var max = new User { Email = "max@managed.invalid", DisplayName = "Max" };
+  new Guardianship { Guardian = pia, Dependant = max };
+  new DependantProfile { Person = max, BornOn = DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-11), CareNotes = "Asthma — inhaler in the side pocket" };
+  new EmergencyContact { Person = max, Name = "Uncle Bo", Phone = "+46 70 222 33 44", MayCollect = true };
+  var form = new ConsentForm { Key = "tour", Title = "Choir tour", Wording = "Max may travel with the choir on tour." };
+  new Consent { Person = max, Form = form, Version = 1, Wording = form.Wording, Answer = ConsentAnswer.Given, AnsweredBy = pia };
+  new GuardianInvitation { Dependant = max, Email = "ola@choir.test", InvitedBy = pia, ExpiresAt = DateTime.UtcNow.AddDays(7) };
+}
+
+principal Eva => User.Single(u => u.Email == "eva@choir.test");
+
+DataSubject Subject(string name) { return new DataSubject { Account = User.Single(u => u.DisplayName == name).Id }; }
+
+[Test(Choir)]
+void the_childs_data_is_counted_in_every_category() {
+  runas (Eva) {
+    var holder = new GuardianshipPersonalData();
+    var max = Subject("Max");
+    Assert.Equal(1, holder.Count(max, CategoryOf("guardianship.links")));
+    Assert.Equal(1, holder.Count(max, CategoryOf("guardianship.profile")));
+    Assert.Equal(1, holder.Count(max, CategoryOf("guardianship.consents")));
+    Assert.Equal(1, holder.Count(max, CategoryOf("guardianship.contacts")));
+    Assert.Equal(1, holder.Count(max, CategoryOf("guardianship.invitations")));
+    Assert.True(CategoryOf("guardianship.profile").Special);
+  }
+}
+
+[Test(Choir)]
+void the_parents_copy_names_the_child_she_looks_after_and_the_invitation_she_sent() {
+  runas (Eva) {
+    var holder = new GuardianshipPersonalData();
+    var pia = Subject("Pia");
+    var links = holder.Export(pia, CategoryOf("guardianship.links"));
+    Assert.Contains("Max", links.Json);
+    Assert.Equal("Someone you look after", links.Items[0].Title);
+    Assert.Contains("ola@choir.test", holder.Export(pia, CategoryOf("guardianship.invitations")).Json);
+    Assert.Equal(0, holder.Count(pia, CategoryOf("guardianship.profile")));
+  }
+}
+
+[Test(Choir)]
+void an_invitation_is_found_by_the_address_it_went_to() {
+  runas (Eva) {
+    var holder = new GuardianshipPersonalData();
+    var byAddress = new DataSubject { Emails = ["Ola@Choir.test"] };
+    Assert.Equal(1, holder.Count(byAddress, CategoryOf("guardianship.invitations")));
+    Assert.Contains("Max", holder.Export(byAddress, CategoryOf("guardianship.invitations")).Json);
+  }
+}
+
+[Test(Choir)]
+void the_childs_copy_has_his_care_notes_contacts_and_consents() {
+  runas (Eva) {
+    var holder = new GuardianshipPersonalData();
+    var max = Subject("Max");
+    Assert.Contains("Asthma", holder.Export(max, CategoryOf("guardianship.profile")).Json);
+    Assert.Contains("Uncle Bo", holder.Export(max, CategoryOf("guardianship.contacts")).Json);
+    Assert.Contains("travel with the choir", holder.Export(max, CategoryOf("guardianship.consents")).Json);
+  }
+}
+
+[Test(Choir)]
+[runas(Eva)]
+void erasing_the_child_takes_all_of_his_and_nothing_of_anyone_elses() {
+  var max = User.Single(u => u.DisplayName == "Max");
+  var r = FileRequest(RequestKind.Erasure, max.Id, "", IdentityCheck.InPerson, "His mother asked at the rehearsal; we know her.");
+  Assert.Equal(1, PlanLine.Single(l => l.Request == r && l.Category == "guardianship.profile").Items);
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  runas (Eva) {
+    Assert.Equal(0, Guardianship.Count());
+    Assert.Equal(0, DependantProfile.Count());
+    Assert.Equal(0, EmergencyContact.Count());
+    Assert.Equal(0, Consent.Count());
+    Assert.Equal(0, GuardianInvitation.Count());
+    Assert.Equal(1, ConsentForm.Count());          // the choir's own form is nobody's data
+  }
+  Assert.NoTraceOf("Asthma");
+}
+
+[Test(Choir)]
+[runas(Eva)]
+void erasing_the_parent_ends_the_link_and_keeps_the_childs_own_data() {
+  var pia = User.Single(u => u.DisplayName == "Pia");
+  var r = FileRequest(RequestKind.Erasure, pia.Id, "", IdentityCheck.InPerson, "Asked in person.");
+  ApproveRequest(r);
+  runas (Eva) {
+    Assert.Equal(0, Guardianship.Count());
+    Assert.Equal(0, GuardianInvitation.Count());
+    Assert.Equal(1, DependantProfile.Count());
+    Assert.Equal(1, EmergencyContact.Count());
+    Assert.Equal(1, Consent.Count());
+  }
+}
