@@ -1,0 +1,19 @@
+// Osysharp.Privacy.OfferSales — the purchases Osysharp.OfferSales records about a person, as Osysharp.Privacy's holder: what
+// they bought or had bought for them, how it was paid and what was given back — counted, in their copy of their data,
+// and erased once the books no longer need it.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: an app using both gets it by itself — `completes` below, and
+//   `osy lock` says so — the holder is DISCOVERED, nothing is wired.
+// ⚑ A SALE IS A BOOKKEEPING RECORD: kept restricted after a request for as long as the books are (seven years unless the
+//   seller confirms its own period), then erased.
+package Osysharp.Privacy.OfferSales {
+  version     "0.1.0";
+  minPlatform "0.9.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.OfferSales — the purchases a person made or had made for them, how they were paid and what was refunded: kept on the books' legal obligation, counted, in their copy of their data, and erased when that ends.";
+  completes   Osysharp.Privacy@0, Osysharp.OfferSales@0;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.OfferSales@0;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}

@@ -1,0 +1,117 @@
+{
+  "platform": {
+    "version": "0.9.0"
+  },
+  "entries": [
+    {
+      "name": "Osysharp.Privacy.OfferSales",
+      "kind": "package",
+      "shadow": "app-forkable",
+      "source": "workspace:kits/privacy-offer-sales",
+      "included": "completes Osysharp.Privacy \u002B Osysharp.OfferSales"
+    },
+    {
+      "name": "Osysharp.Privacy.Sms",
+      "kind": "package",
+      "shadow": "app-forkable",
+      "source": "workspace:kits/privacy-sms",
+      "included": "completes Osysharp.Privacy \u002B Osysharp.Sms"
+    },
+    {
+      "name": "Osysharp.Privacy.UserAccounts",
+      "kind": "package",
+      "shadow": "app-forkable",
+      "source": "workspace:kits/privacy-user-accounts",
+      "included": "completes Osysharp.Privacy \u002B Osysharp.UserAccounts"
+    }
+  ],
+  "bridges": {
+    "searched": [
+      "workspace",
+      "platform",
+      "github"
+    ],
+    "notIncluded": [
+      {
+        "name": "Osysharp.Conversations.Sms",
+        "reason": "completes Osysharp.Conversations \u002B Osysharp.Sms, and this app does not use \u0060Osysharp.Conversations\u0060."
+      },
+      {
+        "name": "Osysharp.OfferSales.Memberships",
+        "reason": "completes Osysharp.OfferSales \u002B Osysharp.Memberships, and this app does not use \u0060Osysharp.Memberships\u0060."
+      },
+      {
+        "name": "Osysharp.OfferSales.PrepaidCredits",
+        "reason": "completes Osysharp.OfferSales \u002B Osysharp.PrepaidCredits, and this app does not use \u0060Osysharp.PrepaidCredits\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Accounts",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Accounts, and this app does not use \u0060Osysharp.Accounts\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.ClassBookings",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.ClassBookings, and this app does not use \u0060Osysharp.ClassBookings\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Conversations",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Conversations, and this app does not use \u0060Osysharp.Conversations\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Feedback",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Feedback, and this app does not use \u0060Osysharp.Feedback\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Guardianship",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Guardianship, and this app does not use \u0060Osysharp.Guardianship\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.IncidentReports",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.IncidentReports, and this app does not use \u0060Osysharp.IncidentReports\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Knowledge",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Knowledge, and this app does not use \u0060Osysharp.Knowledge\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.KnowledgeBase",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.KnowledgeBase, and this app does not use \u0060Osysharp.KnowledgeBase\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.MailReceiving",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Mail.Receiving, and this app does not use \u0060Osysharp.Mail.Receiving\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Memberships",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Memberships, and this app does not use \u0060Osysharp.Memberships\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Notifications",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Notifications, and this app does not use \u0060Osysharp.Notifications\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.PrepaidCredits",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.PrepaidCredits, and this app does not use \u0060Osysharp.PrepaidCredits\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.Qualifications",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.Qualifications, and this app does not use \u0060Osysharp.Qualifications\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.SatisfactionSurveys",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.SatisfactionSurveys, and this app does not use \u0060Osysharp.SatisfactionSurveys\u0060."
+      },
+      {
+        "name": "Osysharp.Privacy.ShiftScheduling",
+        "reason": "completes Osysharp.Privacy \u002B Osysharp.ShiftScheduling, and this app does not use \u0060Osysharp.ShiftScheduling\u0060."
+      },
+      {
+        "name": "Osysharp.WorkQueues.Notifications",
+        "reason": "completes Osysharp.WorkQueues \u002B Osysharp.Notifications, and this app does not use \u0060Osysharp.Notifications\u0060."
+      },
+      {
+        "name": "Osysharp.WorkQueues.Reports",
+        "reason": "completes Osysharp.WorkQueues \u002B Osysharp.Reports, and this app does not use \u0060Osysharp.Reports\u0060."
+      }
+    ]
+  }
+}

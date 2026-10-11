@@ -1,0 +1,58 @@
+namespace Osysharp.Privacy.OfferSales;
+
+using Osysharp.Identity;
+using Osysharp.OfferSales;
+using Osysharp.Privacy;
+
+/// A person's purchases — found by their account, as the buyer or as the person something was bought for: what, when,
+/// how it was paid, and every refund. Discovered by Osysharp.Privacy, so a request names this data, copies it out and —
+/// once the books no longer keep it — erases it.
+public class OfferSalesPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.OfferSales";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "purchases", Label = "What you bought from us",
+      Purpose = Translate("Selling you what you bought, handing it over, and keeping the books"),
+      SubjectKind = "everyone who bought something, or had something bought for them", Basis = RetentionBasis.LegalObligation,
+      BasisDetail = Translate("Sales are kept with the accounts for the period bookkeeping law sets"),
+      RetainedMonths = 84, MinMonths = 36, Portable = true, RequiresConfirmation = true },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    return Purchase.Count(p => p.Buyer.Id == id || p.For.Id == id);
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    var id = s.Account.Value;
+    var person = Principal.FirstOrDefault(p => p.Id == id);
+    if (person != null) { ErasePurchasesOf(person!); }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<PurchaseRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var p in Purchase.Include(p => p.For).Where(p => p.Buyer.Id == id || p.For.Id == id).OrderBy(p => p.CreatedAt).Take(1000).ToList()) {
+        var detail = (p.Quantity > 1 ? p.Quantity + " × " : "") + p.OfferName + " · " + (p.Amount / 100m).ToString("0.00") + " " + p.Currency
+                     + " · " + p.State.Label + " · " + p.Channel.Label + " · " + p.MethodLabel
+                     + (p.For.Id != id ? " · for " + (p.For.DisplayName ?? "") : "")
+                     + (p.Refunded > 0 ? " · refunded " + (p.Refunded / 100m).ToString("0.00") : "");
+        rows.Add(new PurchaseRow { At = p.CreatedAt, Receipt = p.Number, Detail = detail });
+        items.Add(new ExportItem { At = p.CreatedAt, Title = "Receipt " + p.Number, Body = detail });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One purchase in a person's export.
+public class PurchaseRow {
+  public DateTime At;
+  public string Receipt = "";
+  public string Detail = "";
+}

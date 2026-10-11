@@ -1,0 +1,40 @@
+// A customer's purchases under their privacy request: counted, copied out, kept on the books' basis — and erased.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.Privacy;
+using Osysharp.OfferSales;
+using Osysharp.Privacy.OfferSales;
+
+[TestFixture]
+void Workshop() {
+  var ivy = new User { Email = "ivy@spoke.test", DisplayName = "Ivy Rowe", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = ivy, Role = WorkshopRole.Customer };
+  var sol = new User { Email = "sol@spoke.test", DisplayName = "Sol Park", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = sol, Role = WorkshopRole.Customer };
+  var max = new User { Email = "max@spoke.test", DisplayName = "Max Dunn", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = max, Role = WorkshopRole.Manager };
+  new Offer { Key = "service", Name = "Annual service plan", Price = 9500 };
+}
+
+principal Ivy => User.Single(u => u.Email == "ivy@spoke.test");
+principal Sol => User.Single(u => u.Email == "sol@spoke.test");
+principal Max => User.Single(u => u.Email == "max@spoke.test");
+
+[Test(Workshop)]
+[runas(Max)]
+void her_copy_lists_what_she_bought_and_an_erasure_takes_it_and_leaves_his() {
+  var plan = Offer.Single(o => o.Key == "service");
+  SellAtCounter(plan, Ivy, "Cash");
+  SellAtCounter(plan, Sol, "Cash");
+  var holder = new OfferSalesPersonalData();
+  var ivy = new DataSubject { Account = Ivy.Id };
+  Assert.Equal(1, holder.Count(ivy, CategoryOf("purchases")));
+  var copy = holder.Export(ivy, CategoryOf("purchases"));
+  Assert.Contains("Annual service plan · 95.00 GBP · Paid", copy.Items[0].Body);
+  Assert.Contains("R-000001", copy.Json);
+  Assert.Equal(RetentionBasis.LegalObligation, CategoryOf("purchases").Basis);
+  holder.Erase(ivy, CategoryOf("purchases"));
+  Assert.Equal(0, holder.Count(ivy, CategoryOf("purchases")));
+  Assert.Equal(1, holder.Count(new DataSubject { Account = Sol.Id }, CategoryOf("purchases")));
+}
