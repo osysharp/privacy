@@ -1,0 +1,34 @@
+// Everything this studio says: its roles, who manages privacy and works the inbox, and who looks after credits.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.WorkQueues;
+using Osysharp.Privacy;
+using Osysharp.ServiceHours;
+using Osysharp.PrepaidCredits;
+
+[Role] enum StudioRole { Authenticator, Member, Admin }
+
+policy IsAdmin => RoleGrant.Any(g => g.Member == user && g.Role == StudioRole.Admin);
+policy ManagesPrivacy => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+policy ManagesCredits => IsAdmin;
+policy SpendsCredits => IsAdmin;
+
+app.Accounts = new AccountsSetup { AppName = "Clay Studio", SignupRole = StudioRole.Member };
+app.Privacy = new PrivacySetup { Controller = "Clay Studio Ltd", SupervisoryAuthority = "ICO, ico.org.uk" };
+app = new() {
+  Name = "PrivacyPrepaidCreditsKitTests",
+  Classifications = [
+    new Classification(Personal.Contact) { Roles = [StudioRole.Admin, StudioRole.Authenticator] },
+    new Classification(Personal.Content) { Open = true },
+  ],
+};
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }

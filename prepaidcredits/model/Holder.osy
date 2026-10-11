@@ -1,0 +1,60 @@
+namespace Osysharp.Privacy.PrepaidCredits;
+
+using Osysharp.Identity;
+using Osysharp.PrepaidCredits;
+using Osysharp.Privacy;
+
+/// A person's prepaid credits — found by their account: the packs they hold, what they used them for, and the ledger
+/// of every change. Discovered by Osysharp.Privacy, so a request names this data, copies it out and erases it.
+///
+/// ⚑ ERASING TAKES THE CREDITS WITH IT. A person who asks to be erased keeps no balance here afterwards — what they paid
+///   for and did not use is the business's to settle with them in money, before or after; the sale itself stays in the
+///   books, which are not this kit's.
+public class PrepaidCreditsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.PrepaidCredits";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "credits.ledger", Label = "Your prepaid credits and what you used them for",
+      Purpose = Translate("Keeping the credits you bought or were given, and spending them when you use them"),
+      SubjectKind = "everyone who holds credits", Basis = RetentionBasis.Contract, Portable = true },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    return CreditPack.Count(p => p.Holder.Id == id) + CreditSpend.Count(x => x.Holder.Id == id);
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    var id = s.Account.Value;
+    var holder = Principal.FirstOrDefault(p => p.Id == id);
+    if (holder != null) { EraseCreditsOf(holder!); }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<CreditLedgerRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var e in CreditEntry.Include(e => e.Pack).Where(e => e.Holder.Id == id).OrderBy(e => e.At).Take(5000).ToList()) {
+        rows.Add(new CreditLedgerRow { At = e.At, What = e.Kind.Label, Pack = e.Pack.Label, Change = e.Change,
+                                       BalanceAfter = e.BalanceAfter, Reason = e.Reason });
+        items.Add(new ExportItem { At = e.At, Title = e.Kind.Label + " — " + e.Pack.Label,
+                                   Body = (e.Change > 0 ? "+" : "") + e.Change + (e.Reason != "" ? " · " + e.Reason : "") });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One line of a person's credits in their export.
+public class CreditLedgerRow {
+  public DateTime At;
+  public string What = "";
+  public string Pack = "";
+  public int Change;
+  public int BalanceAfter;
+  public string Reason = "";
+}

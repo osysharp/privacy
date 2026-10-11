@@ -1,0 +1,23 @@
+// The producer's test project for Osysharp.Privacy.PrepaidCredits — the smallest correct consumer: a
+// pottery studio that sells class packs and answers privacy requests. A member's credits are in their copy of
+// their data, and go when they are erased — theirs, and nobody else's.
+app PrivacyPrepaidCreditsKitTests {
+  model "model/**/*.osy";
+  tests "**/*.test.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Mail@0;
+  use Osysharp.Sms@0;
+  use Osysharp.EmailTemplates@0;
+  use Osysharp.UserAccounts@1;
+  use Osysharp.Organizations@0;
+  use Osysharp.Organizations.ServicePlans@0;
+  use Osysharp.Presence@0;
+  use Osysharp.ServiceHours;
+  use Osysharp.WorkQueues@0;
+  use Osysharp.Privacy@0;
+  use Osysharp.PrepaidCredits@0;
+  // Osysharp.Privacy.PrepaidCredits, the package under test, is not written: it arrives by itself because this app uses
+  // Privacy and PrepaidCredits, which it completes (`osy lock` includes it and says so).
+  use Osysharp.Workflow;
+  use Osysharp.Observability;
+}

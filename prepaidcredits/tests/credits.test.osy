@@ -1,0 +1,58 @@
+// A member's credits under their privacy request: counted, copied out, and erased — theirs only.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.Privacy;
+using Osysharp.PrepaidCredits;
+using Osysharp.Privacy.PrepaidCredits;
+
+[TestFixture]
+void Studio() {
+  var ann = new User { Email = "ann@clay.test", DisplayName = "Ann", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = ann, Role = StudioRole.Member };
+  var bo = new User { Email = "bo@clay.test", DisplayName = "Bo", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = bo, Role = StudioRole.Member };
+  var ada = new User { Email = "ada@clay.test", DisplayName = "Ada", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = ada, Role = StudioRole.Admin };
+}
+
+principal Ann => User.Single(u => u.Email == "ann@clay.test");
+principal Bo => User.Single(u => u.Email == "bo@clay.test");
+principal Ada => User.Single(u => u.Email == "ada@clay.test");
+
+/// Ann holds a pack of wheel sessions and used one; Bo holds a pack of his own.
+void PacksSold() {
+  GrantCredits(Ann, 6, "Six wheel sessions", reason: "Bought at the counter");
+  GrantCredits(Bo, 3, "Three glaze evenings");
+  SpendCredit(Ann, "Wheel, Tuesday", "visit-1");
+}
+
+[Test(Studio)]
+[runas(Ada)]
+void her_copy_lists_her_packs_and_what_she_used_them_for_and_nobody_elses() {
+  PacksSold();
+  var holder = new PrepaidCreditsPersonalData();
+  var ann = new DataSubject { Account = Ann.Id };
+  Assert.Equal(2, holder.Count(ann, CategoryOf("credits.ledger")));
+  var copy = holder.Export(ann, CategoryOf("credits.ledger"));
+  Assert.Contains("Six wheel sessions", copy.Json);
+  Assert.Contains("Wheel, Tuesday", copy.Json);
+  Assert.DoesNotContain("glaze", copy.Json);
+  Assert.Equal(2, copy.Items.Count);
+  Assert.Equal("Granted — Six wheel sessions", copy.Items[0].Title);
+}
+
+[Test(Studio)]
+[runas(Ada)]
+void an_erasure_takes_her_credits_and_leaves_his() {
+  PacksSold();
+  var r = FileRequest(RequestKind.Erasure, Ann.Id, "", IdentityCheck.InPerson, "Came to the studio and asked.");
+  Assert.Equal(2, PlanLine.Single(l => l.Request == r && l.Category == "credits.ledger").Items);
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.Equal(0, CreditPacksOf(Ann).Count);
+  Assert.Equal(0, CreditStatementOf(Ann).Count);
+  Assert.Equal(0, CreditSpendsOf(Ann).Count);
+  Assert.Equal(3, CreditsLeft(Bo));
+  Assert.NoTraceOf("Wheel, Tuesday");
+}
