@@ -1,0 +1,65 @@
+// A visitor's incident record under their privacy request: counted, copied out with their injury and statement, kept
+// on its legal basis — and, when erased, gone from every line naming them while the report itself stays.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.Privacy;
+using Osysharp.IncidentReports;
+using Osysharp.Privacy.IncidentReports;
+
+[TestFixture]
+void Library() {
+  var una = new User { Email = "una@eastgate.test", DisplayName = "Una Byrne", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = una, Role = LibraryRole.Reader };
+  var kofi = new User { Email = "kofi@eastgate.test", DisplayName = "Kofi Mensah", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = kofi, Role = LibraryRole.Reader };
+  var lin = new User { Email = "lin@eastgate.test", DisplayName = "Lin Wei", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = lin, Role = LibraryRole.Librarian };
+  var mo = new User { Email = "mo@eastgate.test", DisplayName = "Mo Ahmed", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = mo, Role = LibraryRole.Manager };
+  var fall = new IncidentCategory { Key = "fall", Name = "Slip, trip or fall", AsksAboutInjury = true };
+  var r = new IncidentReport { Reporter = lin, OccurredAt = DateTime.UtcNow.AddDays(-3), Category = fall, Location = "Main stairs",
+                               Description = "A visitor slipped on the third step from the bottom." };
+  new IncidentPerson { Report = r, Person = una, Name = "Una Byrne", Role = IncidentRole.Injured, Injury = "Bruised wrist",
+                       Treatment = IncidentTreatment.FirstAid, Statement = "The step was wet from umbrellas." };
+  new IncidentPerson { Report = r, Person = kofi, Name = "Kofi Mensah", Role = IncidentRole.Witness };
+}
+
+principal Una => User.Single(u => u.Email == "una@eastgate.test");
+principal Kofi => User.Single(u => u.Email == "kofi@eastgate.test");
+principal Mo => User.Single(u => u.Email == "mo@eastgate.test");
+
+[Test(Library)]
+[runas(Mo)]
+void her_copy_holds_her_injury_and_her_statement_and_his_holds_only_his_line() {
+  var holder = new IncidentReportsPersonalData();
+  var una = new DataSubject { Account = Una.Id };
+  Assert.Equal(1, holder.Count(una, CategoryOf("incidents")));
+  var copy = holder.Export(una, CategoryOf("incidents"));
+  Assert.Contains("Bruised wrist", copy.Json);
+  Assert.Contains("The step was wet from umbrellas.", copy.Json);
+  Assert.Equal(1, copy.Items.Count);
+  Assert.Equal(1, holder.Count(new DataSubject { Account = Kofi.Id }, CategoryOf("incidents")));
+}
+
+[Test(Library)]
+[runas(Mo)]
+void the_category_is_special_and_kept_on_a_legal_obligation() {
+  var c = CategoryOf("incidents");
+  Assert.True(c.Special);
+  Assert.Equal(RetentionBasis.LegalObligation, c.Basis);
+  var r = FileRequest(RequestKind.Erasure, Una.Id, "", IdentityCheck.InPerson, "Asked at the desk.");
+  Assert.Equal(1, PlanLine.Single(l => l.Request == r && l.Category == "incidents").Items);
+}
+
+[Test(Library)]
+[runas(Mo)]
+void erasing_her_blanks_her_lines_and_keeps_the_report_and_his() {
+  new IncidentReportsPersonalData().Erase(new DataSubject { Account = Una.Id }, CategoryOf("incidents"));
+  var line = IncidentPerson.Single(p => p.Person == Una);
+  Assert.Equal("Erased", line.Name);
+  Assert.Equal("", line.Injury);
+  Assert.Equal("", line.Statement);
+  Assert.Equal(1, IncidentReport.Count());
+  Assert.Equal("Kofi Mensah", IncidentPerson.Single(p => p.Person == Kofi).Name);
+}

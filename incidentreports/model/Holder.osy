@@ -1,0 +1,73 @@
+namespace Osysharp.Privacy.IncidentReports;
+
+using Osysharp.Identity;
+using Osysharp.IncidentReports;
+using Osysharp.Privacy;
+
+/// What the incident record holds about a person — found by their account: the reports they filed, every line naming
+/// them in a report (their part, their injury, the care given, their statement), and the notices sent to them.
+/// Discovered by Osysharp.Privacy, so a request names this data, copies it out and — once nothing keeps it — erases it.
+///
+/// ⚑ ERASING LEAVES THE REPORTS. A report is the organisation's record of what happened; erasure blanks the person's
+///   name, injury, care notes and statement wherever they are named, and removes what they were told. What they wrote
+///   in a report they filed stays — it describes the event, not them.
+public class IncidentReportsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.IncidentReports";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "incidents", Label = "Incidents you reported or were part of",
+      Purpose = Translate("Recording incidents — injuries, near misses, damage — reviewing them and telling the people who must be told"),
+      SubjectKind = "staff, members and visitors named in an incident", Basis = RetentionBasis.LegalObligation,
+      BasisDetail = Translate("Accident and injury records are kept for the period health and safety law sets"),
+      RetainedMonths = 36, MinMonths = 12, Special = true, RequiresConfirmation = true },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    return IncidentReport.Count(r => r.Reporter.Id == id) + IncidentPerson.Count(p => p.Person.Id == id)
+         + IncidentNotice.Count(n => n.Recipient.Id == id);
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    var id = s.Account.Value;
+    var person = Principal.FirstOrDefault(p => p.Id == id);
+    if (person != null) { EraseIncidentDataOf(person!); }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<IncidentRecordRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var r in IncidentReport.Include(r => r.Category).Where(r => r.Reporter.Id == id).OrderBy(r => r.ReportedAt).Take(1000).ToList()) {
+        var body = r.Category.Name + " at " + r.Location + ", " + r.OccurredAt.ToString("yyyy-MM-dd HH:mm") + "\n\n" + r.Description
+                   + (r.ImmediateAction != "" ? "\n\nDone there and then: " + r.ImmediateAction : "");
+        rows.Add(new IncidentRecordRow { At = r.ReportedAt, What = "You reported " + r.Number, Detail = body });
+        items.Add(new ExportItem { At = r.ReportedAt, Title = "You reported " + r.Number, Body = body });
+      }
+      foreach (var p in IncidentPerson.Include(p => p.Report).Where(p => p.Person.Id == id).OrderBy(p => p.AddedAt).Take(1000).ToList()) {
+        var body = p.Role.Label + (p.Injury != "" ? " · injury: " + p.Injury : "")
+                   + (p.Role == IncidentRole.Injured ? " · care: " + p.Treatment.Label + (p.TreatmentNote != "" ? " — " + p.TreatmentNote : "") : "")
+                   + (p.Statement != "" ? "\n\nYour statement: " + p.Statement : "");
+        rows.Add(new IncidentRecordRow { At = p.AddedAt, What = "Named in " + p.Report.Number, Detail = body });
+        items.Add(new ExportItem { At = p.AddedAt, Title = "Named in " + p.Report.Number, Body = body });
+      }
+      foreach (var n in IncidentNotice.Where(n => n.Recipient.Id == id).OrderBy(n => n.SentAt).Take(1000).ToList()) {
+        var body = n.Summary + (n.Response != "" ? "\n\nYou said: " + n.Response : "");
+        rows.Add(new IncidentRecordRow { At = n.SentAt, What = "Told about an incident", Detail = body });
+        items.Add(new ExportItem { At = n.SentAt, Title = "Told about an incident", Body = body });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One line of a person's incident record in their export.
+public class IncidentRecordRow {
+  public DateTime At;
+  public string What = "";
+  public string Detail = "";
+}

@@ -1,0 +1,22 @@
+// Osysharp.Privacy.IncidentReports — what Osysharp.IncidentReports holds about a person, as Osysharp.Privacy's holder:
+// the reports they filed, every report naming them (with their injury, the care they were given and their statement)
+// and what they were told about an incident — counted, in their copy of their data, and — when the law no longer asks
+// for it to be kept — erased from the record.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: IncidentReports does not force privacy requests on an app, and
+//   Privacy does not force incident reports on its apps. An app using both gets it by itself — `completes` below, and
+//   `osy lock` says so — the holder is DISCOVERED, nothing is wired.
+// ⚑ AN INCIDENT RECORD IS KEPT BY LAW. Its category is health data (special category) on a legal obligation — kept
+//   restricted for 36 months after a request unless the organisation confirms its own period (accident books and
+//   injury logs are kept three years or more in most places).
+package Osysharp.Privacy.IncidentReports {
+  version     "0.1.0";
+  minPlatform "0.9.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.IncidentReports — the reports a person filed, the reports naming them with their injury, care and statement, and what they were told about an incident: special-category data kept on a legal obligation, counted, in their copy of their data, and erased from the record once its period ends.";
+  completes   Osysharp.Privacy@0, Osysharp.IncidentReports@0;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.IncidentReports@0;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}

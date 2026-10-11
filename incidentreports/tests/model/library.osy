@@ -1,0 +1,37 @@
+// Everything the library says: its roles, who manages privacy and the inbox, and who reviews incidents.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.WorkQueues;
+using Osysharp.Privacy;
+using Osysharp.ServiceHours;
+using Osysharp.IncidentReports;
+
+[Role] enum LibraryRole { Authenticator, Reader, Librarian, Manager }
+
+policy IsLibrarian => RoleGrant.Any(g => g.Member == user && (g.Role == LibraryRole.Librarian || g.Role == LibraryRole.Manager));
+policy IsManager => RoleGrant.Any(g => g.Member == user && g.Role == LibraryRole.Manager);
+policy ManagesPrivacy => IsManager;
+policy PlacesLegalHolds => IsManager;
+policy WorksInbox => IsManager;
+policy LeadsInbox => IsManager;
+policy AdministersInbox => IsManager;
+policy ManagesOrganizations => IsManager;
+policy CollaboratesOnRecords => IsManager;
+policy ReportsIncidents => IsLibrarian;
+policy ReviewsIncidents => IsManager;
+
+app.Accounts = new AccountsSetup { AppName = "Eastgate Library", SignupRole = LibraryRole.Reader };
+app.Privacy = new PrivacySetup { Controller = "Eastgate Library Trust", SupervisoryAuthority = "ICO, ico.org.uk" };
+app = new() {
+  Name = "PrivacyIncidentReportsKitTests",
+  Classifications = [
+    new Classification(Personal.Contact) { Roles = [LibraryRole.Manager, LibraryRole.Authenticator] },
+    new Classification(Personal.Content) { Open = true },
+    new Classification(Personal.Identity) { Open = true },
+    new Classification(Personal.Special) { Roles = [LibraryRole.Manager, LibraryRole.Authenticator] },
+  ],
+};
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsManager; } }
