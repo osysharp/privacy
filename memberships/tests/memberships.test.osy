@@ -1,0 +1,66 @@
+// A member's memberships and visits under their privacy request: counted, copied out, and erased — theirs only, with
+// the visits on their card going too (Osysharp.Privacy.PrepaidCredits arrives beside this holder).
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.Privacy;
+using Osysharp.PrepaidCredits;
+using Osysharp.Memberships;
+using Osysharp.Privacy.Memberships;
+
+[TestFixture]
+void Centre() {
+  var ann = new User { Email = "ann@leisure.test", DisplayName = "Ann", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = ann, Role = LeisureRole.Member };
+  var bo = new User { Email = "bo@leisure.test", DisplayName = "Bo", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = bo, Role = LeisureRole.Member };
+  var ada = new User { Email = "ada@leisure.test", DisplayName = "Ada", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = ada, Role = LeisureRole.Admin };
+  new MembershipPlan { Name = "Gym card", Visits = 10, Periods = 6, Period = PlanPeriod.Month, Price = 80m };
+  new MembershipPlan { Name = "Couple year", Periods = 1, Period = PlanPeriod.Year, People = 2, Price = 500m };
+}
+
+principal Ann => User.Single(u => u.Email == "ann@leisure.test");
+principal Bo => User.Single(u => u.Email == "bo@leisure.test");
+principal Ada => User.Single(u => u.Email == "ada@leisure.test");
+
+/// Ann holds a gym card she used once, and is on Bo's couple year; Bo came in once too.
+void Sold() {
+  SellMembership(Ann, MembershipPlan.Single(p => p.Name == "Gym card"));
+  var couple = SellMembership(Bo, MembershipPlan.Single(p => p.Name == "Couple year"));
+  AddToMembership(couple, Ann);
+  CheckIn(Ann, "Spa entrance");
+  CheckIn(Bo, "Pool");
+}
+
+[Test(Centre)]
+[runas(Ada)]
+void her_copy_lists_what_she_holds_what_she_is_on_and_when_she_came() {
+  Sold();
+  var holder = new MembershipsPersonalData();
+  var ann = new DataSubject { Account = Ann.Id };
+  Assert.Equal(3, holder.Count(ann, CategoryOf("memberships")));
+  var copy = holder.Export(ann, CategoryOf("memberships"));
+  Assert.Contains("Gym card", copy.Json);
+  Assert.Contains("Couple year", copy.Json);
+  Assert.Contains("Spa entrance", copy.Json);
+  Assert.DoesNotContain("Pool", copy.Json);
+  Assert.Equal(3, copy.Items.Count);
+}
+
+[Test(Centre)]
+[runas(Ada)]
+void an_erasure_takes_her_memberships_visits_and_credits_and_leaves_his() {
+  Sold();
+  var r = FileRequest(RequestKind.Erasure, Ann.Id, "", IdentityCheck.InPerson, "Came to reception and asked.");
+  Assert.Equal(3, PlanLine.Single(l => l.Request == r && l.Category == "memberships").Items);
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.Equal(0, MembershipsOf(Ann).Count);
+  Assert.Equal(0, AdmissionsOf(Ann).Count);
+  Assert.Equal(0, CreditPacksOf(Ann).Count);
+  Assert.Equal(1, MembershipsOf(Bo).Count);
+  Assert.Equal(0, MembersOf(MembershipsOf(Bo)[0]).Count);
+  Assert.Equal(1, AdmissionsOf(Bo).Count);
+  Assert.NoTraceOf("Spa entrance");
+}

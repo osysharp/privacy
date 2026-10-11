@@ -1,0 +1,37 @@
+// Everything this centre says: its roles, who manages privacy and works the inbox, and who sells and admits.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.WorkQueues;
+using Osysharp.Privacy;
+using Osysharp.ServiceHours;
+using Osysharp.PrepaidCredits;
+using Osysharp.Memberships;
+
+[Role] enum LeisureRole { Authenticator, Member, Admin }
+
+policy IsAdmin => RoleGrant.Any(g => g.Member == user && g.Role == LeisureRole.Admin);
+policy ManagesPrivacy => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+policy ManagesCredits => IsAdmin;
+policy SpendsCredits => IsAdmin;
+policy SellsMemberships => IsAdmin;
+policy AdmitsMembers => IsAdmin;
+
+app.Accounts = new AccountsSetup { AppName = "Riverside Leisure", SignupRole = LeisureRole.Member };
+app.Privacy = new PrivacySetup { Controller = "Riverside Leisure Ltd", SupervisoryAuthority = "ICO, ico.org.uk" };
+app = new() {
+  Name = "PrivacyMembershipsKitTests",
+  Classifications = [
+    new Classification(Personal.Contact) { Roles = [LeisureRole.Admin, LeisureRole.Authenticator] },
+    new Classification(Personal.Content) { Open = true },
+  ],
+};
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }

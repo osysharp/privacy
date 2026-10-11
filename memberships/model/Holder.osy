@@ -1,0 +1,66 @@
+namespace Osysharp.Privacy.Memberships;
+
+using Osysharp.Identity;
+using Osysharp.Memberships;
+using Osysharp.Privacy;
+
+/// A person's memberships — found by their account: those they hold, those they are on, the changes made to them and
+/// every time they came or were turned away. Discovered by Osysharp.Privacy, so a request names this data, copies it
+/// out and erases it.
+///
+/// ⚑ ERASING ENDS WHAT THEY HOLD. A person who asks to be erased has no membership here afterwards; what was paid and not
+///   used is the business's to settle with them in money first (`UnusedValueOf` says how much). Somebody else's
+///   membership they were on goes on without them.
+public class MembershipsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Memberships";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "memberships", Label = "Your memberships and your visits",
+      Purpose = Translate("Letting you in on what you bought, and keeping the times you came"),
+      SubjectKind = "everyone with a membership or on one", Basis = RetentionBasis.Contract, Portable = true },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    return Membership.Count(m => m.Holder.Id == id) + MembershipMember.Count(x => x.Member.Id == id) + Admission.Count(a => a.Person.Id == id);
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    var id = s.Account.Value;
+    var person = Principal.FirstOrDefault(p => p.Id == id);
+    if (person != null) { EraseMembershipsOf(person!); }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<MembershipRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var m in Membership.Include(m => m.Plan).Where(m => m.Holder.Id == id).OrderBy(m => m.SoldAt).Take(500).ToList()) {
+        rows.Add(new MembershipRow { At = m.SoldAt, What = "Membership", Detail = m.Plan.Name + " — " + MembershipStanding(m) });
+        items.Add(new ExportItem { At = m.SoldAt, Title = "Your membership: " + m.Plan.Name, Body = MembershipStanding(m) });
+      }
+      foreach (var x in MembershipMember.Include(x => x.Membership.Plan).Where(x => x.Member.Id == id).Take(100).ToList()) {
+        rows.Add(new MembershipRow { At = x.AddedAt, What = "On a membership", Detail = x.Membership.Plan.Name });
+        items.Add(new ExportItem { At = x.AddedAt, Title = "A membership you are on", Body = x.Membership.Plan.Name });
+      }
+      foreach (var a in Admission.Include(a => a.Membership.Plan).Where(a => a.Person.Id == id).OrderBy(a => a.At).Take(5000).ToList()) {
+        var what = a.State == AdmissionState.Admitted ? "You came in" : "You were turned away";
+        var detail = (a.Membership != null ? a.Membership.Plan.Name : "") + (a.Place != "" ? " · " + a.Place : "") + (a.Reason != "" ? " · " + a.Reason : "");
+        rows.Add(new MembershipRow { At = a.At, What = what, Detail = detail });
+        items.Add(new ExportItem { At = a.At, Title = what, Body = detail });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One line of a person's memberships in their export.
+public class MembershipRow {
+  public DateTime At;
+  public string What = "";
+  public string Detail = "";
+}
