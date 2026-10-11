@@ -1,0 +1,53 @@
+// A member's bookings under a privacy request: counted, copied out, and erased — her place passing to the next in line.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.Privacy;
+using Osysharp.ClassBookings;
+using Osysharp.Privacy.ClassBookings;
+
+/// Mia holds the one place of Sunrise flow, and came to last week's class late-cancelled; Noa is waiting. Eva runs it.
+[TestFixture]
+void Studio() {
+  var mia = new User { Email = "mia@lotus.test", DisplayName = "Mia", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = mia, Role = AppRole.Member };
+  var noa = new User { Email = "noa@lotus.test", DisplayName = "Noa", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = noa, Role = AppRole.Member };
+  var eva = new User { Email = "eva@lotus.test", DisplayName = "Eva", EmailVerifiedAt = DateTime.UtcNow };
+  new RoleGrant { Member = eva, Role = AppRole.Admin };
+  var sunrise = new YogaClass { Title = "Sunrise flow", StartsAt = DateTime.UtcNow.AddDays(3), Capacity = 1 };
+  var last = new YogaClass { Title = "Yin evening", StartsAt = DateTime.UtcNow.AddDays(-7), Capacity = 8 };
+  new Booking { Session = sunrise, Person = mia, BookedBy = mia, State = BookingState.Booked, Seat = 1 };
+  new Booking { Session = sunrise, Person = noa, BookedBy = noa, State = BookingState.Waiting, Ticket = 1 };
+  new Booking { Session = last, Person = mia, BookedBy = mia, State = BookingState.Cancelled, LateCancel = true, CancelledAt = DateTime.UtcNow.AddDays(-7) };
+}
+
+principal Eva => User.Single(u => u.Email == "eva@lotus.test");
+
+[Test(Studio)]
+void her_copy_lists_every_booking_and_says_which_she_cancelled_late() {
+  runas (Eva) {
+    var holder = new ClassBookingsPersonalData();
+    var mia = new DataSubject { Account = User.Single(u => u.DisplayName == "Mia").Id };
+    Assert.Equal(2, holder.Count(mia, CategoryOf("class-bookings.bookings")));
+    var copy = holder.Export(mia, CategoryOf("class-bookings.bookings"));
+    Assert.Contains("Sunrise flow", copy.Json);
+    Assert.Contains("Yin evening", copy.Json);
+    Assert.Equal(2, copy.Items.Count);
+    Assert.Contains("cancelled late", copy.Items[0].Body);
+    Assert.DoesNotContain("Noa", copy.Json);
+  }
+}
+
+[Test(Studio)]
+[runas(Eva)]
+void erasing_her_takes_her_bookings_and_offers_her_place_to_the_next_in_line() {
+  var mia = User.Single(u => u.DisplayName == "Mia");
+  var r = FileRequest(RequestKind.Erasure, mia.Id, "", IdentityCheck.InPerson, "She asked at the desk; we know her.");
+  Assert.Equal(2, PlanLine.Single(l => l.Request == r && l.Category == "class-bookings.bookings").Items);
+  ApproveRequest(r);
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.Equal(0, Booking.Count(b => b.Person.DisplayName == "Mia"));
+  Background.Settle();
+  Assert.Equal(BookingState.Offered, Booking.Single(b => b.Person.DisplayName == "Noa").State);
+}

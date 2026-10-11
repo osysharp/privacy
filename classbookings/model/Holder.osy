@@ -1,0 +1,62 @@
+namespace Osysharp.Privacy.ClassBookings;
+
+using Osysharp.Identity;
+using Osysharp.ClassBookings;
+using Osysharp.Privacy;
+
+/// The bookings a person holds or held — found by their account. Erasing them is the kit's own `ForgetBookingsOf`, so a
+/// place they still hold is offered to the next person waiting, exactly as a cancellation would.
+public class ClassBookingsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.ClassBookings";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "class-bookings.bookings", Label = "Your bookings, and when you came",
+      Purpose = Translate("Holding your place in the sessions you booked, and keeping the register"),
+      SubjectKind = "people who book sessions", Basis = RetentionBasis.Contract, Portable = true },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    return Booking.Count(b => b.Person.Id == id);
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    var id = s.Account.Value;
+    var one = Booking.FirstOrDefault(b => b.Person.Id == id);
+    if (one != null) { ForgetBookingsOf(one.Person); }
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<BookingExportRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var b in Booking.Where(b => b.Person.Id == id).OrderBy(b => b.Session.StartsAt).Take(5000).ToList()) {
+        rows.Add(new BookingExportRow {
+          Session = b.Session.Title, StartsAt = b.Session.StartsAt, State = b.State.Label, Place = b.Seat,
+          BookedAt = b.CreatedAt, CheckedInAt = b.CheckedInAt, CancelledAt = b.CancelledAt, LateCancel = b.LateCancel,
+        });
+        items.Add(new ExportItem {
+          At = b.Session.StartsAt, Title = b.Session.Title,
+          Body = b.State.Label + (b.LateCancel ? Translate(" — cancelled late") : ""),
+        });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+}
+
+/// One booking in a person's export.
+public class BookingExportRow {
+  public string Session = "";
+  public DateTime StartsAt;
+  public string State = "";
+  public int? Place;
+  public DateTime BookedAt;
+  public DateTime? CheckedInAt;
+  public DateTime? CancelledAt;
+  public bool LateCancel;
+}

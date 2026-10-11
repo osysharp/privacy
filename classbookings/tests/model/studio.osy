@@ -1,0 +1,38 @@
+// Everything the studio says: its roles, who manages privacy and the classes.
+
+using Osysharp.Identity;
+using Osysharp.UserAccounts;
+using Osysharp.WorkQueues;
+using Osysharp.Privacy;
+using Osysharp.ServiceHours;
+using Osysharp.ClassBookings;
+
+[Role] enum AppRole { Authenticator, Member, Admin }
+
+policy IsAdmin => RoleGrant.Any(g => g.Member == user && g.Role == AppRole.Admin);
+policy ManagesPrivacy => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+policy ManagesSessions => IsAdmin;
+
+app.Accounts = new AccountsSetup { AppName = "Lotus Yoga", SignupRole = AppRole.Member };
+app.Privacy = new PrivacySetup { Controller = "Lotus Yoga", SupervisoryAuthority = "IMY, imy.se" };
+app = new() {
+  Name = "PrivacyClassBookingsKitTests",
+  Classifications = [
+    new Classification(Personal.Contact) { Roles = [AppRole.Admin, AppRole.Authenticator] },
+    new Classification(Personal.Content) { Open = true },
+  ],
+};
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }
+
+/// A yoga class: the kit's session, readable by the members who book it.
+entity YogaClass : BookableSession {
+  security { allow read when IsAuthenticated; }
+}
