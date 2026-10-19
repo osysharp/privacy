@@ -163,5 +163,6 @@ void nobody_erases_a_request_by_hand() {
 /// The app says how long a person's requests are kept once closed — what the privacy page and every plan read.
 [Test(Harbour)]
 void the_app_says_how_long_what_was_asked_is_kept() {
+  Assert.Equal(18, App.Setting<RequestsPrivacySetup>().KeepMonths);
   Assert.Equal(18, CategoryOf(RequestsCategory()).RetainedMonths);
 }
