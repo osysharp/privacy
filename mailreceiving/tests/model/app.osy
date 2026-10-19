@@ -2,7 +2,7 @@
 namespace PrivacyMailReceivingKitTests;
 
 using Osysharp.Identity;
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 using Osysharp.ServiceHours;
 using Osysharp.Mail.Receiving;
 using Osysharp.Privacy;
