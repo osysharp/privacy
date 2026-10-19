@@ -1,7 +1,10 @@
 // How the marina answers privacy requests. In a file of its own with no `namespace`.
 using Osysharp.Privacy;
 using Osysharp.WorkQueues;
+using Osysharp.Privacy.HumanRequests;
 using Marina;
 
 app.Privacy = new PrivacySetup { Controller = "Northharbour Marina AB", SupervisoryAuthority = "IMY, imy.se", ReviewPlans = PlanReview.WhenJudgement };
 app.Inbox = new InboxSetup { DefaultQueue = "Harbour" };
+// What was asked of a person, and what they answered, is kept a year and a half after the request closed.
+app.RequestsPrivacy = new RequestsPrivacySetup { KeepMonths = 18 };

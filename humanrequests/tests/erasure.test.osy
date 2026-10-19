@@ -159,3 +159,9 @@ void nobody_erases_a_request_by_hand() {
   UnitOfWork.Discard();
   runas (Hilde) { Assert.Equal("Tärna is due out of the water before the ice.", Request(a.InesWeek).Context); }
 }
+
+/// The app says how long a person's requests are kept once closed — what the privacy page and every plan read.
+[Test(Harbour)]
+void the_app_says_how_long_what_was_asked_is_kept() {
+  Assert.Equal(18, CategoryOf(RequestsCategory()).RetainedMonths);
+}
