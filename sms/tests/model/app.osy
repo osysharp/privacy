@@ -2,7 +2,7 @@
 namespace PrivacySmsKitTests;
 
 using Osysharp.Identity;
-using Osysharp.Inbox;
+using Osysharp.WorkQueues;
 using Osysharp.ServiceHours;
 using Osysharp.Sms;
 using Osysharp.Privacy;
