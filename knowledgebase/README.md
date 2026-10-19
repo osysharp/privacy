@@ -6,7 +6,7 @@ steps they took, are part of what they can see, have kept out of use, or have er
 found by itself.
 
 ```osy
-use Osysharp.KnowledgeBase@0;
+use Osysharp.KnowledgeBase@1;
 use Osysharp.Privacy@0;
 // Osysharp.Privacy.KnowledgeBase is not written: it arrives by itself, because the app uses what it completes (`osy lock` says so)
 ```
