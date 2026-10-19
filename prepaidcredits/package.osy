@@ -5,8 +5,8 @@
 //   class packs, and Privacy does not force credits on its apps. An app using both gets it by itself — `completes` below,
 //   and `osy lock` says so — the holder is DISCOVERED, nothing is wired.
 package Osysharp.Privacy.PrepaidCredits {
-  version     "0.1.0";
-  minPlatform "0.9.0";
+  version     "0.2.0";
+  minPlatform "0.14.0";
   summary     "Osysharp.Privacy's holder for Osysharp.PrepaidCredits — a person's packs, what they used them for and every change to them, in their copy of their data and erased when they ask.";
   completes   Osysharp.Privacy@0, Osysharp.PrepaidCredits@0;
   model "model/*.osy";
