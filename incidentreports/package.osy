@@ -10,8 +10,8 @@
 //   restricted for 36 months after a request unless the organisation confirms its own period (accident books and
 //   injury logs are kept three years or more in most places).
 package Osysharp.Privacy.IncidentReports {
-  version     "0.1.0";
-  minPlatform "0.9.0";
+  version     "0.2.0";
+  minPlatform "0.14.0";
   summary     "Osysharp.Privacy's holder for Osysharp.IncidentReports — the reports a person filed, the reports naming them with their injury, care and statement, and what they were told about an incident: special-category data kept on a legal obligation, counted, in their copy of their data, and erased from the record once its period ends.";
   completes   Osysharp.Privacy@0, Osysharp.IncidentReports@0;
   model "model/*.osy";
