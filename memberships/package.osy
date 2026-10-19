@@ -7,8 +7,8 @@
 //   below, and `osy lock` says so — the holder is DISCOVERED, nothing is wired. The visits on a counted membership are
 //   Osysharp.PrepaidCredits', whose own holder (Osysharp.Privacy.PrepaidCredits) arrives the same way.
 package Osysharp.Privacy.Memberships {
-  version     "0.1.0";
-  minPlatform "0.9.0";
+  version     "0.2.0";
+  minPlatform "0.14.0";
   summary     "Osysharp.Privacy's holder for Osysharp.Memberships — a person's memberships, who else they let in, every change and every visit, in their copy of their data and erased when they ask.";
   completes   Osysharp.Privacy@0, Osysharp.Memberships@0;
   model "model/*.osy";
