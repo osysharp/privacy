@@ -13,7 +13,7 @@ app PrivacyAccountsKitTests {
   use Osysharp.Organizations.ServicePlans@0;
   use Osysharp.Presence@0;
   use Osysharp.ServiceHours;
-  use Osysharp.WorkQueues@0;
+  use Osysharp.WorkQueues@1;
   use Osysharp.Privacy@0;
   // Osysharp.Privacy.UserAccounts, the package under test, is not written: it arrives by itself because this app uses
   // Privacy and Accounts, which it completes (`osy lock` includes it and says so).
