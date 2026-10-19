@@ -1,0 +1,21 @@
+// The producer's test project for Osysharp.Privacy.HumanRequests — a marina that asks its berth holders and an
+// outside surveyor things, and answers their privacy requests.
+app Marina {
+  model "model/**/*.osy";
+  tests "**/*.test.osy";
+  use Osysharp.HumanRequests@1;
+  use Osysharp.Privacy@0;
+  use Osysharp.Privacy.HumanRequests@1;
+  use Osysharp.WorkQueues@1;
+  use Osysharp.Identity@0;
+  use Osysharp.Organizations@0;
+  use Osysharp.Organizations.ServicePlans@0;
+  use Osysharp.Presence@0;
+  use Osysharp.Mail@0;
+  use Osysharp.Llm@2;
+  use Osysharp.Observability;
+  use Osysharp.Workflow;
+  use Osysharp.ServiceHours;
+  use Osysharp.Storage;
+  use Osysharp.Ui;
+}

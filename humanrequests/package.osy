@@ -1,0 +1,28 @@
+// Osysharp.Privacy.HumanRequests — what was asked of a person, under their privacy request: the requests put to them
+// (found by their account, or by the address a link was sent to) and the requests the app marked as about them, in
+// their copy of their data, kept out of use when they ask, and erased when they ask — with the request left standing.
+//
+//     var ask = NewRequest.For<InterviewFeedback>();
+//     ask.About = Subject.Of("Candidate", c.Id, c.Name);
+//     var r = PutRequest(ask);
+//     MarkAbout(r.Id, AskedRowKind(), new DataSubject { Emails = [c.Email] });   // a request ABOUT somebody
+//
+// ⚑ AN ERASURE LEAVES THE REQUEST, NOT THE PERSON. Who it was put to, what they were shown, what it was about and
+//   what they answered go; that a request was put, what kind of thing it asked, when, and how it ended stay — the
+//   asker's own record. A process run that told the request is told again without them.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: an app that uses Osysharp.Privacy and Osysharp.HumanRequests
+//   writes nothing to get it — `completes` below, and `osy lock` says so. The holder is DISCOVERED, nothing is wired.
+package Osysharp.Privacy.HumanRequests {
+  version     "1.1.0";
+  minPlatform "0.14.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.HumanRequests — the requests put to a person (by account, or by the address a link was sent to) and the requests marked as about them: in their copy of their data with what they were asked and answered, kept out of use, and erased when they ask — the request left standing with how it ended, and a process run that told it told again without them";
+  completes   Osysharp.Privacy@0, Osysharp.HumanRequests@1;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.HumanRequests@1;
+  use Osysharp.WorkQueues@1;
+  use Osysharp.ServiceHours;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}

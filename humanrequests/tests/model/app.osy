@@ -1,0 +1,97 @@
+// The marina: a harbour master who asks, berth holders with accounts, a surveyor outside, and a privacy officer.
+namespace Marina;
+
+using Osysharp.Identity;
+using Osysharp.WorkQueues;
+using Osysharp.HumanRequests;
+using Osysharp.ServiceHours;
+using Osysharp.Privacy;
+using Osysharp.Privacy.HumanRequests;
+
+[Role] enum MarinaRole { Authenticator, HarbourMaster, BerthHolder, Privacy }
+
+partial entity RoleGrant { security { allow read when IsAuthenticated; } }
+
+policy IsHarbourMaster => RoleGrant.Any(g => g.Member == user && g.Role == MarinaRole.HarbourMaster);
+policy IsBerthHolder   => RoleGrant.Any(g => g.Member == user && g.Role == MarinaRole.BerthHolder);
+policy IsPrivacyOfficer => RoleGrant.Any(g => g.Member == user && g.Role == MarinaRole.Privacy);
+
+policy WorksInbox       => IsHarbourMaster || IsBerthHolder || IsPrivacyOfficer;
+policy LeadsInbox       => IsHarbourMaster || IsPrivacyOfficer;
+policy AdministersInbox => IsHarbourMaster;
+policy ManagesOrganizations  => IsHarbourMaster;
+policy CollaboratesOnRecords => IsHarbourMaster;
+policy AsksPeople       => IsHarbourMaster;
+policy OverseesRequests => IsHarbourMaster;
+policy ManagesPrivacy   => IsPrivacyOfficer;
+policy PlacesLegalHolds => IsPrivacyOfficer;
+
+entity Person : Principal {
+  [MaxLength(200)] string CodeHash = "";
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+    deny read CodeHash when !IsAuthenticator;
+  }
+}
+
+partial entity ServiceHours { security { allow read, create, update, delete when IsHarbourMaster; } }
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+
+/// What a berth holder is asked when their boat is lifted out.
+public class LiftOut {
+  /// The week that suits you.
+  [MaxLength(80)] public string Week = "";
+}
+
+/// What the surveyor is asked about a hull.
+public class HullSurvey {
+  public bool Sound;
+  [MaxLength(400)] public string Found = "";
+}
+
+/// Something the marina "sent", so a test can read the link.
+entity Heard {
+  [Required, MaxLength(40)] string What;
+  [MaxLength(200)] string To = "";
+  [MaxLength(4000)] string About = "";
+  security { allow read, create when IsAuthenticated || IsAnonymous; }
+}
+
+[On] void MailTheLink(HumanRequestPut e) {
+  if (e.Request.OutsideEmail != "") { new Heard { What = "mailed", To = e.Request.OutsideEmail, About = AnswerLinkFor(e.Request) }; }
+}
+
+/// Ask a berth holder which week suits them.
+public HumanRequest AskForAWeek(Person holder, string boat) {
+  var ask = NewRequest.For<LiftOut>();
+  ask.To = holder;
+  ask.Title = "Which week suits you for lifting " + boat + " out?";
+  ask.Context = boat + " is due out of the water before the ice.";
+  return PutRequest(ask);
+}
+
+/// Ask the surveyor outside about a holder's hull — a request ABOUT the holder, put to somebody else, and marked so.
+public HumanRequest AskTheSurveyor(Person holder, string boat) {
+  var ask = NewRequest.For<HullSurvey>();
+  ask.OutsideName = "Kai Brandt";
+  ask.OutsideEmail = "kai@surveys.example";
+  ask.Title = "Is the hull of " + boat + " sound?";
+  ask.Context = boat + " belongs to " + holder.DisplayName + ".";
+  ask.About = Subject.Of("Boat", Guid.NewGuid(), boat + ", " + holder.DisplayName + "'s boat");
+  var r = PutRequest(ask);
+  MarkAbout(r.Id, AskedRowKind(), new DataSubject { Account = holder.Id });
+  return r;
+}
+
+[AuthMethod]
+string SignInWithCode(string email, string code) {
+  var p = Person.FirstOrDefault(x => x.Email == NormalisedEmail(email));
+  if (p == null || !p.IsActive) { Security.VerifyPassword(code); return ""; }
+  if (!Security.VerifyPassword(code, p.CodeHash)) { return ""; }
+  return Security.IssueJwt(p.Id, p.Email);
+}
+
+app.AuthBootstrap = new AuthBootstrap { Role = MarinaRole.Authenticator, Login = SignInWithCode };
+app.Auth = new PasswordAuth { LoginField = Email, PasswordField = CodeHash };
+app.Audit = new AuditConfig { Redact = new AuditRedaction { Properties = [Marina.Person.CodeHash] } };

@@ -1,0 +1,161 @@
+// Osysharp.Privacy.HumanRequests — a berth holder's copy, their erasure, a surveyor outside who asks to be forgotten,
+// and a request still waiting.
+using Osysharp.Identity;
+using Osysharp.Organizations;
+using Osysharp.Organizations.ServicePlans;
+using Osysharp.WorkQueues;
+using Osysharp.HumanRequests;
+using Osysharp.Privacy;
+using Osysharp.Privacy.HumanRequests;
+using Marina;
+
+[TestFixture]
+void Harbour() {
+  var hilde = new Person { Email = "hilde@marina.example", DisplayName = "Hilde Sund", CodeHash = Security.HashPassword("1111") };
+  var olav  = new Person { Email = "olav@sailor.example",  DisplayName = "Olav Berg",  CodeHash = Security.HashPassword("2222") };
+  var ines  = new Person { Email = "ines@sailor.example",  DisplayName = "Ines Moen",  CodeHash = Security.HashPassword("3333") };
+  var petra = new Person { Email = "petra@marina.example", DisplayName = "Petra Dahl", CodeHash = Security.HashPassword("4444") };
+  new RoleGrant { Member = hilde, Role = MarinaRole.HarbourMaster };
+  new RoleGrant { Member = olav,  Role = MarinaRole.BerthHolder };
+  new RoleGrant { Member = ines,  Role = MarinaRole.BerthHolder };
+  new RoleGrant { Member = petra, Role = MarinaRole.Privacy };
+  new OrganizationTier { Name = "Standard", Rank = 1, IsDefault = true };
+  var queue = new Queue { Name = "Harbour", Position = 1 };
+  foreach (var p in new List<Person> { hilde, olav, ines, petra }) { new QueueMember { Queue = queue, Member = p }; }
+}
+
+principal Hilde => Person.Single(p => p.Email == "hilde@marina.example");
+principal Olav  => Person.Single(p => p.Email == "olav@sailor.example");
+principal Ines  => Person.Single(p => p.Email == "ines@sailor.example");
+principal Petra => Person.Single(p => p.Email == "petra@marina.example");
+
+Guid AccountOf(string email) {
+  Guid id = Guid.Empty;
+  runas (Hilde) { id = Person.Single(p => p.Email == email).Id; }
+  return id;
+}
+
+/// Olav and Ines are each asked for a week, and both answer; the surveyor is asked about Olav's boat, and answers.
+class Asked { public Guid OlavsWeek; public Guid InesWeek; public Guid Survey; }
+Asked EverybodyAsked() {
+  var a = new Asked();
+  runas (Hilde) {
+    a.OlavsWeek = AskForAWeek(Olav, "Skarv").Id;
+    a.InesWeek = AskForAWeek(Ines, "Tärna").Id;
+    a.Survey = AskTheSurveyor(Olav, "Skarv").Id;
+  }
+  runas (Olav) { AnswerRequest(HumanRequest.Single(r => r.Id == a.OlavsWeek), RequestAnswer.Of(new LiftOut { Week = "week 43, my brother helps" })); }
+  runas (Ines) { AnswerRequest(HumanRequest.Single(r => r.Id == a.InesWeek), RequestAnswer.Of(new LiftOut { Week = "week 44" })); }
+  var link = "";
+  runas (Hilde) { link = Heard.Single(h => h.What == "mailed").About; }
+  AnswerByLink(AnswerLink.From(link), new RequestAnswer { Values = new Dictionary<string, string> { ["Sound"] = "false", ["Found"] = "Osmosis blisters below the waterline." } }, "Kai Brandt");
+  return a;
+}
+
+/// A privacy request Petra files and approves. Answers it.
+PrivacyRequest Ask(Osysharp.Privacy.RequestKind right, Guid? account, string email) {
+  PrivacyRequest? done = null;
+  runas (Petra) {
+    var r = FileRequest(right, account, email, IdentityCheck.KnownDetails, "Asked in person at the office.");
+    ApproveRequest(r);
+    done = r;
+  }
+  Background.Settle();
+  runas (Petra) { done = PrivacyRequest.Single(x => x.Id == done!.Id); }
+  return done!;
+}
+
+HumanRequest Request(Guid id) {
+  HumanRequest? r = null;
+  runas (Hilde) { r = HumanRequest.Single(x => x.Id == id); }
+  return r!;
+}
+
+[Test(Harbour)]
+void a_persons_copy_holds_what_they_were_asked_and_answered_and_what_was_asked_about_them() {
+  var a = EverybodyAsked();
+  var done = Ask(Osysharp.Privacy.RequestKind.Access, AccountOf("olav@sailor.example"), "");
+  runas (Petra) {
+    Assert.Equal("", done.Problem);
+    Assert.Equal(2, PlanLine.Single(l => l.Request == done && l.Category == RequestsCategory()).Items);
+    var export = ExportOf(done);
+    // What he was asked and what he answered…
+    Assert.Contains("Which week suits you for lifting Skarv out?", export);
+    Assert.Contains("week 43, my brother helps", export);
+    // …and what was asked of somebody else about his boat, with the answer.
+    Assert.Contains("Is the hull of Skarv sound?", export);
+    Assert.Contains("Osmosis blisters below the waterline.", export);
+    // Nothing of Ines.
+    Assert.DoesNotContain("Tärna", export);
+    Assert.DoesNotContain("week 44", export);
+  }
+}
+
+[Test(Harbour)]
+void an_erasure_takes_the_person_and_leaves_the_request_and_everybody_elses() {
+  var a = EverybodyAsked();
+  var done = Ask(Osysharp.Privacy.RequestKind.Erasure, AccountOf("olav@sailor.example"), "");
+  runas (Petra) {
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+  }
+  runas (Hilde) {
+    // His week: the request is there, and how it ended — not to whom it was put, what he was shown, or what he said.
+    var his = Request(a.OlavsWeek);
+    Assert.Equal(RequestStatus.Answered, his.Status);
+    Assert.Null(his.To);
+    Assert.Null(his.AnsweredBy);
+    Assert.Null(his.AnswerJson);
+    Assert.Equal("", his.Context);
+    Assert.NotNull(his.ErasedAt);
+    // The survey about his boat: who it was about, and what was found, go; who was asked, too.
+    var survey = Request(a.Survey);
+    Assert.Equal("somebody who asked to be erased", survey.SubjectLabel);
+    Assert.Equal("", survey.Context);
+    Assert.Equal("", survey.OutsideEmail);
+    Assert.Null(survey.AnswerJson);
+    // Ines's request is word for word as it was.
+    var hers = Request(a.InesWeek);
+    Assert.Equal("Ines Moen", hers.To!.DisplayName);
+    Assert.Contains("week 44", hers.AnswerJson!);
+    Assert.Equal("Tärna is due out of the water before the ice.", hers.Context);
+  }
+  // Asked again, nothing is held.
+  var again = Ask(Osysharp.Privacy.RequestKind.Access, AccountOf("olav@sailor.example"), "");
+  runas (Petra) { Assert.Equal(PlanOutcome.NotHeld, PlanLine.Single(l => l.Request == again && l.Category == RequestsCategory()).Outcome); }
+}
+
+[Test(Harbour)]
+void somebody_outside_is_found_by_the_address_the_link_went_to() {
+  var a = EverybodyAsked();
+  var done = Ask(Osysharp.Privacy.RequestKind.Erasure, null, "kai@surveys.example");
+  runas (Petra) { Assert.Equal("", done.Problem); }
+  runas (Hilde) {
+    var survey = Request(a.Survey);
+    Assert.Equal("", survey.OutsideName);
+    Assert.Equal("", survey.OutsideEmail);
+    Assert.Equal("", survey.AnsweredByName);
+    Assert.Equal(RequestStatus.Answered, survey.Status);
+    // The berth holders' own requests are untouched.
+    Assert.Contains("week 43", Request(a.OlavsWeek).AnswerJson!);
+  }
+}
+
+[Test(Harbour)]
+void a_request_still_waiting_for_the_persons_answer_holds_the_erasure_until_it_is_answered() {
+  Guid week = Guid.Empty;
+  runas (Hilde) { week = AskForAWeek(Olav, "Skarv").Id; }
+  var waiting = Ask(Osysharp.Privacy.RequestKind.Erasure, AccountOf("olav@sailor.example"), "");
+  runas (Petra) { Assert.NotEqual(RequestState.Done, waiting.State); }
+  runas (Hilde) { Assert.Equal("Olav Berg", Request(week).To!.DisplayName); }
+}
+
+[Test(Harbour)]
+void nobody_erases_a_request_by_hand() {
+  var a = EverybodyAsked();
+  // Not the harbour master who asked, nor the privacy officer outside a privacy request.
+  runas (Hilde) { Assert.Denied(() => EraseFromRequest(HumanRequest.Single(r => r.Id == a.InesWeek), null, "Tidying up.")); }
+  runas (Hilde) { Assert.Denied(() => { var r = HumanRequest.Single(x => x.Id == a.InesWeek); r.Context = ""; UnitOfWork.Commit(); }); }
+  UnitOfWork.Discard();
+  runas (Hilde) { Assert.Equal("Tärna is due out of the water before the ice.", Request(a.InesWeek).Context); }
+}

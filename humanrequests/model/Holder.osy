@@ -1,0 +1,137 @@
+namespace Osysharp.Privacy.HumanRequests;
+
+using Osysharp.Identity;
+using Osysharp.HumanRequests;
+using Osysharp.Privacy;
+
+/// How long this app keeps who a request was put to and what they answered, after it closed —
+/// `app.RequestsPrivacy = new RequestsPrivacySetup { KeepMonths = 6 };`. The tenant's own period wins.
+[AppSetting("RequestsPrivacy")]
+public class RequestsPrivacySetup {
+  /// How many months after a request closed it keeps who it was put to and what they said. 0: until they ask.
+  public int KeepMonths = 0;
+}
+
+public string RequestsCategory() { return "requests.asked"; }
+
+/// What a mark on a request is called (`MarkAbout(request.Id, AskedRowKind(), subject)`).
+public string AskedRowKind() { return "HumanRequest"; }
+
+/// ⭐ WHAT WAS ASKED OF A PERSON, AND WHAT THEY ANSWERED — the requests put to their account or sent to their address,
+/// and the requests the app marked as about them.
+public class RequestsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.HumanRequests";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = RequestsCategory(), Label = "What you were asked by us or for us, and what you answered",
+      Purpose = Translate("Getting an answer or a decision from the person who could give it"),
+      SubjectKind = "people who were asked something, and people a request was about",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("asking the person who could answer, and keeping what they said"),
+      RetainedMonths = App.Setting<RequestsPrivacySetup>().KeepMonths, RetainedFrom = RetentionStart.Collected,
+      MinMonths = 0, MaxMonths = 120, RetainedFromWords = Translate("from when the request closed"),
+      OnErasureWords = Translate("Who it was put to, what you were shown and what you answered are erased. That a request was put, and how it ended, are kept.") },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) { return RequestsOf(s).Count; }
+
+  /// A request still waiting for their answer is theirs to answer first — or to be called off.
+  public string BlockedBy(DataSubject s, DataCategory c) {
+    if (RequestsOf(s).Any(r => r.Status == RequestStatus.Open)) { return Translate("a request put to you is still waiting for an answer"); }
+    return "";
+  }
+
+  // SECURITY-INVARIANT(a-request-is-erased-for-the-person-the-privacy-request-proved): this runs in the privacy
+  // request's own run, as the app — which is what passes `ErasesRequestRecords` (nobody, by default) — and reaches only
+  // `RequestsOf(s)`: requests put to the account or the address the request proved, and requests marked as about
+  // them. Widening `RequestsOf` erases what somebody else was asked. Guarded by tests/erasure.test.osy
+  // `an_erasure_takes_the_person_and_leaves_the_request_and_everybody_elses` and
+  // `somebody_outside_is_found_by_the_address_the_link_went_to`.
+  public void Erase(DataSubject s, DataCategory c) {
+    foreach (var r in RequestsOf(s)) {
+      EraseFromRequest(r, s.Account, "Erased at the request of the person it was put to, or about.");
+      ForgetMarksOn(r.Id, AskedRowKind());
+    }
+  }
+
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
+    DateTime? latest = null;
+    foreach (var r in RequestsOf(s)) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, r.AnsweredAt ?? r.ArrivedAt);
+      Restriction.Restrict(r, c.Key, until);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    return untilLifted ? null : latest;
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<RequestRow> rows = [];
+    List<ExportItem> items = [];
+    foreach (var r in RequestsOf(s).OrderBy(r => r.ArrivedAt).ToList()) {
+      var answered = r.AnsweredAt == null ? "" : (r.Choice != "" ? r.Choice : "") + (r.Comment == "" ? "" : (r.Choice == "" ? "" : ": ") + r.Comment);
+      rows.Add(new RequestRow { At = r.ArrivedAt, Title = r.Title, Context = r.Context, About = r.SubjectLabel, Status = r.Status.Label,
+                                AnsweredAt = r.AnsweredAt, Answer = r.AnswerJson ?? "", Choice = r.Choice, Comment = r.Comment });
+      List<ExportField> fields = [new ExportField { Name = Translate("Where it stands"), Value = r.Status.Label }];
+      if (r.AnswerJson != null && r.AnswerJson! != "") { fields.Add(new ExportField { Name = Translate("What you filled in"), Value = r.AnswerJson! }); }
+      if (answered != "") { fields.Add(new ExportField { Name = Translate("What you answered"), Value = answered }); }
+      items.Add(new ExportItem { At = r.ArrivedAt, Title = r.Title, Body = r.Context, Fields = fields });
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+
+  /// A closed request older than the period loses who it was put to and what they said — for everybody. What a legal
+  /// hold covers is left alone.
+  public int Purge(DataCategory c, DateTime now) {
+    var months = RetentionOf(c).RetainedMonths;
+    if (months <= 0) { return 0; }
+    var cutoff = now.AddMonths(-months);
+    var gone = 0;
+    foreach (var r in HumanRequest.Where(r => r.ErasedAt == null && r.Status != RequestStatus.Open && r.ArrivedAt < cutoff).ToList()) {
+      if (KeepUntil(c, r.AnsweredAt ?? r.ArrivedAt) > now) { continue; }
+      if (IsMarkedHeld(r.Id, AskedRowKind())) { continue; }
+      if (r.To != null && IsHeld(new DataSubject { Account = r.To!.Id })) { continue; }
+      if (r.OutsideEmail != "" && IsHeld(new DataSubject { Emails = [r.OutsideEmail] })) { continue; }
+      EraseFromRequest(r, null, "It was kept as long as what a person answered is kept.");
+      gone = gone + 1;
+    }
+    return gone;
+  }
+}
+
+/// One request, in a person's copy of their data.
+public class RequestRow {
+  public DateTime At;
+  public string Title = "";
+  public string Context = "";
+  public string About = "";
+  public string Status = "";
+  public DateTime? AnsweredAt;
+  public string Answer = "";
+  public string Choice = "";
+  public string Comment = "";
+}
+
+/// ⭐ THE REQUESTS THAT ARE A PERSON'S — put to their account, or sent to an address of theirs, and those the app
+/// marked as about them. Each once. Already erased ones are not theirs any more.
+[SuppressWarning("cost-unbounded-read")]   // one person's requests — what a privacy request reaches
+public List<HumanRequest> RequestsOf(DataSubject s) {
+  List<HumanRequest> found = [];
+  if (s.Account != null) {
+    var id = s.Account.Value;
+    foreach (var r in HumanRequest.Where(r => r.ErasedAt == null && ((r.To != null && r.To.Id == id) || (r.AnsweredBy != null && r.AnsweredBy.Id == id))).ToList()) {
+      if (!found.Any(f => f.Id == r.Id)) { found.Add(r); }
+    }
+  }
+  if (s.Emails.Count > 0) {
+    foreach (var r in HumanRequest.Where(r => r.ErasedAt == null && s.Emails.Contains(r.OutsideEmail)).ToList()) {
+      if (!found.Any(f => f.Id == r.Id)) { found.Add(r); }
+    }
+  }
+  var marked = RowsAbout(s, AskedRowKind());
+  if (marked.Count > 0) {
+    foreach (var r in HumanRequest.Where(r => r.ErasedAt == null && marked.Contains(r.Id)).ToList()) {
+      if (!found.Any(f => f.Id == r.Id)) { found.Add(r); }
+    }
+  }
+  return found;
+}
