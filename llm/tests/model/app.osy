@@ -1,0 +1,44 @@
+// A phrasebook. Travellers ask for a phrase in another language; Ada answers privacy requests, reads what the model
+// cost and sets what it may.
+namespace Phrasebook;
+
+using Osysharp.Identity;
+using Osysharp.WorkQueues;
+using Osysharp.ServiceHours;
+using Osysharp.Llm;
+using Osysharp.Privacy;
+
+[Role] enum BookRole { Authenticator, Admin, Traveller }
+
+partial entity RoleGrant { security { allow read when IsAuthenticated; } }
+
+policy IsAdmin     => RoleGrant.Any(g => g.Member == user && g.Role == BookRole.Admin);
+policy IsTraveller => RoleGrant.Any(g => g.Member == user && g.Role == BookRole.Traveller);
+
+policy ManagesPrivacy   => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+
+// Everybody may ask for a phrase; Ada reads the meter and sets the budgets.
+policy ReadsModelUsage   => IsAdmin;
+policy ManagesModelSpend => IsAdmin;
+
+/// A traveller, or Ada.
+entity Person : Principal {
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+  }
+}
+
+/// A phrase, in the language asked for — a model call made for whoever is signed in.
+public string Phrase(string words, string language) {
+  return await Llm.Complete($"Say “{words}” in {language}.");
+}
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }

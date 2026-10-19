@@ -1,0 +1,24 @@
+// Osysharp.Privacy.Llm — the model kit's meter, as Osysharp.Privacy's holder: the calls made for a person, found by
+// their account, in their copy of their data, kept out of use when they ask, and theirs no longer when they ask to be
+// erased or when the period ends.
+//
+// ⚑ THE METER KEEPS NO TEXT. `Osysharp.Llm` records what a call cost — the model, the tokens, the price, the time —
+//   and who it was made for; never what was sent or answered. So what is personal here is small: that a person used
+//   an AI feature, when, and at what cost.
+//
+// ⚑ AN ERASURE TAKES THE PERSON OFF, AND LEAVES THE COST. The rows stay on the meter, charged to the same app, model
+//   and named scopes, with nobody's name on them; what was counted against a budget of the person's own goes.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: an app that uses Osysharp.Privacy and Osysharp.Llm writes
+//   nothing to get it — `completes` below, and `osy lock` says so. The holder is DISCOVERED, nothing is wired.
+package Osysharp.Privacy.Llm {
+  version     "1.1.0";
+  minPlatform "0.14.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.Llm's meter — the AI model calls made for a person: found by their account, in their copy of their data, kept out of use on request, taken off the meter when they ask to be erased or after thirteen months while what the calls cost stays counted, with legal holds honoured.";
+  completes   Osysharp.Privacy@0, Osysharp.Llm@2;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Llm@2;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}

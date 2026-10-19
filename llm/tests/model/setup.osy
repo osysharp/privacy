@@ -1,0 +1,16 @@
+// The phrasebook's model. In a file of its own with no `namespace`, because an `app.X = …` statement's value is
+// resolved outside the file's namespace.
+using Osysharp.Llm;
+using Osysharp.Privacy;
+using Phrasebook;
+
+app.Llm = new LlmSetup {
+  Models = [
+    // $1 a million tokens in and $5 out: a scripted answer of 1000 in and 200 out costs 2000 millionths of a dollar.
+    new LlmModel { Name = "Small", Client = new ScriptedModel { Name = "Small" }, Model = "scripted-small",
+                   Price = new LlmPrice { Input = 1, Output = 5 }, MaxOutputTokens = 1000 },
+  ],
+  Default = "Small",
+};
+
+app.Privacy = new PrivacySetup { Controller = "Phrasebook", SupervisoryAuthority = "IMY, imy.se" };

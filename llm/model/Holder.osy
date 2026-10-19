@@ -1,0 +1,124 @@
+namespace Osysharp.Privacy.Llm;
+
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Privacy;
+
+/// How long this app keeps who a model call was made for —
+/// `app.ModelCallsPrivacy = new ModelCallsPrivacySetup { KeepMonths = 6 };`. The tenant's own period, set on the
+/// retention page, wins.
+[AppSetting("ModelCallsPrivacy")]
+public class ModelCallsPrivacySetup {
+  /// How many months a call stays on its person's name. 0: until they ask.
+  public int KeepMonths = 13;
+}
+
+public string ModelCallsCategory() { return "llm.calls"; }
+
+/// The model calls made for a person, on `Osysharp.Llm`'s meter — found by the ACCOUNT a request proved: a call is a
+/// person's because they were signed in when it was made. A request that proved only an address reaches none.
+///
+/// What a row says about them is that they used an AI feature, when, on which model and at what cost. The meter
+/// keeps no text of a call.
+public class ModelCallsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Llm";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = ModelCallsCategory(), Label = "The AI model calls made for you: when, on which model, and what each cost",
+      Purpose = Translate("Accounting for what our AI features cost, and keeping each person within their limit"),
+      SubjectKind = "people with an account",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("accounting for what our AI features cost"),
+      RetainedMonths = App.Setting<ModelCallsPrivacySetup>().KeepMonths, RetainedFrom = RetentionStart.Collected,
+      MinMonths = 0, MaxMonths = 0, RetainedFromWords = Translate("from when the call was made"),
+      OnErasureWords = Translate("You were taken off them. The calls are still counted, on nobody's name.") },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return 0; }
+    var id = s.Account.Value;
+    var subject = id.ToString();
+    return ModelCall.Count(m => m.Requester == id)
+         + LlmSpend.Count(x => x.Budget.Scope == "requester" && x.Subject == subject)
+         + LlmBudget.Count(b => b.Scope == "requester" && b.Subject == subject);
+  }
+
+  /// A call that is still on its way is theirs until it reports back: the request waits for it.
+  public string BlockedBy(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return ""; }
+    return ModelCallsInFlightFor(s.Account.Value) ? Translate("an AI model call made for you is still on its way") : "";
+  }
+
+  public void Erase(DataSubject s, DataCategory c) {
+    if (s.Account == null) { return; }
+    ForgetModelCallRequester(s.Account.Value);
+  }
+
+  /// Their rows of the meter leave every ordinary read — the usage pages, a scope's total — until the restriction is
+  /// lifted. What was counted against budgets stays counted: a limit holds whether or not its rows are in use.
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
+    if (s.Account == null) { return null; }
+    var id = s.Account.Value;
+    DateTime? latest = null;
+    foreach (var row in ModelCall.Where(m => m.Requester == id).ToList()) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, row.At);
+      Restriction.Restrict(row, c.Key, until);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    return untilLifted ? null : latest;
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<ModelCallRow> rows = [];
+    List<ExportItem> items = [];
+    if (s.Account != null) {
+      var id = s.Account.Value;
+      foreach (var m in ModelCall.Where(m => m.Requester == id).OrderBy(m => m.At).ToList()) {
+        var cost = m.CostMicros / 1000000m;
+        rows.Add(new ModelCallRow { At = m.At, Model = m.Model, Purpose = m.Purpose, Outcome = m.Outcome.Name,
+                                    InputTokens = m.InputTokens, OutputTokens = m.OutputTokens, Cost = cost });
+        items.Add(new ExportItem { At = m.At, Title = Translate("An AI model call made for you"), Body = m.Purpose,
+                                   Fields = [new ExportField { Name = Translate("Model"), Value = m.Model },
+                                             new ExportField { Name = Translate("Cost (US dollars)"), Value = cost.ToString() }] });
+      }
+    }
+    return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+
+  /// A call older than the period loses who it was for — for everybody, not only for people who asked. A held
+  /// person's calls stay theirs while the hold stands. Answers how many rows that was.
+  public int Purge(DataCategory c, DateTime now) {
+    var months = RetentionOf(c).RetainedMonths;
+    if (months <= 0) { return 0; }
+    // A call made on a day is kept through that day and the period after it (`KeepUntil`): what is older than this
+    // has reached its end.
+    var cutoff = now.AddMonths(-months).AddDays(-1);
+    // Everybody with a call that old, each once — read before anybody is taken off, because taking one person off
+    // changes the very rows this reads.
+    List<Guid> people = [];
+    foreach (var row in ModelCall.Where(m => m.Requester != null && m.At < cutoff).ToList()) {
+      var who = row.Requester!.Value;
+      if (!people.Contains(who)) { people.Add(who); }
+    }
+    var gone = 0;
+    foreach (var who in people) {
+      if (IsHeld(new DataSubject { Account = who }) || ModelCallsInFlightFor(who)) { continue; }
+      gone = gone + ForgetModelCallRequester(who, cutoff);
+    }
+    return gone;
+  }
+}
+
+/// One model call, in a person's copy of their data.
+public class ModelCallRow {
+  public DateTime At;
+  /// The app's name for the model.
+  public string Model = "";
+  /// What the call was for, in the app's words. Never what was sent.
+  public string Purpose = "";
+  public string Outcome = "";
+  public int InputTokens;
+  public int OutputTokens;
+  /// In US dollars.
+  public decimal Cost;
+}

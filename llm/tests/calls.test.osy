@@ -1,0 +1,150 @@
+// Osysharp.Privacy.Llm — the model calls made for a person, under their privacy request: found by her account, and
+// only hers; taken off the meter when she asks, with what they cost still counted.
+//
+// The numbers. A scripted answer of 1000 tokens in and 200 out costs 2000 millionths of a dollar.
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Llm;
+using Phrasebook;
+
+/// The phrasebook: Ada manages privacy and the model's cost; Mia and Noor are travellers.
+[TestFixture]
+void Book() {
+  var ada = new Person { Email = "ada@phrasebook.example", DisplayName = "Ada" };
+  var mia = new Person { Email = "mia@traveller.example", DisplayName = "Mia" };
+  var noor = new Person { Email = "noor@traveller.example", DisplayName = "Noor" };
+  new RoleGrant { Member = ada, Role = BookRole.Admin };
+  new RoleGrant { Member = mia, Role = BookRole.Traveller };
+  new RoleGrant { Member = noor, Role = BookRole.Traveller };
+}
+
+principal Ada  => Person.Single(p => p.Email == "ada@phrasebook.example");
+principal Mia  => Person.Single(p => p.Email == "mia@traveller.example");
+principal Noor => Person.Single(p => p.Email == "noor@traveller.example");
+
+Guid AccountOf(string email) {
+  Guid id = Guid.Empty;
+  runas (Ada) { id = Person.Single(p => p.Email == email).Id; }
+  return id;
+}
+
+/// Mia asks for two phrases and Noor for one.
+void Asked() {
+  ScriptedAnswer.Stub((model, request) => Scripted.Text("Var ligger stationen?", 1000, 200));
+  runas (Mia) { Phrase("Where is the station?", "Swedish"); Phrase("A table for two, please.", "Swedish"); }
+  runas (Noor) { Phrase("Where is the station?", "Swedish"); }
+  Background.Settle();
+}
+
+[Test(Book)]
+void her_copy_lists_the_calls_made_for_her_and_nobody_elses() {
+  Asked();
+  runas (Ada) {
+    var mia = new DataSubject { Account = AccountOf("mia@traveller.example") };
+    var holder = new ModelCallsPersonalData();
+    Assert.Equal(2, holder.Count(mia, CategoryOf("llm.calls")));
+    var section = holder.Export(mia, CategoryOf("llm.calls"));
+    Assert.Equal(2, section.Items.Count);
+    Assert.Contains("\"Model\":\"Small\"", section.Json);
+    Assert.Contains("\"Cost\":0.002", section.Json);
+    // The meter keeps no text of a call, so her copy holds none.
+    Assert.DoesNotContain("station", section.Json);
+    // A call is a person's because they were signed in: an address alone reaches none.
+    Assert.Equal(0, holder.Count(new DataSubject { Emails = ["mia@traveller.example"] }, CategoryOf("llm.calls")));
+  }
+}
+
+[Test(Book)]
+void an_erasure_takes_her_off_the_meter_and_keeps_what_her_calls_cost() {
+  Asked();
+  var mia = AccountOf("mia@traveller.example");
+  var noor = AccountOf("noor@traveller.example");
+  runas (Ada) {
+    Assert.Equal(2, ModelCall.Count(m => m.Requester == mia));
+    var r = FileRequest(RequestKind.Erasure, mia, "", IdentityCheck.InPerson, "She showed her passport at the counter.");
+    Assert.Equal(2, PlanLine.Single(l => l.Request == r && l.Category == "llm.calls").Items);
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Contains("What we erased: The AI model calls made for you", done.Response);
+  }
+  runas (Ada) {
+    // No row is hers, and none names her in what it was charged to.
+    Assert.Equal(0, ModelCall.Count(m => m.Requester == mia));
+    Assert.Equal(0, ModelCall.Count(m => m.Scopes.Contains(mia.ToString())));
+    // The three calls are still on the meter, and still cost what they cost.
+    Assert.Equal(3, ModelCall.Count());
+    Assert.Equal(0.006m, SpentOn("app:"));
+    // Noor's is still hers.
+    Assert.Equal(1, ModelCall.Count(m => m.Requester == noor));
+    Assert.Equal(1, new ModelCallsPersonalData().Count(new DataSubject { Account = noor }, CategoryOf("llm.calls")));
+    Assert.Equal(0, new ModelCallsPersonalData().Count(new DataSubject { Account = mia }, CategoryOf("llm.calls")));
+  }
+}
+
+[Test(Book)]
+void what_was_counted_against_her_own_budget_goes_with_her() {
+  runas (Ada) { SetBudget("requester", "", LlmBudgetWindow.Day, 1m); UnitOfWork.Commit(); }
+  Asked();
+  var mia = AccountOf("mia@traveller.example");
+  runas (Ada) {
+    Assert.Equal(0.004m, SpentIn("requester", mia.ToString(), LlmBudgetWindow.Day));
+    // Two calls and one allowance are about her.
+    Assert.Equal(3, new ModelCallsPersonalData().Count(new DataSubject { Account = mia }, CategoryOf("llm.calls")));
+    var r = FileRequest(RequestKind.Erasure, mia, "", IdentityCheck.InPerson, "She showed her passport at the counter.");
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  runas (Ada) {
+    Assert.Equal(0, LlmSpend.Count(s => s.Subject == mia.ToString()));
+    // The limit for every person still stands, and Noor's allowance with it.
+    Assert.Equal(1, LlmBudget.Count());
+    Assert.Equal(0.002m, SpentIn("requester", AccountOf("noor@traveller.example").ToString(), LlmBudgetWindow.Day));
+  }
+}
+
+[Test(Book)]
+void a_call_loses_who_it_was_for_when_its_time_is_up_unless_a_hold_covers_the_person() {
+  var mia = AccountOf("mia@traveller.example");
+  var noor = AccountOf("noor@traveller.example");
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  Asked();
+  runas (Ada) { PlaceHold("", noor, "A dispute over a booking", "Her use of the service is part of it.", new DateTime(2028, 1, 1)); }
+  Background.Settle();
+
+  // A year on, every call is still on its person's name: they are kept thirteen months.
+  TestClock.Set(new DateTime(2027, 3, 2, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  runas (Ada) { Assert.Equal(2, ModelCall.Count(m => m.Requester == mia)); }
+
+  // Thirteen months and a few days on, Mia's are nobody's. Noor's stay hers: a legal hold covers her.
+  TestClock.Set(new DateTime(2027, 4, 6, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  runas (Ada) {
+    Assert.Equal(0, ModelCall.Count(m => m.Requester == mia));
+    Assert.Equal(1, ModelCall.Count(m => m.Requester == noor));
+    Assert.Equal(3, ModelCall.Count());
+    var record = PurgeRecord.Where(p => p.Category == "llm.calls").OrderByDescending(p => p.At).First();
+    Assert.False(record.Failed);
+    Assert.Equal(2, record.Count);
+  }
+}
+
+[Test(Book)]
+void a_restriction_takes_her_calls_out_of_what_others_read() {
+  Asked();
+  var mia = AccountOf("mia@traveller.example");
+  runas (Ada) {
+    Assert.Equal(3, ModelCall.Count());
+    var r = FileRequest(RequestKind.Restriction, mia, "", IdentityCheck.InPerson, "She asked us to stop using her data while a complaint is looked at.");
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  // Ada reads the meter, and no longer reads Mia's rows of it.
+  runas (Ada) {
+    Assert.Equal(1, ModelCall.Count());
+    Assert.Equal(0, ModelCall.Count(m => m.Requester == mia));
+  }
+}
