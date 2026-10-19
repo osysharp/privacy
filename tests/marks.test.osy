@@ -1,0 +1,145 @@
+// Whose data a row is, said when the work is done — and found again from what a request proved.
+
+using PrivacyKitTests;
+using Osysharp.Identity;
+using Osysharp.Privacy;
+
+[Test(Desk)]
+void a_row_marked_about_somebody_is_found_by_what_their_request_proves() {
+  var parcel = Guid.NewGuid();
+  var letter = Guid.NewGuid();
+  var other = Guid.NewGuid();
+  var ann = Guid.Empty;
+  // Staff say whose data a row is — by an address, by a number, by an account.
+  runas (Raj) {
+    ann = Person.Single(p => p.Email == "ann@customer.test").Id;
+    MarkAbout(parcel, "Parcel", new DataSubject { Emails = ["Ann@Customer.test "] });
+    MarkAbout(letter, "Letter", new DataSubject { Account = ann, Phones = ["+46700000001"] });
+    MarkAbout(other, "Parcel", new DataSubject { Emails = ["bo@customer.test"] });
+    Assert.Throws<ValidationException>(() => MarkAbout(Guid.NewGuid(), "Parcel", new DataSubject()));
+    Assert.Throws<ValidationException>(() => MarkAbout(Guid.NewGuid(), " ", new DataSubject { Account = ann }));
+  }
+  runas (Ada) {
+    // Her address — however it was typed — reaches her parcel, and not Bo's.
+    var byAddress = RowsAbout(new DataSubject { Emails = ["ann@customer.test"] }, "Parcel");
+    Assert.Equal(1, byAddress.Count);
+    Assert.Equal(parcel, byAddress[0]);
+    // Each kind is asked for by itself.
+    Assert.Equal(0, RowsAbout(new DataSubject { Emails = ["ann@customer.test"] }, "Letter").Count);
+    // Her account reaches the letter; so does her number.
+    Assert.Equal(letter, RowsAbout(new DataSubject { Account = ann }, "Letter").Single());
+    Assert.Equal(letter, RowsAbout(new DataSubject { Phones = ["+46700000001"] }, "Letter").Single());
+    // Somebody else's address reaches nothing of hers.
+    Assert.Equal(0, RowsAbout(new DataSubject { Emails = ["cy@customer.test"] }, "Parcel").Count);
+    // The marks hold a fingerprint, never the address.
+    Assert.False(SubjectMark.ToList().Any(m => m.Key.Contains("ann") || m.Key.Contains("@")));
+  }
+}
+
+[Test(Desk)]
+void what_hangs_under_a_marked_row_is_about_the_same_person() {
+  Guid customer = Guid.Empty;
+  runas (Raj) {
+    // Ann's account at the desk is ALSO about her sister, whose address is on none of it.
+    customer = Customer.Single(c => c.Number == "C-1").Id;
+    MarkAbout(customer, "Customer", new DataSubject { Emails = ["sister@customer.test"] });
+  }
+  runas (Ada) {
+    var sister = new DataSubject { Emails = ["sister@customer.test"] };
+    Assert.Equal(customer, RowsAbout(sister, "Customer").Single());
+    // The two notes on that account are about her too: the app's link says they hang under it.
+    Assert.Equal(2, RowsAbout(sister, "Note").Count);
+    // Nothing hangs under a row nobody marked.
+    Assert.Equal(0, RowsAbout(new DataSubject { Emails = ["nobody@customer.test"] }, "Note").Count);
+  }
+}
+
+[Test(Desk)]
+void an_erasure_counts_the_marks_and_forgets_them_last() {
+  runas (Raj) {
+    MarkAbout(Guid.NewGuid(), "Parcel", new DataSubject { Emails = ["ann@customer.test"] });
+    MarkAbout(Guid.NewGuid(), "Parcel", new DataSubject { Emails = ["bo@customer.test"] });
+  }
+  runas (Ada) {
+    Assert.Equal(2, SubjectMark.Count());
+    var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+    var line = PlanLine.Single(l => l.Request == r && l.Category == "privacy.marks");
+    Assert.Equal(1, line.Items);
+    Assert.Equal(PlanOutcome.Erase, line.Outcome);
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+    // Hers is gone; Bo's stands.
+    Assert.Equal(1, SubjectMark.Count());
+    Assert.Equal(0, RowsAbout(new DataSubject { Emails = ["ann@customer.test"] }, "Parcel").Count);
+    Assert.Equal(1, RowsAbout(new DataSubject { Emails = ["bo@customer.test"] }, "Parcel").Count);
+  }
+}
+
+[Test(Desk)]
+void a_mark_is_made_only_by_saying_so_and_read_back_only_by_the_privacy_desk() {
+  var row = Guid.NewGuid();
+  runas (Raj) {
+    MarkAbout(row, "Parcel", new DataSubject { Emails = ["ann@customer.test"] });
+    // Raj said it, and cannot read it back — nor learn which rows are about whom.
+    Assert.Equal(0, SubjectMark.Count());
+    Assert.Equal(0, RowsAbout(new DataSubject { Emails = ["ann@customer.test"] }, "Parcel").Count);
+    // A mark written by hand is refused.
+    Assert.Denied(() => { ForgeMark(Guid.NewGuid(), "ann@customer.test"); UnitOfWork.Commit(); });
+    UnitOfWork.Discard();
+  }
+  // Positive control: the privacy desk reads the one mark there is.
+  runas (Ada) {
+    Assert.Equal(1, SubjectMark.Count());
+    Assert.Equal(row, RowsAbout(new DataSubject { Emails = ["ann@customer.test"] }, "Parcel").Single());
+    // …and may not change what a mark says.
+    Assert.Denied(() => { RetargetMark(SubjectMark.Single(), Guid.NewGuid()); UnitOfWork.Commit(); });
+    UnitOfWork.Discard();
+  }
+}
+
+[Test(Desk)]
+void a_hold_on_a_person_is_seen_on_the_rows_marked_about_them() {
+  var parcel = Guid.NewGuid();
+  var other = Guid.NewGuid();
+  runas (Raj) {
+    MarkAbout(parcel, "Parcel", new DataSubject { Emails = ["ann@customer.test"] });
+    MarkAbout(other, "Parcel", new DataSubject { Emails = ["bo@customer.test"] });
+  }
+  runas (Ada) {
+    Assert.False(IsMarkedHeld(parcel, "Parcel"));
+    PlaceHold("ann@customer.test", null, "A dispute over a parcel", "The parcel is part of it.", DateTime.UtcNow.AddDays(90));
+  }
+  Background.Settle();
+  runas (Ada) {
+    Assert.True(IsMarkedHeld(parcel, "Parcel"));
+    Assert.False(IsMarkedHeld(other, "Parcel"));
+  }
+}
+
+[Test(Desk)]
+[runas(Ada)]
+void what_says_who_they_are_is_not_erased_while_another_category_of_the_request_waits() {
+  var ann = Customer.Single(c => c.Number == "C-1");
+  MarkAbout(Guid.NewGuid(), "Parcel", new DataSubject { Emails = ["ann@customer.test"] });
+  // Her account at the desk is held as a case, so its erasure waits. The marks are how a holder finds her rows:
+  // they must still be there when the hold lifts and what waited runs.
+  var h = PlaceCaseHold("Customer", ann.Id, "Customer C-1", "Chargeback dispute", "The card issuer's chargeback is open.",
+    DateTime.UtcNow.AddDays(60));
+  var r = FileRequest(RequestKind.Erasure, null, "ann@customer.test", IdentityCheck.KnownDetails, "Matched the order number and the address on it.");
+  ApproveRequest(r);
+
+  var waiting = PrivacyRequest.Single(x => x.Id == r.Id);
+  Assert.Equal(RequestState.Waiting, waiting.State);
+  Assert.Equal(PlanOutcome.Blocked, PlanLine.Single(l => l.Request == r && l.Category == "app.notes").Outcome);
+  // The mark stands, its line is not done, and a holder still finds the row through it.
+  Assert.Equal(1, SubjectMark.Count());
+  Assert.Null(PlanLine.Single(l => l.Request == r && l.Category == "privacy.marks").DoneAt);
+  Assert.Equal(1, RowsAbout(new DataSubject { Emails = ["ann@customer.test"] }, "Parcel").Count);
+
+  // The hold is lifted: what waited runs, and then the marks go — last.
+  LiftHold(HoldNamed(h.Id), "The chargeback was withdrawn.");
+  Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  Assert.Equal(0, Note.Count());
+  Assert.Equal(0, SubjectMark.Count());
+  Assert.NotNull(PlanLine.Single(l => l.Request == r && l.Category == "privacy.marks").DoneAt);
+}

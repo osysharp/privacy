@@ -227,9 +227,9 @@ internal void ExtendDeadline(PrivacyRequest r, int months, string reason) {
   r.ExtensionReason = reason.Trim();
   MoveDue(r, due, "Extended (Art. 12(3)): " + reason.Trim());
   if (r.DeliverTo != "") {
-    SendMail(new MailMessage { To = [r.DeliverTo], Subject = "Your request about your data will take longer",
-      Text = "We need more time to answer your request, and will answer by " + due.ToString("d MMMM yyyy") + ": " + reason.Trim() },
-      "privacy-extended-" + r.Id.ToString());
+    var mail = App.Setting<PrivacySetup>().Mails.Extended(r, due, reason.Trim());
+    mail.To = [r.DeliverTo];
+    SendMail(mail, "privacy-extended-" + r.Id.ToString());
   }
 }
 
@@ -342,6 +342,15 @@ public void RunPlan(PrivacyRequest r) {
       var keptWith = IsKept(c) ? "" : h.KeptWith(subject, c);
       line.Outcome = IsKept(c) || keptWith != "" ? PlanOutcome.Restrict : PlanOutcome.Erase;
       if (keptWith != "") { line.Reason = keptWith; }
+    }
+    // SECURITY-INVARIANT(what-identifies-a-person-is-erased-after-what-still-waits): guarded by tests/marks.test.osy
+    // `what_says_who_they_are_is_not_erased_while_another_category_of_the_request_waits`.
+    // What says who they are goes LAST — and that means after what is still WAITING, too. While another category of
+    // this request waits on a block, its holder still has to find its rows through this one when the block clears:
+    // erased now, the waiting category would find nothing later and be told it was done. It runs when nothing waits.
+    if (line.Outcome == PlanOutcome.Erase && identifying.Contains(line.Category)
+        && pending.Any(l => l.Outcome == PlanOutcome.Blocked && !identifying.Contains(l.Category))) {
+      continue;
     }
     try {
       if (line.Outcome == PlanOutcome.Erase) { h.Erase(subject, c); line.DoneAt = now; }

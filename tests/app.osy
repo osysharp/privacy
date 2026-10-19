@@ -10,7 +10,7 @@ app PrivacyKitTests {
   use Osysharp.Organizations@0;
   use Osysharp.Organizations.ServicePlans@0;
   use Osysharp.Presence@0;
-  use Osysharp.WorkQueues@0;
+  use Osysharp.WorkQueues@1;
   use Osysharp.ServiceHours;
   use Osysharp.Mail@0;
   use Osysharp.Privacy@0;

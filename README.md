@@ -36,6 +36,11 @@ public class DeskPersonalData : IPersonalDataHolder { … }   // what the app ho
   `HoldLiftNeedsSecondPerson` (an organisation may set it) asks a second person to confirm. Page:
   `/settings/privacy/holds`.
 
+- **Whose data a kit's row is** (0.9.0): the code that starts a piece of work says who it is about —
+  `MarkAbout(assignment.Id, "Assignment", new DataSubject { Emails = [order.CustomerEmail] })` — and every holder
+  finds the row from what a request proved (`RowsAbout`), with what hangs under it (`ISubjectLinks`). A mark keeps a
+  fingerprint of an address, never the address; only the privacy desk reads it back; a request erases the marks last.
+
 - **Requests on the Inbox** (0.3.0): `PrivacyRequest : WorkItem`, due one calendar month after receipt (an absolute
   `DueAt`), extendable with a reason. Staff record how they checked who it is; a signed-in person asks on `/privacy`
   after a step-up (Osysharp.Privacy.UserAccounts, which arrives by itself in an app that also uses Accounts), and the answer goes only to the address they
@@ -46,6 +51,11 @@ public class DeskPersonalData : IPersonalDataHolder { … }   // what the app ho
 [Osysharp.Privacy.MailReceiving](https://osyrin.com/templates/kits/privacy-mail-receiving/),
 [Osysharp.Privacy.Notifications](https://osyrin.com/templates/kits/privacy-notifications/),
 [Osysharp.Privacy.Sms](https://osyrin.com/templates/kits/privacy-sms/), and
-[Osysharp.Privacy.UserAccounts](https://osyrin.com/templates/kits/privacy-user-accounts/) for the signed-in step-up. A person without an account asks
+[Osysharp.Privacy.UserAccounts](https://osyrin.com/templates/kits/privacy-user-accounts/) for the signed-in step-up.
+The agent family has four: [Osysharp.Privacy.Agents](../privacy-agents) (what an AI agent did for and about a
+person — erased while its record's hash chain still verifies), [Osysharp.Privacy.Llm](../privacy-llm) (the model
+meter), [Osysharp.Privacy.Assignments](../privacy-assignments) (who asked for a piece of work, who was on it and
+what was written on it) and [Osysharp.Privacy.WorkRepositories](../privacy-work-repositories) (what an assignment
+knows, each kind kept for its own time). A person without an account asks
 the desk: staff file the request on their behalf (`FileRequest`), record how they checked who it is, and deliver the
 answer themselves.

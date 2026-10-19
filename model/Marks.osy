@@ -1,0 +1,189 @@
+namespace Osysharp.Privacy;
+
+// ── whose data a row is, said when the work is done ────────────────────────────────────────────────────────────────
+//
+// A field can say whose data a row is (`[DataSubject] Customer Customer;`) when the app owns the entity. A row of a
+// kit's — an assignment, a piece of an agent's work, an item of evidence — is about whoever the work happens to be
+// about, and only the code that starts the work knows who that is. It says so once:
+//
+//     MarkAbout(assignment.Id, "Assignment", new DataSubject { Emails = [order.CustomerEmail] });
+//
+// and every holder that keeps rows of that kind finds them from what a request proved (`RowsAbout`). What hangs under
+// a marked row — the work attached to an assignment, the items in its repository, the work an agent handed on — is
+// about the same person without being marked: the holder that knows the link says so (`ISubjectLinks`).
+
+/// ⭐ ONE ROW IS ABOUT ONE PERSON — by their account, or by the fingerprint of an address or a number of theirs. The
+/// address itself is never kept here.
+///
+/// Written only by `MarkAbout`, never changed, and read only by whoever manages privacy and by a request's own run.
+public entity SubjectMark {
+  /// The row, and what kind of row it is, as the holder that keeps it names its kinds: "Assignment", "AgentTask".
+  [Required, Immutable, Index] Guid Row;
+  [Required, Immutable, MaxLength(200)] string Kind;
+  /// Who it is about: their account, or a keyed fingerprint of their address or number (`Security.Fingerprint`).
+  [Immutable, Index] Guid? Account;
+  [Immutable, MaxLength(200), Index] string Key = "";
+  [Immutable] DateTime At = DateTime.UtcNow;
+
+  security {
+    // SECURITY-INVARIANT(a-mark-is-made-by-saying-so-and-read-only-by-the-privacy-desk): a mark says "this row is about
+    // that person". Anybody doing the work may SAY it, through `MarkAbout`; nobody rewrites one, and only whoever
+    // manages privacy (and a request's own run) reads them back — so a mark never tells a colleague which records are
+    // about whom, and nobody points one at another row to pull it into somebody's erasure. Guarded by
+    // tests/marks.test.osy `a_mark_is_made_only_by_saying_so_and_read_back_only_by_the_privacy_desk`.
+    allow read, delete when ManagesPrivacy;
+    allow create when IsAuthenticated;
+    deny create except via MarkAbout;
+    deny update;
+  }
+}
+
+/// ⭐ SAY WHOSE DATA A ROW IS: the row `row`, of the kind `kind`, is about `subject` — their account, each address and
+/// each number given. Said again, it changes nothing a request finds. Whoever does the work says it; nobody but the
+/// privacy desk reads it back.
+///
+///     MarkAbout(task.Id, "AgentTask", new DataSubject { Account = customer.Id });
+[Server, Authorize(IsAuthenticated)]
+public void MarkAbout(Guid row, string kind, DataSubject subject) {
+  if (kind.Trim() == "") { throw new ValidationException("Say what kind of row it is, as its holder names it: \"Assignment\", \"AgentTask\"."); }
+  if (subject.Account == null && subject.Emails.Count == 0 && subject.Phones.Count == 0) {
+    throw new ValidationException("Say who the row is about: their account, an address or a number.");
+  }
+  if (subject.Account != null) { new SubjectMark { Row = row, Kind = kind, Account = subject.Account }; }
+  foreach (var key in KeysOf(subject)) { new SubjectMark { Row = row, Kind = kind, Key = key }; }
+}
+
+/// The fingerprints of a person's addresses and numbers — what a mark is matched by.
+public List<string> KeysOf(DataSubject subject) {
+  List<string> keys = [];
+  foreach (var e in subject.Emails) { if (e.Trim() != "") { keys.Add(Security.Fingerprint(e.Trim().ToLower())); } }
+  foreach (var p in subject.Phones) { if (p.Trim() != "") { keys.Add(Security.Fingerprint(p.Trim())); } }
+  return keys;
+}
+
+/// A row, by its id and its kind.
+public class SubjectRow {
+  public Guid Row;
+  public string Kind = "";
+}
+
+/// Something that knows which rows hang under another: the work attached to an assignment, the items in its
+/// repository, the work a piece of work handed on. A row under a marked row is about the same person. Every
+/// implementation in the app is asked (`App.Implementations<ISubjectLinks>()`) — nothing is wired.
+public interface ISubjectLinks {
+  /// The rows directly under the row `row` of the kind `kind` — none, for a kind it does not know.
+  List<SubjectRow> Under(Guid row, string kind);
+}
+
+/// ⭐ THE ROWS OF ONE KIND THAT ARE ABOUT A PERSON: the ones marked about them — by the account or by any address or
+/// number the request proved — and everything that hangs under a row marked about them, of whatever kind.
+[SuppressWarning("cost-unbounded-read")]   // one person's marks, and what hangs under each — what a request reaches
+public List<Guid> RowsAbout(DataSubject subject, string kind) {
+  List<SubjectRow> reached = [];
+  var keys = KeysOf(subject);
+  if (subject.Account != null) {
+    var id = subject.Account.Value;
+    foreach (var m in SubjectMark.Where(m => m.Account == id).ToList()) { Reach(reached, m.Row, m.Kind); }
+  }
+  if (keys.Count > 0) {
+    foreach (var m in SubjectMark.Where(m => keys.Contains(m.Key)).ToList()) { Reach(reached, m.Row, m.Kind); }
+  }
+  var links = App.Implementations<ISubjectLinks>();
+  for (var i = 0; i < reached.Count; i++) {
+    foreach (var l in links) {
+      foreach (var under in l.Under(reached[i].Row, reached[i].Kind)) { Reach(reached, under.Row, under.Kind); }
+    }
+  }
+  return reached.Where(r => r.Kind == kind).Select(r => r.Row).ToList();
+}
+
+void Reach(List<SubjectRow> reached, Guid row, string kind) {
+  if (reached.Any(r => r.Row == row && r.Kind == kind)) { return; }
+  reached.Add(new SubjectRow { Row = row, Kind = kind });
+}
+
+/// Whether a legal hold in force covers anybody the row `row` was marked about — what a holder asks before it purges
+/// a marked row at the end of its period.
+[SuppressWarning("cost-unbounded-read")]   // one row's marks
+public bool IsMarkedHeld(Guid row, string kind) {
+  foreach (var m in SubjectMark.Where(m => m.Row == row && m.Kind == kind).ToList()) {
+    if (IsKeyHeld(m.Key, m.Account)) { return true; }
+  }
+  return false;
+}
+
+/// How many marks say a row is about `subject`.
+public int CountMarks(DataSubject subject) {
+  var n = 0;
+  var keys = KeysOf(subject);
+  if (subject.Account != null) {
+    var id = subject.Account.Value;
+    n = n + SubjectMark.Count(m => m.Account == id);
+  }
+  if (keys.Count > 0) { n = n + SubjectMark.Count(m => keys.Contains(m.Key)); }
+  return n;
+}
+
+/// Forget every mark that says a row is about `subject`. The marks are how every holder finds those rows, so a
+/// request erases them LAST (the category `privacy.marks` identifies). Answers how many went.
+[SuppressWarning("cost-unbounded-read")]   // one person's marks
+public int ForgetMarks(DataSubject subject) {
+  var gone = 0;
+  var keys = KeysOf(subject);
+  if (subject.Account != null) {
+    var id = subject.Account.Value;
+    foreach (var m in SubjectMark.Where(m => m.Account == id).ToList()) { m.Delete(); gone = gone + 1; }
+  }
+  if (keys.Count > 0) {
+    foreach (var m in SubjectMark.Where(m => keys.Contains(m.Key)).ToList()) { m.Delete(); gone = gone + 1; }
+  }
+  return gone;
+}
+
+/// What `subject` was marked on, as their copy of their data lists it: the kind of record, and when it was marked.
+[SuppressWarning("cost-unbounded-read")]   // one person's marks
+public List<MarkedRow> MarksOf(DataSubject subject) {
+  List<MarkedRow> rows = [];
+  var keys = KeysOf(subject);
+  if (subject.Account != null) {
+    var id = subject.Account.Value;
+    foreach (var m in SubjectMark.Where(m => m.Account == id).OrderBy(m => m.At).ToList()) { rows.Add(new MarkedRow { Kind = m.Kind, At = m.At }); }
+  }
+  if (keys.Count > 0) {
+    foreach (var m in SubjectMark.Where(m => keys.Contains(m.Key)).OrderBy(m => m.At).ToList()) { rows.Add(new MarkedRow { Kind = m.Kind, At = m.At }); }
+  }
+  return rows;
+}
+
+/// One mark in a person's copy of their data.
+public class MarkedRow {
+  public string Kind = "";
+  public DateTime At;
+}
+
+/// Forget every mark on one row — when the row itself is gone.
+[SuppressWarning("cost-unbounded-read")]   // one row's marks
+public void ForgetMarksOn(Guid row, string kind) {
+  foreach (var m in SubjectMark.Where(m => m.Row == row && m.Kind == kind).ToList()) { m.Delete(); }
+}
+
+/// Every row of one kind that somebody was marked on, each once — what a holder walks when it clears marked rows at
+/// the end of their period, for everybody.
+[SuppressWarning("cost-unbounded-read")]   // the marks of one kind
+public List<Guid> MarkedRows(string kind) {
+  List<Guid> rows = [];
+  foreach (var m in SubjectMark.Where(m => m.Kind == kind).ToList()) {
+    if (!rows.Contains(m.Row)) { rows.Add(m.Row); }
+  }
+  return rows;
+}
+
+/// The accounts a row was marked as about — none, when it was marked by an address or a number alone.
+[SuppressWarning("cost-unbounded-read")]   // one row's marks
+public List<Guid> MarkedAccountsOf(Guid row, string kind) {
+  List<Guid> accounts = [];
+  foreach (var m in SubjectMark.Where(m => m.Row == row && m.Kind == kind && m.Account != null).ToList()) {
+    if (!accounts.Contains(m.Account!.Value)) { accounts.Add(m.Account!.Value); }
+  }
+  return accounts;
+}

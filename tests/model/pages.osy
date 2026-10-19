@@ -30,6 +30,14 @@ component DeskFrame() {
   }
 }
 
+/// The desk's front door: the open requests.
+[Route("/")] [Layout(DeskFrame)] [Authorize(WorksInbox)] [Render(CSR)] [Title("Inbox")]
+component HomePage() {
+  render {
+    InboxPanes("open", r => "/inbox/open/i/" + r.Id, Guid.Empty) { InboxOverview("open", noun: "request"); }
+  }
+}
+
 /// A view of the work.
 [Route("/inbox/{view}")] [Layout(DeskFrame)] [Authorize(WorksInbox)] [Render(CSR)] [Title("Inbox")]
 component InboxPage(string view) {

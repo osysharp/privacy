@@ -23,6 +23,8 @@ public class ControllerSettingsSections : ISettingsProvider {
 /// The controller's legal name — named here, saved with the bar. Until it is, privacy answers name "the people who run
 /// it", and the page says so.
 public component ControllerEditor() {
+  // The controller is one row (the editor names it in place, so the list is every row and takes the new one at once).
+  [SuppressWarning("ui-page-query-without-a-take")]
   live var rows = PrivacyController.ToList();
   string fallback = "";
   string authority = "";

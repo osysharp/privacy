@@ -1,5 +1,7 @@
 namespace Osysharp.Privacy;
 
+using Osysharp.Mail;
+
 // ── the tenant's settings: how long, from when, in whose words ─────────────────────────────────────────────────────
 //
 // The tenant is the CONTROLLER (GDPR Art. 4(7)): it decides its bases and periods. A kit declares a default and the
@@ -29,6 +31,23 @@ public class PrivacySetup {
   /// Off by default: one person, with a reason, recorded, is the bar. An organisation's policy may require it for
   /// every app — and it is the app's code or the organisation that sets it, never the people it binds.
   [OrgPolicy(OrgPolicyMode.Lock)] public bool HoldLiftNeedsSecondPerson = false;
+  /// The mail a request's person is sent — derive from `PrivacyMails` and override to write it in the app's own words.
+  public PrivacyMails Mails = new PrivacyMails();
+}
+
+/// The mail the kit sends a request's person. One method per mail, asked wherever it goes out, so an override reaches
+/// every send. The kit sets who it goes to (and, for an answered erasure, that it is forgotten once sent) — an override
+/// writes the words: `Subject`, and `Text` and/or `Html`.
+public class PrivacyMails {
+  /// The answer is coming later than the first month: by `due`, because of `reason`.
+  public virtual MailMessage Extended(PrivacyRequest r, DateTime due, string reason) {
+    return new MailMessage { Subject = "Your request about your data will take longer",
+      Text = "We need more time to answer your request, and will answer by " + due.ToString("d MMMM yyyy") + ": " + reason };
+  }
+  /// The answer to the request — `text` is the answer as written, with where to fetch the data when there is some.
+  public virtual MailMessage Answer(PrivacyRequest r, string text) {
+    return new MailMessage { Subject = "Our answer to your request about your data", Text = text };
+  }
 }
 
 /// Which privacy-request plans wait for a person's approval before they run.

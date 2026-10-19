@@ -289,3 +289,37 @@ app = new() {
     new Classification(Personal.Content) { Roles = [DeskRole.Admin, DeskRole.Staff, DeskRole.Legal, DeskRole.Authenticator] },
   ],
 };
+
+// ── whose data a row is, said at run time ───────────────────────────────────────────────────────────────────────────
+
+/// A customer's notes hang under the customer: when a customer is marked as about somebody, the notes are about
+/// them too, without a mark of their own.
+public class NotesUnderACustomer : ISubjectLinks {
+  public List<SubjectRow> Under(Guid row, string kind) {
+    if (kind != "Customer") { return []; }
+    return Note.Where(n => n.Customer.Id == row).ToList().Select(n => new SubjectRow { Row = n.Id, Kind = "Note" }).ToList();
+  }
+}
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity SubjectMark { }
+
+/// A mark made without `MarkAbout`.
+public void ForgeMark(Guid row, string email) { new SubjectMark { Row = row, Kind = "Customer", Key = Security.Fingerprint(email) }; }
+
+/// A mark pointed at another row by hand.
+public void RetargetMark(SubjectMark mark, Guid row) { mark.Row = row; }
+
+/// The desk's nightly backups — a copy nobody can search by person, overwritten within thirty days. Declared so a
+/// person is told of it, and told the truth: it cannot be counted for them.
+public class BackupsPersonalData : IPersonalDataHolder {
+  public string Key() => "PrivacyKitTests.Backups";
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = "app.backups", Label = "Nightly backups of all of the above", Purpose = "Recovering from a failure",
+      SubjectKind = "everyone", Basis = RetentionBasis.LegitimateInterest,
+      OnErasureWords = "Overwritten within 30 days. It cannot be found by person.", FoundByPerson = false },
+  ];
+  public int Count(DataSubject s, DataCategory c) => 0;
+  public void Erase(DataSubject s, DataCategory c) { }
+  public ExportSection Export(DataSubject s, DataCategory c) => new ExportSection { Category = c.Key };
+}

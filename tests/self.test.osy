@@ -326,3 +326,17 @@ void a_person_erasing_themselves_is_told_what_was_erased_and_the_request_keeps_n
   Assert.Contains("What we erased: Your customer account", mail);
   Assert.Contains("What we keep, and why: Your name and email address on vouchers we issued", mail);
 }
+
+[Test(Desk)]
+void a_copy_nobody_can_find_by_person_is_said_to_be_uncounted_never_none() {
+  List<KeptCategory> page = [];
+  runas (Ann) { page = WhatWeKeepAboutMe(); }
+  Background.Settle();
+  runas (Ann) { page = WhatWeKeepAboutMe(); }
+  // The backups cannot be searched by person: her page says so, in the desk's own words, instead of "none".
+  var backups = page.Single(c => c.Key == "app.backups");
+  Assert.False(backups.Counted);
+  Assert.Equal("Overwritten within 30 days. It cannot be found by person.", backups.Kept);
+  // Positive control: what CAN be found by person is counted.
+  Assert.True(page.Single(c => c.Key == "privacy.marks").Counted);
+}

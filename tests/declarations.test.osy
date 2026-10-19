@@ -53,7 +53,8 @@ void every_holder_is_found_without_being_wired() {
   Assert.Contains("PrivacyKitTests", keys);       // …and the one the platform writes from its `[PersonalData]` visits
   Assert.Contains("Osysharp.Privacy", keys);      // the kit's own, for the platform's copies
   Assert.Contains("Osysharp.Mail", keys);         // the outbox the kit's own answers go through
-  Assert.Equal(4, keys.Count);
+  Assert.Contains("PrivacyKitTests.Backups", keys);   // the desk's backups, which nobody can count by person
+  Assert.Equal(5, keys.Count);
 }
 
 [Test(Desk)]
@@ -65,7 +66,7 @@ void the_declarations_have_no_problem() {
 [runas(Ada)]
 void the_records_of_processing_list_every_category_with_its_basis_and_period() {
   var rows = RecordsOfProcessing();
-  Assert.Equal(7, rows.Count);
+  Assert.Equal(8, rows.Count);
   // The visits are by name too — held by the holder the platform writes from `[PersonalData]`, under the app's name.
   Assert.Equal("PrivacyKitTests", rows.Single(r => r.Category == "app.visits").Holder);
   Assert.Equal(RetentionBasis.Contract, rows.Single(r => r.Category == "mail.sent").Basis);
@@ -81,4 +82,13 @@ void the_records_of_processing_list_every_category_with_its_basis_and_period() {
 [runas(Raj)]
 void only_the_people_managing_privacy_read_the_records_of_processing() {
   Assert.Throws<NotAuthorized>(() => RecordsOfProcessing());
+}
+
+/// The door into the desk: the right code signs a person in, and a wrong code or an unknown address answers the
+/// same nothing.
+[Test(Desk)]
+void signing_in_takes_the_right_code_and_nothing_else() {
+  Assert.NotEqual("", SignInWithCode("ada@desk.test", "1111"));
+  Assert.Equal("", SignInWithCode("ada@desk.test", "9999"));
+  Assert.Equal("", SignInWithCode("nobody@desk.test", "1111"));
 }

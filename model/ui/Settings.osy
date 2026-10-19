@@ -92,6 +92,8 @@ public component RetentionEditor() {
   List<RetentionRow> rows = [];
   List<RetentionPreset> presets = [];
   [SuppressWarning("cost-page-reads-the-whole-table")]   // one row per category the app declares, at most
+  [SuppressWarning("ui-unbounded-list-does-not-page")]
+  [SuppressWarning("ui-page-query-without-a-take")]
   live var settings = RetentionSetting.ToList();
   PlanReviewFacts review = new PlanReviewFacts();
   bool loaded = false;

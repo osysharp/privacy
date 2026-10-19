@@ -38,7 +38,7 @@ void a_finished_request_is_purged_with_its_inbox_history_once_its_own_period_end
 [runas(Ada)]
 void every_category_of_every_holder_is_purged_and_recorded() {
   PurgeNow();
-  Assert.Equal(7, PurgeRecord.Count());
+  Assert.Equal(8, PurgeRecord.Count());
   Assert.True(PurgeRecord.Any(p => p.Category == "app.visits"));
   Assert.False(PurgeRecord.Any(p => p.Failed));
 }
