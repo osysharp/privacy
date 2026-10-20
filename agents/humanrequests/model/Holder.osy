@@ -1,0 +1,87 @@
+namespace Osysharp.Privacy.Agents.HumanRequests;
+
+using Osysharp.Identity;
+using Osysharp.Agents;
+using Osysharp.Agents.HumanRequests;
+using Osysharp.Privacy;
+
+// ── who handed an inbox item to an agent ──────────────────────────────────────────────────────────────────────────
+//
+// A handover says who gave the item to the agent. That is `agents.handovers`, found by the person's account. An
+// erasure takes them off it; that the item was handed over, to which agent, and how it came back stay. An item an
+// agent still holds waits for the erasure (`BlockedBy`): it comes back to whoever handed it over.
+
+public string AgentHandoverCategory() { return "agents.handovers"; }
+
+public class AgentHandoverPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Agents.HumanRequests";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = AgentHandoverCategory(),
+      Label = "That you handed an item of your inbox to an AI agent, and how it came back",
+      Purpose = Translate("Accounting for who gave our AI agents which work"),
+      SubjectKind = "people who work the inbox",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("accounting for who gave our AI agents which work"),
+      RetainedMonths = 0, RetainedFrom = RetentionStart.Collected, MinMonths = 0, MaxMonths = 0,
+      RetainedFromWords = Translate("for as long as the item is kept"),
+      OnErasureWords = Translate("You were taken off them: they no longer say who handed the item over. That it was handed over, and how it came back, is kept.") },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    var person = HandedBy(s);
+    return person == null ? 0 : HandoversBy(person!).Count;
+  }
+
+  public string BlockedBy(DataSubject s, DataCategory c) {
+    var person = HandedBy(s);
+    if (person == null || HandoversWaitingOn(person!) == 0) { return ""; }
+    return Translate("an AI agent still holds an item you handed over");
+  }
+
+  // SECURITY-INVARIANT(an-agents-record-is-erased-by-a-privacy-request-not-by-hand): runs in the request's own run,
+  // as the app — what passes the agents kit's `ErasesAgentRecords` — and takes off only the account the request
+  // proved. Guarded by tests/handovers.test.osy `who_handed_an_item_to_an_agent_is_taken_off_it_and_nobody_else`.
+  public void Erase(DataSubject s, DataCategory c) {
+    var person = HandedBy(s);
+    if (person != null) { ForgetWhoHandedWorkToAgents(person!); }
+  }
+
+  /// Not kept out of use: a handover is the inbox's record of where an item went. An erasure takes the person off it.
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) { return null; }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    List<HandoverRow> rows = [];
+    List<ExportItem> items = [];
+    var person = HandedBy(s);
+    if (person != null) {
+      foreach (var h in HandoversBy(person!)) {
+        var row = new HandoverRow { At = h.At, Agent = BareName(h.Agent), Item = h.Item.Title ?? "", CameBack = h.State.Label, Note = h.Note };
+        rows.Add(row);
+        items.Add(new ExportItem { At = h.At, Title = Translate("You handed an item to an AI agent"), Body = row.Item,
+                                   Fields = [new ExportField { Name = Translate("Agent"), Value = row.Agent },
+                                             new ExportField { Name = Translate("Now"), Value = row.CameBack }] });
+      }
+    }
+    return new ExportSection { Category = AgentHandoverCategory(), Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+
+  /// Nothing goes by time: it is kept as long as the item is.
+  public int Purge(DataCategory c, DateTime now) { return 0; }
+}
+
+/// One item a person handed over, as their copy carries it.
+public class HandoverRow {
+  public DateTime At;
+  public string Agent = "";
+  public string Item = "";
+  /// Where it stands: with the agent, handed back, taken back.
+  public string CameBack = "";
+  public string Note = "";
+}
+
+Principal? HandedBy(DataSubject s) {
+  if (s.Account == null) { return null; }
+  var id = s.Account.Value;
+  return Principal.FirstOrDefault(p => p.Id == id);
+}

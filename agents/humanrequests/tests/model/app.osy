@@ -1,0 +1,70 @@
+// The lost-property desk: two clerks and a privacy officer, a claim a passenger made, and the agent that matches it.
+namespace LostProperty;
+
+using Osysharp.Identity;
+using Osysharp.WorkQueues;
+using Osysharp.Agents;
+using Osysharp.Agents.HumanRequests;
+using Osysharp.ServiceHours;
+using Osysharp.Privacy;
+
+[Role] enum DeskRole { Authenticator, Clerk, Privacy, Matching }
+
+partial entity RoleGrant { security { allow read when IsAuthenticated; } }
+
+policy IsClerk          => RoleGrant.Any(g => g.Member == user && g.Role == DeskRole.Clerk);
+policy IsPrivacyOfficer => RoleGrant.Any(g => g.Member == user && g.Role == DeskRole.Privacy);
+policy IsMatching       => RoleGrant.Any(g => g.Member == user && g.Role == DeskRole.Matching);
+
+policy WorksInbox       => IsClerk || IsMatching || IsPrivacyOfficer;
+policy LeadsInbox       => IsPrivacyOfficer;
+policy AdministersInbox => IsPrivacyOfficer;
+policy ManagesOrganizations  => IsPrivacyOfficer;
+policy CollaboratesOnRecords => IsClerk;
+policy AsksPeople       => IsClerk;
+policy OverseesRequests => IsPrivacyOfficer;
+policy ManagesPrivacy   => IsPrivacyOfficer;
+policy PlacesLegalHolds => IsPrivacyOfficer;
+policy UsesAgents       => IsClerk;
+policy SupervisesAgents => IsPrivacyOfficer;
+
+entity Person : Principal {
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+  }
+}
+
+partial entity ServiceHours { security { allow read, create, update, delete when IsPrivacyOfficer; } }
+partial entity WorkItem { security { allow read when IsClerk || IsMatching || IsPrivacyOfficer; } }
+
+/// A passenger's claim for something left aboard — an item of the desk's inbox.
+entity Claim : WorkItem {
+  [MaxLength(200)] string Described = "";
+  security { allow read, create, update when IsClerk || IsMatching; allow read when IsPrivacyOfficer; }
+}
+
+/// What the matcher hands back.
+public class Match {
+  public bool Found;
+  public string Where = "";
+}
+
+/// Matches one claim against what was found aboard.
+public class MatchClaim : Skill<string, Match> {
+  public override string Description => "Match a claim against what was found aboard.";
+}
+
+[Actor(Roles = [DeskRole.Matching])]
+public class Matcher : Agent {
+  public static Person Principal => new Person { Email = "matcher@ferryline.example", DisplayName = "Matcher" };
+  public override string Purpose => "You match lost-property claims against what was found aboard.";
+  public override List<SkillBase> Skills => [new MatchClaim()];
+  // It may ask whoever handed it the claim one focused question; the item stays with it until it hands it back.
+  public override AsksPeople People => new AsksPeople { MayChoose = true };
+}
+
+/// Hand a claim to the matcher, for whoever is signed in.
+public AgentOutcome<Match> HandToMatcher(Claim claim) {
+  return await AgentDesk.Hand(claim, Agents.Of<Matcher>(), new MatchClaim(), claim.Described);
+}

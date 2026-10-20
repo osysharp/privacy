@@ -1,0 +1,103 @@
+// Osysharp.Privacy.Agents.HumanRequests — Lena hands two claims to the matcher; Omar hands one. Lena leaves and asks
+// to be erased: her copy lists what she handed over, the erasure waits while the matcher still holds one, and then
+// she is taken off every handover — and Omar is not.
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Workflow;
+using Osysharp.WorkQueues;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Agents.HumanRequests;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents.HumanRequests;
+using LostProperty;
+
+[TestFixture]
+void Desk() {
+  var lena = new Person { Email = "lena@ferryline.example", DisplayName = "Lena Sund" };
+  var omar = new Person { Email = "omar@ferryline.example", DisplayName = "Omar Lind" };
+  var pia  = new Person { Email = "pia@ferryline.example",  DisplayName = "Pia Holm" };
+  new RoleGrant { Member = lena, Role = DeskRole.Clerk };
+  new RoleGrant { Member = omar, Role = DeskRole.Clerk };
+  new RoleGrant { Member = pia,  Role = DeskRole.Privacy };
+  var queue = new Queue { Name = "Lost property", Position = 1 };
+  foreach (var p in new List<Person> { lena, omar, pia }) { new QueueMember { Queue = queue, Member = p }; }
+  new QueueMember { Queue = queue, Member = Actor.Of<Matcher>() };
+  new AgentSeat { Agent = "LostProperty.Matcher", Sponsor = pia };
+}
+
+principal Lena => Person.Single(p => p.Email == "lena@ferryline.example");
+principal Omar => Person.Single(p => p.Email == "omar@ferryline.example");
+principal Pia  => Person.Single(p => p.Email == "pia@ferryline.example");
+
+Guid AccountOf(string email) {
+  Guid id = Guid.Empty;
+  runas (Pia) { id = Person.Single(p => p.Email == email).Id; }
+  return id;
+}
+
+void GoOn() {
+  for (var i = 0; i < 3; i++) {
+    Background.Settle();
+    foreach (var wait in AgentWait.Where(w => w.Status == AgentWaitStatus.Waiting).ToList()) { Workflow.Settle(wait); }
+  }
+}
+
+/// A clerk takes a claim and hands it to the matcher. `asks`: the matcher asks the clerk a question first, and holds
+/// the claim until it is answered.
+Guid HandsOver(string title, bool asks) {
+  var claim = new Claim { Title = title, Described = title, Queue = Queue.Single(q => q.Name == "Lost property") };
+  UnitOfWork.Commit();
+  Workflow.Settle(claim);
+  TakeWork(claim);
+  Workflow.Settle(claim);
+  var script = asks
+    ? AgentScript.Of(Says.AskPerson("Was it the morning crossing?", "Two umbrellas were found.", 100, 20), Says.HandBack(new Match { Found = true, Where = "Shelf 4" }))
+    : AgentScript.Of(Says.HandBack(new Match { Found = false }));
+  ScriptedAnswer.Stub((model, request) => script.Answer(model, request));
+  HandToMatcher(claim);
+  Workflow.Settle(claim);
+  return claim.Id;
+}
+
+[Test(Desk)]
+void who_handed_an_item_to_an_agent_is_taken_off_it_and_nobody_else() {
+  runas (Lena) {
+    HandsOver("A black umbrella", true);
+    HandsOver("A green scarf", false);
+  }
+  GoOn();
+  runas (Omar) { HandsOver("A grey rucksack", false); }
+  GoOn();
+  var lena = new DataSubject { Account = AccountOf("lena@ferryline.example") };
+  var holder = new AgentHandoverPersonalData();
+  runas (Pia) {
+    // Her copy lists both items she handed over.
+    var copy = holder.Export(lena, CategoryOf("agents.handovers")).Json;
+    Assert.Contains("A black umbrella", copy);
+    Assert.Contains("A green scarf", copy);
+    Assert.DoesNotContain("A grey rucksack", copy);
+    Assert.Equal(2, holder.Count(lena, CategoryOf("agents.handovers")));
+    // The matcher still holds the umbrella: her erasure would wait.
+    Assert.Equal("an AI agent still holds an item you handed over", holder.BlockedBy(lena, CategoryOf("agents.handovers")));
+  }
+  runas (Lena) {
+    AnswerAgentQuestion(QuestionsForMe().Single(), "Yes, the 07:40.");
+    UnitOfWork.Commit();
+  }
+  GoOn();
+  runas (Pia) {
+    Assert.Equal("", holder.BlockedBy(lena, CategoryOf("agents.handovers")));
+    var r = FileRequest(RequestKind.Erasure, AccountOf("lena@ferryline.example"), "", IdentityCheck.InPerson, "She asked on her last day.");
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    // Taken off both of hers; that each was handed over, and how it came back, stays.
+    Assert.Equal(0, holder.Count(lena, CategoryOf("agents.handovers")));
+    Assert.Equal(2, AgentHandover.Count(h => h.By == null));
+    Assert.Equal(3, AgentHandover.Count(h => h.State == AgentHandoverState.Back));
+    // Omar's is still his.
+    Assert.Equal(AccountOf("omar@ferryline.example"), AgentHandover.Single(h => h.By != null).By!.Id);
+  }
+}
