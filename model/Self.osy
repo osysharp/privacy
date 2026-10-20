@@ -139,7 +139,8 @@ public enum AskState {
 /// identifier is typed in or found along the way, and a person cannot write a request, its subject, its deadline or
 /// where it is delivered. A request staff file is delivered by them, never mailed to the address they typed. Guarded by
 /// tests/self.test.osy `an_ask_without_a_fresh_proof_files_nothing`, `a_request_is_about_its_askers_own_proven_address_only`,
-/// `a_person_cannot_write_a_request_or_its_subject` and `a_request_staff_filed_is_never_mailed_to_the_address_they_typed`.
+/// `a_person_cannot_write_a_request_or_its_subject` and `a_request_staff_filed_is_never_mailed_to_the_address_they_typed`;
+/// on a request with no browser visit (an API client) by Platform.Tests `PrivacyAskWithoutABrowserTests`.
 public entity PrivacyAsk {
   RequestKind Right;
   /// The signed-in person asking — none for a person with no account, who asks from their browser (`Visit`).
@@ -164,8 +165,12 @@ public entity PrivacyAsk {
       where Requester == user || (Requester == null && Visit != null && Visit == Visitor.Id);
     allow delete when ManagesPrivacy;
     deny create where Request != null || Problem != "";
-    // The browser is the asker's own, never another's: an ask names THIS visit.
-    deny create where Visit != Visitor.Id;
+    // The browser is the asker's own, never another's: an ask with no account names THIS visit. A signed-in ask is
+    // bound to its account (`Requester == user` above) and the intake never reads its visit — and a request with no
+    // browser visit (an API client; Admin, until it issued visitors) has `Visitor.Id` null, which a rule answers
+    // UNKNOWN, and an UNKNOWN deny applies. Unscoped, this line refused every signed-in ask there (measured on the
+    // beta in Admin, 2026-10-20). Guarded by PrivacyAskWithoutABrowserTests.
+    deny create where Requester == null && Visit != Visitor.Id;
     deny update;
   }
 }
