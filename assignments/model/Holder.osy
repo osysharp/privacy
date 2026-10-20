@@ -1,0 +1,360 @@
+namespace Osysharp.Privacy.Assignments;
+
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.Privacy;
+
+// ── what the assignments kit holds about a person, and what a request does to it ──────────────────────────────────
+//
+// Two different people are in an assignment. The people ON it — who asked, who owns it, who does the work, who
+// follows it — are there by their ACCOUNT, and a request finds them by it. The person it is ABOUT — the tenant whose
+// tap leaks, the customer whose parcel is late — is in its words, and only the app knows who that is: it says so
+// (`MarkAssignmentAbout`), and a request finds the assignment by the account, the address or the number marked.
+//
+// Neither is erased by deleting the assignment: it is the organisation's record of work it did.
+
+/// What the app says about its assignments' words: which of them say who an assignment is about.
+public class AssignmentPrivacyRules {
+  /// The words in THIS assignment's text that say who it is about — their name as your records have it, a flat or an
+  /// order number that is theirs. An erasure replaces each with the stand-in. None: nothing says what their name is,
+  /// so every sentence of the assignment is erased whole.
+  public virtual List<string> PersonalWords(Assignment a) { return []; }
+}
+
+/// How this app keeps its assignments private —
+/// `app.AssignmentsPrivacy = new AssignmentsPrivacySetup { StandIn = "a former tenant", Rules = new HousingPrivacy() };`.
+/// The tenant's own periods, set on the retention page, win.
+[AppSetting("AssignmentsPrivacy")]
+public class AssignmentsPrivacySetup {
+  /// How many months after it closed an assignment ABOUT somebody keeps the words that say so. 0: until they ask.
+  public int KeepAboutMonths = 24;
+  /// How many months after an assignment closed the people who were ON it stay named. 0: until they ask.
+  public int KeepPeopleMonths = 0;
+  /// What stands where the person an assignment was about was named: "a former customer".
+  public string StandIn = "somebody no longer here";
+  /// What stands where somebody who worked on an assignment was named in its sentences.
+  public string FormerColleague = "somebody no longer here";
+  /// Erase every sentence whole, even when the words that say who it was about are known.
+  public bool AlwaysBlank = false;
+  public AssignmentPrivacyRules Rules = new AssignmentPrivacyRules();
+}
+
+public string AssignmentPeopleCategory() { return "assignments.people"; }
+public string AssignmentAboutCategory() { return "assignments.about"; }
+
+/// What a mark on an assignment is called (`MarkAbout(id, AssignmentKind(), subject)`).
+public string AssignmentKind() { return "Assignment"; }
+
+/// ⭐ SAY WHOSE DATA AN ASSIGNMENT IS: `a` is about `subject` — and so is everything opened under it, and every row
+/// its attached work stands for.
+///
+///     MarkAssignmentAbout(job, new DataSubject { Emails = [fault.TenantEmail] });
+[Server, Authorize(IsAuthenticated)]
+public void MarkAssignmentAbout(Assignment a, DataSubject subject) { MarkAbout(a.Id, AssignmentKind(), subject); }
+
+/// What hangs under an assignment: the assignments opened under it, and the row each piece of attached work stands
+/// for — an agent's receipt, a request, a record of the app's. Marked about somebody, they are about them too.
+public class UnderAnAssignment : ISubjectLinks {
+  [SuppressWarning("cost-unbounded-read")]   // one assignment's children and attached work
+  public List<SubjectRow> Under(Guid row, string kind) {
+    List<SubjectRow> under = [];
+    if (kind != AssignmentKind()) { return under; }
+    foreach (var child in Assignment.Where(a => a.Parent != null && a.Parent.Id == row).ToList()) {
+      under.Add(new SubjectRow { Row = child.Id, Kind = AssignmentKind() });
+    }
+    foreach (var work in AssignmentWork.Where(w => w.Assignment.Id == row && w.Subject != null && w.SubjectType != "").ToList()) {
+      under.Add(new SubjectRow { Row = work.Subject!.Value, Kind = work.SubjectType });
+    }
+    return under;
+  }
+}
+
+public class AssignmentsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Assignments";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = AssignmentPeopleCategory(),
+      Label = "The assignments you asked for, owned, worked on or followed, and what you did on them",
+      Purpose = Translate("Knowing who asked for a piece of work, who was accountable for it and who did what"),
+      SubjectKind = "people who ask for work and do it",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("accounting for work that was asked for and done"),
+      RetainedMonths = App.Setting<AssignmentsPrivacySetup>().KeepPeopleMonths, RetainedFrom = RetentionStart.Collected,
+      MinMonths = 0, MaxMonths = 0, RetainedFromWords = Translate("from when the assignment was closed"),
+      OnErasureWords = Translate("You are taken off them. The assignments stay, and what you did on them reads as done by somebody no longer here.") },
+    new DataCategory {
+      Key = AssignmentAboutCategory(),
+      Label = "Assignments about you: what was asked for, what was done and how it ended",
+      Purpose = Translate("Doing what was asked for you, and showing afterwards what was done"),
+      SubjectKind = "people an assignment is about",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("showing what work was done, and how it ended"),
+      RetainedMonths = App.Setting<AssignmentsPrivacySetup>().KeepAboutMonths, RetainedFrom = RetentionStart.Collected,
+      MinMonths = 0, MaxMonths = 0, RetainedFromWords = Translate("from when the assignment was closed"),
+      OnErasureWords = Translate("The words that say it was about you are erased. That the work was done, and how it ended, is kept.") },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (c.Key == AssignmentPeopleCategory()) {
+      var person = PersonOf(s);
+      return person == null ? 0 : AssignmentsOf(person!).Count;
+    }
+    return AssignmentsAbout(s).Count(a => a.AnonymisedAt == null);
+  }
+
+  /// An assignment about somebody is erased once it is closed: what is still being done for them needs to know who
+  /// they are. The request waits, and is asked again every day and when the app says a block has cleared.
+  public string BlockedBy(DataSubject s, DataCategory c) {
+    if (c.Key != AssignmentAboutCategory()) { return ""; }
+    foreach (var a in AssignmentsAbout(s)) {
+      if (a.State == AssignmentState.Open) { return Translate("an assignment about you is still open"); }
+    }
+    return "";
+  }
+
+  // SECURITY-INVARIANT(an-assignment-is-erased-by-a-privacy-request-not-by-hand): these calls run in the request's
+  // own run, as the app itself — which is what lets them pass the assignments kit's `ErasesAssignments` (nobody, by
+  // default) — and reach only the assignments the person the request proved is ON (`AssignmentsOf`) or that were
+  // marked as ABOUT them (`AssignmentsAbout`). Widening either erases somebody else's record. Guarded by
+  // tests/guards.test.osy `nobody_erases_an_assignment_by_hand_and_a_privacy_request_does` and
+  // `what_others_read_is_the_same_before_and_after_somebody_is_erased`.
+  public void Erase(DataSubject s, DataCategory c) {
+    var setup = App.Setting<AssignmentsPrivacySetup>();
+    if (c.Key == AssignmentPeopleCategory()) {
+      var person = PersonOf(s);
+      if (person == null) { return; }
+      foreach (var a in AssignmentsOf(person!)) {
+        TakePersonOffAssignment(a, person!, setup.FormerColleague, "They asked to be erased.");
+      }
+      return;
+    }
+    foreach (var a in AssignmentsAbout(s)) {
+      if (a.AnonymisedAt != null) { continue; }
+      AnonymiseAssignment(a, ScrubFor(a, s, "The person it was about asked to be erased."));
+    }
+  }
+
+  /// Kept out of use. An assignment about them leaves every ordinary read whole — itself, its criteria, its work, its
+  /// activity and who is on it. Somebody who worked on assignments keeps them in use for everybody else: what leaves
+  /// is each line they wrote.
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
+    DateTime? latest = null;
+    if (c.Key == AssignmentPeopleCategory()) {
+      var person = PersonOf(s);
+      if (person == null) { return null; }
+      foreach (var line in AssignmentActivity.Where(l => l.By == person).ToList()) {
+        DateTime? until = untilLifted ? null : KeepUntil(c, line.At);
+        Restriction.Restrict(line, c.Key, until);
+        if (until != null && (latest == null || until > latest)) { latest = until; }
+      }
+      return untilLifted ? null : latest;
+    }
+    foreach (var a in AssignmentsAbout(s)) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, a.ClosedAt ?? a.OpenedAt);
+      foreach (var x in AssignmentActivity.Where(x => x.Assignment == a).ToList()) { Restriction.Restrict(x, c.Key, until); }
+      foreach (var x in AssignmentWork.Where(x => x.Assignment == a).ToList()) { Restriction.Restrict(x, c.Key, until); }
+      foreach (var x in AssignmentCriterion.Where(x => x.Assignment == a).ToList()) { Restriction.Restrict(x, c.Key, until); }
+      foreach (var x in AssignmentLink.Where(x => x.From == a).ToList()) { Restriction.Restrict(x, c.Key, until); }
+      foreach (var x in AssignmentParticipant.Where(x => x.Assignment == a).ToList()) { Restriction.Restrict(x, c.Key, until); }
+      Restriction.Restrict(a, c.Key, until);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    return untilLifted ? null : latest;
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    return c.Key == AssignmentPeopleCategory() ? ExportAssignmentPeople(s) : ExportAssignmentsAbout(s);
+  }
+
+  /// What reached the end of its period, for everybody. An assignment marked as about somebody loses the words that
+  /// say so (or every sentence, when nothing says what they are), and the note of whose it was. The people on an
+  /// assignment are taken off it when the tenant set a period for that. What a legal hold covers is left alone.
+  public int Purge(DataCategory c, DateTime now) {
+    var months = RetentionOf(c).RetainedMonths;
+    if (months <= 0) { return 0; }
+    var cutoff = now.AddMonths(-months);
+    var setup = App.Setting<AssignmentsPrivacySetup>();
+    var held = HeldCaseRows();
+    var gone = 0;
+    if (c.Key == AssignmentAboutCategory()) {
+      foreach (var top in MarkedAssignments()) {
+        foreach (var a in WithEverythingUnder(top)) {
+          if (a.AnonymisedAt != null || a.State == AssignmentState.Open || a.ClosedAt == null) { continue; }
+          if (a.ClosedAt >= cutoff || KeepUntil(c, a.ClosedAt!.Value) > now) { continue; }
+          if (held.Contains(a.Id) || held.Contains(top.Id) || IsMarkedHeld(top.Id, AssignmentKind())) { continue; }
+          AnonymiseAssignment(a, ScrubFor(a, SubjectOfMarks(top), "It was kept as long as an assignment about somebody is."));
+          gone = gone + 1;
+        }
+        // Once the whole of it is erased, nothing needs to say whose it was.
+        if (WithEverythingUnder(top).All(a => a.AnonymisedAt != null)) { ForgetMarksOn(top.Id, AssignmentKind()); }
+      }
+      return gone;
+    }
+    foreach (var a in Assignment.Where(a => a.ClosedAt != null && a.ClosedAt < cutoff).ToList()) {
+      if (a.State == AssignmentState.Open || KeepUntil(c, a.ClosedAt!.Value) > now || held.Contains(a.Id)) { continue; }
+      foreach (var person in PeopleOn(a)) {
+        if (IsHeld(new DataSubject { Account = person.Id })) { continue; }
+        TakePersonOffAssignment(a, person, setup.FormerColleague, "They were named on it as long as the people on an assignment are.");
+        gone = gone + 1;
+      }
+    }
+    return gone;
+  }
+}
+
+// ── who and which ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// The account a request proved, as the person it is. Null when it proved none, or the account is gone.
+Principal? PersonOf(DataSubject s) {
+  if (s.Account == null) { return null; }
+  var id = s.Account.Value;
+  return Principal.FirstOrDefault(p => p.Id == id);
+}
+
+/// ⭐ THE ASSIGNMENTS THAT ARE ABOUT A PERSON: the ones the app marked as about them — by the account, an address or
+/// a number the request proved — and every assignment opened under one of those. Oldest first.
+[SuppressWarning("cost-unbounded-read")]   // one person's assignments — what a request reaches
+public List<Assignment> AssignmentsAbout(DataSubject s) {
+  var ids = RowsAbout(s, AssignmentKind());
+  if (ids.Count == 0) { return []; }
+  return Assignment.Where(a => ids.Contains(a.Id)).OrderBy(a => a.OpenedAt).ToList();
+}
+
+/// Every assignment somebody was marked on.
+[SuppressWarning("cost-unbounded-read")]   // the marked assignments — what the daily purge walks
+List<Assignment> MarkedAssignments() {
+  var ids = MarkedRows(AssignmentKind());
+  if (ids.Count == 0) { return []; }
+  return Assignment.Where(a => ids.Contains(a.Id)).OrderBy(a => a.OpenedAt).ToList();
+}
+
+/// An assignment, and every assignment opened under it, however deep.
+[SuppressWarning("cost-unbounded-read")]   // one assignment's tree
+List<Assignment> WithEverythingUnder(Assignment top) {
+  List<Assignment> all = [top];
+  for (var i = 0; i < all.Count; i++) {
+    foreach (var child in Assignment.Where(a => a.Parent == all[i]).ToList()) {
+      if (!all.Any(x => x.Id == child.Id)) { all.Add(child); }
+    }
+  }
+  return all;
+}
+
+/// The people named on an assignment: whoever asked, whoever owns it, and everybody with a seat on it.
+[SuppressWarning("cost-unbounded-read")]   // one assignment's people
+List<Principal> PeopleOn(Assignment a) {
+  List<Principal> people = [];
+  if (a.Requester != null) { people.Add(a.Requester!); }
+  if (a.Owner != null && !people.Any(p => p.Id == a.Owner!.Id)) { people.Add(a.Owner!); }
+  foreach (var seat in AssignmentParticipant.Where(p => p.Assignment == a).ToList()) {
+    if (!people.Any(p => p.Id == seat.Person.Id)) { people.Add(seat.Person); }
+  }
+  return people;
+}
+
+/// The accounts an assignment was marked as about, as one subject per account — what a purge knows of whose it was.
+DataSubject SubjectOfMarks(Assignment top) {
+  var accounts = MarkedAccountsOf(top.Id, AssignmentKind());
+  return new DataSubject { Account = accounts.Count == 0 ? null : accounts[0] };
+}
+
+/// How the words of `a` are erased for `s`: the stand-in for the words that say who it is about — what the app's
+/// rule names, the name and address of the account, and every address and number the request proved — or, when
+/// nothing says what their name is, every sentence whole.
+AssignmentScrub ScrubFor(Assignment a, DataSubject s, string why) {
+  var setup = App.Setting<AssignmentsPrivacySetup>();
+  List<string> names = [];
+  foreach (var word in setup.Rules.PersonalWords(a)) { if (word.Trim() != "") { names.Add(word.Trim()); } }
+  var person = PersonOf(s);
+  if (person != null && person!.DisplayName.Trim() != "") { names.Add(person!.DisplayName.Trim()); }
+  List<string> words = [];
+  foreach (var n in names) { words.Add(n); }
+  if (person != null && person!.Email.Trim() != "") { words.Add(person!.Email.Trim()); }
+  foreach (var e in s.Emails) { if (e.Trim() != "") { words.Add(e.Trim()); } }
+  foreach (var p in s.Phones) { if (p.Trim() != "") { words.Add(p.Trim()); } }
+  return new AssignmentScrub { Words = words, StandIn = setup.StandIn, Blank = setup.AlwaysBlank || names.Count == 0, Why = why };
+}
+
+// ── the person's copy ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/// An assignment somebody was on, in their copy of their data: what it was, what they were on it, and what they did.
+public class AssignmentRoleRow {
+  public DateTime OpenedAt;
+  public string Title = "";
+  /// What they were on it: requester, owner, assignee, contributor, observer — or "" when they only did something on it.
+  public string Role = "";
+  public string State = "";
+  /// Each thing they did on it, with its time.
+  public List<AssignmentDeedRow> Did = [];
+}
+
+/// One thing somebody did on an assignment.
+public class AssignmentDeedRow {
+  public DateTime At;
+  public string What = "";
+}
+
+/// An assignment about somebody, in their copy of their data: every sentence of it.
+public class AssignmentAboutRow {
+  public DateTime OpenedAt;
+  public DateTime? ClosedAt;
+  public string Title = "";
+  public string Goal = "";
+  public string Scope = "";
+  public string State = "";
+  public string Outcome = "";
+  public string Limitations = "";
+  public string Obligations = "";
+  /// What done meant, and where each criterion stood: "Met: The tap no longer leaks — a new washer".
+  public List<string> Criteria = [];
+  /// Each piece of attached work, and how it ended.
+  public List<string> Work = [];
+  /// Every line of its activity, with its time.
+  public List<AssignmentDeedRow> Activity = [];
+}
+
+[SuppressWarning("cost-unbounded-read")]   // one person's assignments — an access export reaches all of them
+ExportSection ExportAssignmentPeople(DataSubject s) {
+  List<AssignmentRoleRow> rows = [];
+  List<ExportItem> items = [];
+  var person = PersonOf(s);
+  if (person != null) {
+    foreach (var a in AssignmentsOf(person!)) {
+      var seat = AssignmentParticipant.FirstOrDefault(p => p.Assignment == a && p.Person == person);
+      var role = seat != null ? seat!.Role.Name : a.Requester == person ? "Requester" : a.Owner == person ? "Owner" : "";
+      var row = new AssignmentRoleRow { OpenedAt = a.OpenedAt, Title = a.Title, Role = role, State = a.State.Name };
+      foreach (var line in AssignmentActivity.Where(l => l.Assignment == a && l.By == person).OrderBy(l => l.Seq).ToList()) {
+        row.Did.Add(new AssignmentDeedRow { At = line.At, What = line.Said });
+      }
+      rows.Add(row);
+      items.Add(new ExportItem { At = a.OpenedAt, Title = a.Title, Body = string.Join("\n", row.Did.Select(d => d.What).ToList()),
+                                 Fields = [new ExportField { Name = Translate("What you were on it"), Value = role }] });
+    }
+  }
+  return new ExportSection { Category = AssignmentPeopleCategory(), Json = JsonSerializer.Serialize(rows), Items = items };
+}
+
+[SuppressWarning("cost-unbounded-read")]   // one person's assignments, every sentence — an access export reaches all of it
+ExportSection ExportAssignmentsAbout(DataSubject s) {
+  List<AssignmentAboutRow> rows = [];
+  List<ExportItem> items = [];
+  foreach (var a in AssignmentsAbout(s)) {
+    if (a.AnonymisedAt != null) { continue; }
+    var row = new AssignmentAboutRow {
+      OpenedAt = a.OpenedAt, ClosedAt = a.ClosedAt, Title = a.Title, Goal = a.Goal, Scope = a.Scope, State = a.State.Name,
+      Outcome = a.Outcome, Limitations = a.Limitations, Obligations = a.Obligations };
+    foreach (var c in AssignmentCriterion.Where(c => c.Assignment == a).OrderBy(c => c.Position).ToList()) {
+      row.Criteria.Add(c.State.Name + ": " + c.Text + (c.MetBy == "" ? "" : " — " + c.MetBy) + (c.ExceptionWhy == "" ? "" : " — " + c.ExceptionWhy));
+    }
+    foreach (var w in AssignmentWork.Where(w => w.Assignment == a).OrderBy(w => w.Number).ToList()) {
+      row.Work.Add(w.State.Name + ": " + w.Title + (w.Result == "" ? "" : " — " + w.Result));
+    }
+    foreach (var line in AssignmentActivity.Where(l => l.Assignment == a).OrderBy(l => l.Seq).ToList()) {
+      row.Activity.Add(new AssignmentDeedRow { At = line.At, What = line.Said });
+    }
+    rows.Add(row);
+    items.Add(new ExportItem { At = a.OpenedAt, Title = a.Title, Body = a.Goal,
+                               Fields = [new ExportField { Name = Translate("Where it stands"), Value = a.State.Name },
+                                         new ExportField { Name = Translate("How it ended"), Value = a.Outcome }] });
+  }
+  return new ExportSection { Category = AssignmentAboutCategory(), Json = JsonSerializer.Serialize(rows), Items = items };
+}

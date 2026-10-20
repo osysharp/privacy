@@ -1,0 +1,24 @@
+// The producer's test project for Osysharp.Privacy.Assignments — a housing co-operative's repair service. A tenant
+// reports a fault; getting it fixed is an assignment a coordinator asks for and a caretaker does. A tenant asks for
+// her copy, and then to be erased: the repair stays on the books as work done for "a former tenant". A caretaker who
+// leaves is taken off the repairs he did, and they read as done by somebody no longer here.
+app Housing {
+  model "model/**/*.osy";
+  tests "**/*.test.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Organizations@0;
+  use Osysharp.Organizations.ServicePlans@0;
+  use Osysharp.Presence@0;
+  use Osysharp.WorkQueues@1;
+  use Osysharp.ServiceHours;
+  use Osysharp.Mail@0;
+  use Osysharp.Privacy@0;
+  use Osysharp.Assignments@1;
+  use Osysharp.Llm@2;
+  // Osysharp.Privacy.Assignments, the package under test, is not written: it arrives by itself because this app uses
+  // Privacy and Assignments, which it completes (`osy lock` includes it and says so).
+  use Osysharp.Observability;
+  use Osysharp.Workflow;
+  use Osysharp.Storage;
+  use Osysharp.Ui;
+}

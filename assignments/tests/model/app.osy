@@ -1,0 +1,102 @@
+// A housing co-operative's repair service. A tenant reports a fault in a flat; a coordinator opens the repair and a
+// caretaker does it. Ada answers privacy requests.
+namespace Housing;
+
+using Osysharp.Identity;
+using Osysharp.WorkQueues;
+using Osysharp.ServiceHours;
+using Osysharp.Assignments;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Assignments;
+
+[Role] enum HousingRole { Authenticator, Admin, Coordinator, Caretaker }
+
+partial entity RoleGrant { security { allow read when IsAuthenticated; } }
+
+policy IsAdmin       => RoleGrant.Any(g => g.Member == user && g.Role == HousingRole.Admin);
+policy IsCoordinator => RoleGrant.Any(g => g.Member == user && g.Role == HousingRole.Coordinator);
+policy IsCaretaker   => RoleGrant.Any(g => g.Member == user && g.Role == HousingRole.Caretaker);
+
+// Privacy: Ada manages it and places legal holds. A request is inbox work, which she leads.
+policy ManagesPrivacy   => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+
+// Assignments: coordinators ask for repairs and oversee every one of them. NOBODY is named to erase them
+// (`ErasesAssignments` stays nobody's): a privacy request's own run does.
+policy OpensAssignments            => IsCoordinator;
+policy OverseesAssignments         => IsCoordinator;
+policy AcceptsAssignmentExceptions => IsCoordinator;
+
+/// Somebody who works for the co-operative. Tenants have no account: they ring, or write.
+entity Person : Principal {
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+  }
+}
+
+/// A fault a tenant reported — the co-operative's own record, which names the tenant and points at the repair.
+entity Fault {
+  [Required, MaxLength(40)] string Flat;
+  [MaxLength(200)] string TenantName = "";
+  [MaxLength(320)] string TenantEmail = "";
+  [MaxLength(400)] string What = "";
+  Assignment? Repair;
+  security { allow read, create, update when IsCoordinator || IsCaretaker || IsAdmin; }
+}
+
+/// What the co-operative says about a repair's words: the tenant's name, as the fault it was opened for has it.
+public class HousingPrivacy : AssignmentPrivacyRules {
+  public override List<string> PersonalWords(Assignment a) {
+    // The fault the repair was opened for — or, for work opened under a repair, the fault of the repair at the top.
+    var top = a.Root ?? a;
+    var fault = Fault.FirstOrDefault(f => f.Repair == top);
+    if (fault == null || fault!.TenantName == "") { return []; }
+    // Her whole name, and the first name the caretakers write in their notes.
+    return [fault!.TenantName, fault!.TenantName.Split(" ")[0]];
+  }
+}
+
+/// Open the repair for a fault, with a caretaker on it — and say whose data it is.
+public Assignment OpenRepair(Fault fault, Person caretaker) {
+  var repair = OpenAssignment(new NewAssignment {
+    Title = fault.TenantName + "'s " + fault.What,
+    Goal = fault.TenantName + " in flat " + fault.Flat + " has it working again.",
+    Scope = "Reach her at " + fault.TenantEmail + ".",
+    Criteria = ["It works again", fault.TenantName + " has been told"],
+    Assignees = [caretaker],
+  });
+  fault.Repair = repair;
+  MarkAssignmentAbout(repair, new DataSubject { Emails = [fault.TenantEmail] });
+  return repair;
+}
+
+/// A piece of work with no record behind it that says whose it is: only the address it was marked with.
+public Assignment OpenOddJob(string title, string goal, string email, Person caretaker) {
+  var job = OpenAssignment(new NewAssignment { Title = title, Goal = goal, Criteria = ["Done"], Assignees = [caretaker] });
+  MarkAssignmentAbout(job, new DataSubject { Emails = [email] });
+  return job;
+}
+
+/// Every sentence an assignment holds, as whoever is reading may read it.
+public string EverythingItSays(Assignment a) {
+  var all = a.Title + "|" + a.Goal + "|" + a.Scope + "|" + a.Outcome + "|" + a.Limitations + "|" + a.Obligations + "\n";
+  foreach (var c in a.Criteria.ToList()) { all = all + c.Text + "|" + c.MetBy + "|" + c.ExceptionWhy + "\n"; }
+  foreach (var w in a.Work.ToList()) { all = all + w.Title + "|" + w.WaitingFor + "|" + w.BlockedWhy + "|" + w.Result + "\n"; }
+  foreach (var l in a.Activity.ToList()) { all = all + l.Said + "\n"; }
+  return all;
+}
+
+// ── what app code is not able to do ─────────────────────────────────────────────────────────────────────────────────
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity AssignmentActivity { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }
+
+/// A line of a repair's activity rewritten by hand.
+public void RewriteActivity(AssignmentActivity line) { line.Said = "Nothing happened."; }

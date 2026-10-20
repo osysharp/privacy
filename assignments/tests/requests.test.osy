@@ -1,0 +1,241 @@
+// Osysharp.Privacy.Assignments — a tenant's copy and her erasure, and a caretaker who leaves: the repair stays on
+// the books, with words where the person was and never a hole.
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Assignments;
+using Housing;
+
+[Test(Linden)]
+void her_copy_holds_the_assignment_about_her_and_nobody_elses() {
+  InesRepairDone();
+  BoRepairOpen();
+  var request = Ask(RequestKind.Access, null, "ines@tenant.example", "She wrote from the address on her lease and gave the flat.");
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Equal(1, PlanLine.Single(l => l.Request == done && l.Category == "assignments.about").Items);
+    var export = ExportOf(done);
+    // The repair about her, every sentence: what was asked for, what done meant and what met it, the work, each line.
+    Assert.Contains("\"category\":\"assignments.about\"", export);
+    Assert.Contains("kitchen tap leaks", export);
+    Assert.Contains("A new washer; Ines saw it run dry.", export);
+    Assert.Contains("\"Met: Ines Falk has been told", export);
+    Assert.Contains("Visit Ines on Tuesday", export);
+    Assert.Contains("Ines Falk was not home at first", export);
+    Assert.Contains("Fixed for Ines Falk on the second visit.", export);
+    Assert.Contains("\"State\":\"Completed\"", export);
+    Assert.Contains("Kept 24 months from when the assignment was closed", export);
+    // She was on no assignment herself, and nobody else's repair is in her copy.
+    Assert.DoesNotContain("\"category\":\"assignments.people\"", export);
+    Assert.DoesNotContain("hallway light", export);
+    Assert.DoesNotContain("Bo Ek", export);
+  }
+  // Asking for a copy changed nothing.
+  Assert.Contains("Ines Falk", Says(InesRepairId()));
+}
+
+Guid InesRepairId() {
+  Guid id = Guid.Empty;
+  runas (Lena) { id = Fault.Single(f => f.Flat == "12").Repair!.Id; }
+  return id;
+}
+
+[Test(Linden)]
+void an_erasure_leaves_the_repair_as_work_done_for_a_former_tenant() {
+  var ines = InesRepairDone();
+  var bo = BoRepairOpen();
+  var lines = 0;
+  runas (Lena) { lines = Repair(ines).Activity.Count(); }
+
+  var request = Ask(RequestKind.Erasure, null, "ines@tenant.example", "She wrote from the address on her lease and gave the flat.");
+
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Equal(PlanOutcome.Erase, PlanLine.Single(l => l.Request == done && l.Category == "assignments.about").Outcome);
+    // The note of whose repair it was went last; Bo's is still there.
+    Assert.Equal(1, SubjectMark.Count());
+  }
+  // Not her name, her first name or her address, in any sentence of it.
+  var says = Says(ines);
+  Assert.DoesNotContain("Ines", says);
+  Assert.DoesNotContain("Falk", says);
+  Assert.DoesNotContain("ines@tenant.example", says);
+  runas (Lena) {
+    var a = Repair(ines);
+    // Words stand where she was — the repair still reads as a piece of work, done for somebody.
+    Assert.Equal("a former tenant's kitchen tap leaks", a.Title);
+    Assert.Equal("a former tenant in flat 12 has it working again.", a.Goal);
+    Assert.Equal("Fixed for a former tenant on the second visit.", a.Outcome);
+    Assert.Equal("A new washer; a former tenant saw it run dry.", a.Criteria.Single(c => c.Position == 1).MetBy);
+    Assert.Contains("a former tenant was not home at first; wrote to a former tenant.", says);
+    // What happened is all there: it was completed, both criteria met, the visit, every line, and who did the work.
+    Assert.Equal(AssignmentState.Completed, a.State);
+    Assert.Equal(2, a.Criteria.Count(c => c.State == CriterionState.Met));
+    Assert.Equal(1, a.Work.Count());
+    Assert.Equal(lines, a.Activity.Count());
+    Assert.NotNull(a.AnonymisedAt);
+    Assert.Equal(AccountOf("omar@linden.example"), a.Owner!.Id);
+    Assert.Equal(AccountOf("lena@linden.example"), a.Requester!.Id);
+    // Bo's repair is word for word as it was.
+    Assert.Equal("Bo Ek's hallway light is out", Repair(bo).Title);
+    Assert.Null(Repair(bo).AnonymisedAt);
+  }
+  Assert.Contains("Bo Ek says the fuse is fine.", Says(bo));
+}
+
+[Test(Linden)]
+void work_opened_under_a_repair_about_her_is_about_her_too() {
+  Guid ines = Guid.Empty;
+  Guid part = Guid.Empty;
+  // The repair needs a part: a second assignment, opened under the first, that nobody marked.
+  runas (Lena) {
+    var repair = OpenRepair(Fault.Single(f => f.Flat == "12"), Omar);
+    ines = repair.Id;
+    part = OpenAssignment(new NewAssignment {
+      Title = "Order a cartridge for Ines Falk's tap", Goal = "The cartridge for Ines's tap is in the store.",
+      Criteria = ["It has arrived"], Parent = repair }).Id;
+  }
+  runas (Lena) {
+    MeetCriterion(Repair(part).Criteria.Single(), "Delivered Thursday.");
+    CompleteAssignment(Repair(part), "In the store, labelled Ines Falk.");
+  }
+  runas (Omar) {
+    var a = Repair(ines);
+    MeetCriterion(a.Criteria.Single(c => c.Position == 1), "A new cartridge.");
+    MeetCriterion(a.Criteria.Single(c => c.Position == 2), "Told Ines by mail.");
+    CompleteAssignment(a, "A new cartridge; Ines Falk confirmed.");
+  }
+
+  var request = Ask(RequestKind.Erasure, null, "ines@tenant.example", "She wrote from the address on her lease and gave the flat.");
+
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal(RequestState.Done, done.State);
+    // Two assignments were hers: the repair that was marked, and the order opened under it.
+    Assert.Equal(2, PlanLine.Single(l => l.Request == done && l.Category == "assignments.about").Items);
+  }
+  Assert.DoesNotContain("Ines", Says(part));
+  runas (Lena) {
+    Assert.Equal("Order a cartridge for a former tenant's tap", Repair(part).Title);
+    Assert.Equal("In the store, labelled a former tenant.", Repair(part).Outcome);
+    Assert.Equal(AssignmentState.Completed, Repair(part).State);
+  }
+}
+
+[Test(Linden)]
+void with_nothing_to_say_who_they_were_every_sentence_goes_and_what_happened_stays() {
+  Guid job = Guid.Empty;
+  // An odd job with no fault behind it: the co-operative's rule knows no name for it — only the address it was
+  // marked with.
+  runas (Lena) { job = OpenOddJob("Cy Rask wants the bike shed lock changed", "Cy has a key that fits.", "cy@tenant.example", Omar).Id; }
+  runas (Omar) {
+    var a = Repair(job);
+    NoteActivity(a, ActivityKind.Note, "Cy was in; new cylinder fitted.");
+    MeetCriterion(a.Criteria.Single(), "Cy tried the key.");
+    CompleteAssignment(a, "Done for Cy Rask.");
+  }
+  var lines = 0;
+  runas (Lena) { lines = Repair(job).Activity.Count(); }
+
+  var request = Ask(RequestKind.Erasure, null, "cy@tenant.example", "He wrote from the address we have for the shed.");
+
+  runas (Ada) { Assert.Equal(RequestState.Done, PrivacyRequest.Single(r => r.Id == request).State); }
+  var says = Says(job);
+  Assert.DoesNotContain("Cy", says);
+  Assert.DoesNotContain("Rask", says);
+  Assert.DoesNotContain("lock", says);
+  runas (Lena) {
+    var a = Repair(job);
+    Assert.Equal("An assignment about a former tenant", a.Title);
+    Assert.Equal("Erased.", a.Goal);
+    Assert.Equal("Erased.", a.Outcome);
+    // That it was asked for, done and completed — by whom, when, in how many steps — is still on the books.
+    Assert.Equal(AssignmentState.Completed, a.State);
+    Assert.Equal(CriterionState.Met, a.Criteria.Single().State);
+    Assert.Equal(lines, a.Activity.Count());
+    Assert.True(a.Activity.Any(l => l.Kind == ActivityKind.Completed));
+    Assert.Equal(AccountOf("lena@linden.example"), a.Requester!.Id);
+  }
+}
+
+[Test(Linden)]
+void an_erasure_waits_while_a_repair_about_him_is_open_and_runs_when_it_closes() {
+  var bo = BoRepairOpen();
+  var request = Ask(RequestKind.Erasure, null, "bo@tenant.example", "He rang from the number on his lease.");
+  runas (Ada) {
+    var waiting = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal(RequestState.Waiting, waiting.State);
+    var line = PlanLine.Single(l => l.Request == waiting && l.Category == "assignments.about");
+    Assert.Equal(PlanOutcome.Blocked, line.Outcome);
+    Assert.Equal("an assignment about you is still open", line.Reason);
+  }
+  // Nothing of it was touched: the caretaker still needs to know whose light it is.
+  Assert.Contains("Bo Ek", Says(bo));
+
+  FinishBoRepair(bo);
+  runas (Ada) { RecheckWaiting(); }
+  Background.Settle();
+
+  runas (Ada) { Assert.Equal(RequestState.Done, PrivacyRequest.Single(r => r.Id == request).State); }
+  Assert.DoesNotContain("Bo", Says(bo));
+  runas (Lena) { Assert.Equal("A new bulb for a former tenant.", Repair(bo).Outcome); }
+}
+
+[Test(Linden)]
+void a_caretaker_who_leaves_is_taken_off_the_repairs_he_did_and_they_read_as_done_by_somebody_no_longer_here() {
+  var ines = InesRepairDone();
+  var omar = AccountOf("omar@linden.example");
+
+  // His copy, first: the repair he owned and what he did on it.
+  var copy = Ask(RequestKind.Access, omar, "", "He asked in the office, on his last day.");
+  runas (Ada) {
+    var export = ExportOf(PrivacyRequest.Single(r => r.Id == copy));
+    Assert.Contains("\"category\":\"assignments.people\"", export);
+    Assert.Contains("\"Role\":\"Owner\"", export);
+    Assert.Contains("kitchen tap leaks", export);
+    Assert.Contains("Ines Falk was not home at first", export);
+    // He is on the repair; it is not ABOUT him.
+    Assert.DoesNotContain("\"category\":\"assignments.about\"", export);
+  }
+  var lines = 0;
+  runas (Lena) {
+    lines = Repair(ines).Activity.Count();
+    Assert.Contains("Omar Lund owns it.", Says(ines));
+  }
+
+  var request = Ask(RequestKind.Erasure, omar, "", "He asked in the office, on his last day.");
+
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Equal(1, PlanLine.Single(l => l.Request == done && l.Category == "assignments.people").Items);
+  }
+  var says = Says(ines);
+  Assert.DoesNotContain("Omar", says);
+  Assert.Contains("a former caretaker owns it.", says);
+  runas (Lena) {
+    var a = Repair(ines);
+    // He is off it: no seat, not its owner, and no line or criterion is his.
+    Assert.Null(a.Owner);
+    Assert.Equal(1, a.Participants.Count());
+    Assert.Equal(0, AssignmentActivity.Count(l => l.By != null && l.By.Id == omar));
+    Assert.Equal(0, AssignmentCriterion.Count(c => c.SettledBy != null && c.SettledBy.Id == omar));
+    // The repair is whole, and it is still about Ines: she did not ask.
+    Assert.Equal("Ines Falk's kitchen tap leaks", a.Title);
+    Assert.Equal(AssignmentState.Completed, a.State);
+    Assert.Equal(lines, a.Activity.Count());
+    Assert.Equal("A new washer; Ines saw it run dry.", a.Criteria.Single(c => c.Position == 1).MetBy);
+    // A page says who did it as somebody no longer here — not as the app, and not as nobody.
+    var sheet = SheetOf(a.Id);
+    Assert.StartsWith("Somebody no longer here, ", sheet.Criteria.First().Settled);
+    Assert.True(ActivityOf(a).Any(l => l.By == "Somebody no longer here"));
+    Assert.Equal("Lena Wik", sheet.Requester);
+  }
+  // He reads none of it any more.
+  runas (Omar) { Assert.Equal(0, Assignment.Count()); Assert.Equal(0, AssignmentActivity.Count()); }
+}

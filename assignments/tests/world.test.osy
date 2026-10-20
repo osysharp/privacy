@@ -1,0 +1,91 @@
+// The co-operative the tests run in: Ada answers privacy requests; Lena coordinates the repairs and oversees every
+// one; Omar and Pia are caretakers. Ines Falk in flat 12 has a leaking tap; Bo Ek in flat 3 has a dead hallway light.
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Assignments;
+using Housing;
+
+[TestFixture]
+void Linden() {
+  var ada  = new Person { Email = "ada@linden.example",  DisplayName = "Ada Strand" };
+  var lena = new Person { Email = "lena@linden.example", DisplayName = "Lena Wik" };
+  var omar = new Person { Email = "omar@linden.example", DisplayName = "Omar Lund" };
+  var pia  = new Person { Email = "pia@linden.example",  DisplayName = "Pia Holm" };
+  new RoleGrant { Member = ada,  Role = HousingRole.Admin };
+  new RoleGrant { Member = lena, Role = HousingRole.Coordinator };
+  new RoleGrant { Member = omar, Role = HousingRole.Caretaker };
+  new RoleGrant { Member = pia,  Role = HousingRole.Caretaker };
+  new Fault { Flat = "12", TenantName = "Ines Falk", TenantEmail = "ines@tenant.example", What = "kitchen tap leaks" };
+  new Fault { Flat = "3", TenantName = "Bo Ek", TenantEmail = "bo@tenant.example", What = "hallway light is out" };
+}
+
+principal Ada  => Person.Single(p => p.Email == "ada@linden.example");
+principal Lena => Person.Single(p => p.Email == "lena@linden.example");
+principal Omar => Person.Single(p => p.Email == "omar@linden.example");
+principal Pia  => Person.Single(p => p.Email == "pia@linden.example");
+
+Guid AccountOf(string email) {
+  Guid id = Guid.Empty;
+  runas (Ada) { id = Person.Single(p => p.Email == email).Id; }
+  return id;
+}
+
+/// The repair, read again as whoever is running.
+Assignment Repair(Guid id) { return Assignment.Single(a => a.Id == id); }
+
+/// Ines's tap: Lena opens the repair with Omar on it and makes him its owner; Omar visits, fixes it, tells her and
+/// closes it. Answers the repair's id.
+Guid InesRepairDone() {
+  Guid id = Guid.Empty;
+  runas (Lena) {
+    var repair = OpenRepair(Fault.Single(f => f.Flat == "12"), Omar);
+    SetAssignmentOwner(repair, Omar);
+    id = repair.Id;
+  }
+  runas (Omar) {
+    var a = Repair(id);
+    AttachWork(a, new WorkAttachment { Kind = WorkKind.Other, Key = "visit", Title = "Visit Ines on Tuesday", WaitingFor = "Ines to be home" });
+    NoteActivity(a, ActivityKind.Note, "Ines Falk was not home at first; wrote to ines@tenant.example.");
+    MeetCriterion(a.Criteria.Single(c => c.Position == 1), "A new washer; Ines saw it run dry.");
+    MeetCriterion(a.Criteria.Single(c => c.Position == 2), "Told Ines by mail.");
+    CompleteAssignment(a, "Fixed for Ines Falk on the second visit.");
+  }
+  return id;
+}
+
+/// Bo's hallway light: opened, with Pia on it, and still open.
+Guid BoRepairOpen() {
+  Guid id = Guid.Empty;
+  runas (Lena) { id = OpenRepair(Fault.Single(f => f.Flat == "3"), Pia).Id; }
+  runas (Pia) { NoteActivity(Repair(id), ActivityKind.Note, "Bo Ek says the fuse is fine."); }
+  return id;
+}
+
+/// …and then finished.
+void FinishBoRepair(Guid id) {
+  runas (Pia) {
+    var a = Repair(id);
+    MeetCriterion(a.Criteria.Single(c => c.Position == 1), "A new bulb.");
+    MeetCriterion(a.Criteria.Single(c => c.Position == 2), "Told Bo in the stairwell.");
+    CompleteAssignment(a, "A new bulb for Bo Ek.");
+  }
+}
+
+/// Every sentence of a repair, as the coordinator reads it.
+string Says(Guid id) {
+  var all = "";
+  runas (Lena) { all = EverythingItSays(Repair(id)); }
+  return all;
+}
+
+/// A request Ada files and approves. Answers its id.
+Guid Ask(RequestKind right, Guid? account, string email, string how) {
+  Guid id = Guid.Empty;
+  runas (Ada) {
+    var r = FileRequest(right, account, email, IdentityCheck.KnownDetails, how);
+    ApproveRequest(r);
+    id = r.Id;
+  }
+  return id;
+}

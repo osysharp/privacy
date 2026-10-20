@@ -1,0 +1,127 @@
+// Osysharp.Privacy.Assignments — time, holds, restriction, and what stays closed: an assignment is erased by a
+// privacy request's own run and by nobody's hand, and what everybody else may read is the same before and after.
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Assignments;
+using Housing;
+
+[Test(Linden)]
+void a_repair_loses_the_words_that_say_whose_it_was_two_years_after_it_closed_unless_a_hold_covers_them() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  var ines = InesRepairDone();
+  var bo = BoRepairOpen();
+  FinishBoRepair(bo);
+  runas (Ada) { PlaceHold("bo@tenant.example", null, "A dispute over a rent reduction", "The repair is part of it.", new DateTime(2029, 1, 1)); }
+  Background.Settle();
+
+  // A year on, nothing has reached its time.
+  TestClock.Set(new DateTime(2027, 3, 2, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Contains("Ines Falk", Says(ines));
+
+  // Two years and a few days after it closed, Ines's repair is about "a former tenant" — she never asked. Bo's is
+  // untouched: a legal hold covers him.
+  TestClock.Set(new DateTime(2028, 3, 6, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.DoesNotContain("Ines", Says(ines));
+  Assert.Contains("Bo Ek", Says(bo));
+  runas (Lena) {
+    Assert.Equal("a former tenant's kitchen tap leaks", Repair(ines).Title);
+    Assert.Equal(AssignmentState.Completed, Repair(ines).State);
+    Assert.Equal("It was kept as long as an assignment about somebody is.", Repair(ines).ErasedWhy);
+    // The caretaker who did it is still named: nobody set a period for that.
+    Assert.Equal(AccountOf("omar@linden.example"), Repair(ines).Owner!.Id);
+  }
+  runas (Ada) {
+    var record = PurgeRecord.Where(p => p.Category == "assignments.about").OrderByDescending(p => p.At).First();
+    Assert.False(record.Failed);
+    Assert.Equal(1, record.Count);
+    // The note of whose repair it was is gone with the words; Bo's stands.
+    Assert.Equal(1, SubjectMark.Count());
+    Assert.False(PurgeRecord.Any(p => p.Failed || p.Deferred));
+  }
+}
+
+[Test(Linden)]
+void a_restriction_takes_the_repair_about_her_out_of_use_for_everybody() {
+  var ines = InesRepairDone();
+  var bo = BoRepairOpen();
+  var request = Ask(RequestKind.Restriction, null, "ines@tenant.example", "She asked us to stop using her data while a complaint is looked at.");
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+  }
+  // Nobody reads it: not the coordinator who oversees every repair, not the caretaker who did it.
+  runas (Lena) {
+    Assert.Equal(0, Assignment.Count(a => a.Id == ines));
+    Assert.Equal(0, AssignmentActivity.Count(l => l.Assignment.Id == ines));
+    Assert.Equal(0, AssignmentCriterion.Count(c => c.Assignment.Id == ines));
+    // Bo's is in ordinary use.
+    Assert.Equal(1, Assignment.Count(a => a.Id == bo));
+  }
+  runas (Omar) { Assert.Equal(0, Assignment.Count()); }
+}
+
+[Test(Linden)]
+void nobody_erases_an_assignment_by_hand_and_a_privacy_request_does() {
+  var ines = InesRepairDone();
+  // The co-operative named nobody to erase assignments. Lena asked for the repair and oversees every one: she may not…
+  runas (Lena) {
+    Assert.Denied(() => AnonymiseAssignment(Repair(ines), new AssignmentScrub { Blank = true, Why = "Tidying up." }));
+    Assert.Denied(() => TakePersonOffAssignment(Repair(ines), Omar, "somebody", "Tidying up."));
+    Assert.Denied(() => { RewriteActivity(Repair(ines).Activity.OrderBy(l => l.Seq).First()); UnitOfWork.Commit(); });
+    UnitOfWork.Discard();
+  }
+  // …nor may Omar, who owns it.
+  runas (Omar) { Assert.Denied(() => AnonymiseAssignment(Repair(ines), new AssignmentScrub { Blank = true, Why = "Tidying up." })); }
+  Assert.Contains("Ines Falk", Says(ines));
+
+  // Positive control: her request, approved, erases it.
+  var request = Ask(RequestKind.Erasure, null, "ines@tenant.example", "She wrote from the address on her lease and gave the flat.");
+  runas (Ada) { Assert.Equal(RequestState.Done, PrivacyRequest.Single(r => r.Id == request).State); }
+  Assert.DoesNotContain("Ines", Says(ines));
+}
+
+[Test(Linden)]
+void what_others_read_is_the_same_before_and_after_somebody_is_erased() {
+  var ines = InesRepairDone();
+  var bo = BoRepairOpen();
+  // Before: each caretaker reads the repair they are on and not the other's; the coordinator reads both.
+  runas (Omar) { Assert.Equal(1, Assignment.Count()); Assert.Equal(ines, Assignment.Single().Id); }
+  runas (Pia)  { Assert.Equal(1, Assignment.Count()); Assert.Equal(bo, Assignment.Single().Id); }
+  runas (Lena) { Assert.Equal(2, Assignment.Count()); }
+  // The privacy desk manages requests and is on no repair: it reads none of them.
+  runas (Ada)  { Assert.Equal(0, Assignment.Count()); Assert.Equal(0, AssignmentActivity.Count()); }
+
+  var request = Ask(RequestKind.Erasure, null, "ines@tenant.example", "She wrote from the address on her lease and gave the flat.");
+  runas (Ada) { Assert.Equal(RequestState.Done, PrivacyRequest.Single(r => r.Id == request).State); }
+
+  // After: exactly the same — nobody gained a repair, nobody lost one.
+  runas (Omar) { Assert.Equal(1, Assignment.Count()); Assert.Equal(ines, Assignment.Single().Id); }
+  runas (Pia)  {
+    Assert.Equal(1, Assignment.Count());
+    Assert.Equal(bo, Assignment.Single().Id);
+    Assert.Equal(0, AssignmentActivity.Count(l => l.Assignment.Id == ines));
+  }
+  runas (Lena) { Assert.Equal(2, Assignment.Count()); }
+  runas (Ada)  { Assert.Equal(0, Assignment.Count()); Assert.Equal(0, AssignmentActivity.Count()); }
+  // And Omar can still work on the repair he owns: it was scrubbed, not locked.
+  runas (Omar) {
+    ReopenAssignment(Repair(ines), "It drips again.");
+    Assert.Equal(AssignmentState.Open, Repair(ines).State);
+  }
+}
+
+[Test(Linden)]
+void a_tenant_with_only_an_address_is_never_taken_for_somebody_on_an_assignment() {
+  InesRepairDone();
+  // A request that proved only an address reaches nobody's seat: people are on assignments by their account.
+  var request = Ask(RequestKind.Access, null, "omar@linden.example", "Somebody wrote from the caretaker's address.");
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal(PlanOutcome.NotHeld, PlanLine.Single(l => l.Request == done && l.Category == "assignments.people").Outcome);
+    Assert.Equal(PlanOutcome.NotHeld, PlanLine.Single(l => l.Request == done && l.Category == "assignments.about").Outcome);
+  }
+}

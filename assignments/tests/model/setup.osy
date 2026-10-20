@@ -1,0 +1,16 @@
+// How the co-operative keeps its repairs private. In a file of its own with no `namespace`, because an `app.X = …`
+// statement's value is resolved outside the file's namespace.
+using Osysharp.Assignments;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Assignments;
+using Housing;
+
+app.Privacy = new PrivacySetup { Controller = "Brf Linden", SupervisoryAuthority = "IMY, imy.se" };
+
+app.AssignmentsPrivacy = new AssignmentsPrivacySetup {
+  // A repair is kept with the tenant's name for two years after it closed.
+  KeepAboutMonths = 24,
+  StandIn = "a former tenant",
+  FormerColleague = "a former caretaker",
+  Rules = new HousingPrivacy(),
+};

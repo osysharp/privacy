@@ -1,0 +1,26 @@
+// Osysharp.Privacy.Assignments — the assignments kit under a person's privacy request: the people ON an assignment
+// (who asked, who owns it, who worked on it, who followed it) and the person an assignment is ABOUT, in their copy of
+// their data, kept out of use when they ask, and erased when they ask — with the assignment, what done meant and how
+// it ended left standing.
+//
+//     var job = OpenAssignment(new NewAssignment { Title = "The kitchen tap in flat 12 leaks", … });
+//     MarkAssignmentAbout(job, new DataSubject { Emails = [fault.TenantEmail] });        // whose data it is
+//
+// ⚑ AN ERASURE LEAVES WORDS, NOT A HOLE. Somebody who worked on an assignment is taken off it: their seat goes, and
+//   every line they wrote and every criterion they settled reads "Somebody no longer here". An assignment ABOUT
+//   somebody keeps what was done and how it ended; the words that say who it was about are replaced — "a former
+//   tenant" — or, when nothing says what those words are, every sentence goes and only what happened stays.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: an app that uses Osysharp.Privacy and Osysharp.Assignments
+//   writes nothing to get it — `completes` below, and `osy lock` says so. The holder is DISCOVERED, nothing is wired.
+package Osysharp.Privacy.Assignments {
+  version     "1.1.0";
+  minPlatform "0.14.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.Assignments — the people on an assignment (found by account) and the person an assignment is about (found by what the app marked): in their copy of their data, kept out of use on request, and erased on request while the assignment, its criteria and how it ended stay — a colleague reads as somebody no longer here, the person it was about as a former customer; an assignment about somebody loses its words two years after it closed, with legal holds honoured.";
+  completes   Osysharp.Privacy@0, Osysharp.Assignments@1;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Assignments@1;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}
