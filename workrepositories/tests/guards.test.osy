@@ -36,7 +36,8 @@ void each_kind_is_erased_when_its_own_time_is_up_for_everybody_and_nothing_else_
     Assert.Equal("It was kept as long as its kind is.", Item(h.LetterToMaja).ErasedWhy);
     Assert.Equal(new DateTime(2026, 10, 2), Item(h.MajasApplication).RetainUntil);
     Assert.Equal(new DateTime(2027, 4, 2), Item(h.IvoOnMaja).RetainUntil);
-    Assert.Null(Item(h.Brief).RetainUntil);
+    // The brief has no kind with its own time: it is kept the app's KeepOtherMonths (24) after the hire closes.
+    Assert.Equal(new DateTime(2028, 4, 2), Item(h.Brief).RetainUntil);
   }
 
   // Six months and a few days after the hire closed, both applications go — Sven's too, who never asked.
@@ -159,4 +160,12 @@ void nobody_who_could_not_erase_an_item_before_can_now_and_a_privacy_request_doe
   var request = Ask(RequestKind.Erasure, null, "maja@candidate.example", "She wrote from the address on her application.");
   runas (Ada) { Assert.Equal(RequestState.Done, PrivacyRequest.Single(r => r.Id == request).State); }
   Assert.Equal("", Says(h.IvoOnMaja));
+}
+
+/// The app says how long everything else a repository holds is kept once its work closes — what the privacy page and
+/// every plan read for that category.
+[Test(Fjord)]
+void the_app_says_how_long_everything_else_in_a_repository_is_kept() {
+  Assert.Equal(24, App.Setting<WorkRepositoriesPrivacySetup>().KeepOtherMonths);
+  Assert.Equal(24, CategoryOf(RepositoryItemsCategory()).RetainedMonths);
 }
