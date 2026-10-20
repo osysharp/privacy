@@ -7,13 +7,13 @@
 // ⚑ A SALE IS A BOOKKEEPING RECORD: kept restricted after a request for as long as the books are (seven years unless the
 //   seller confirms its own period), then erased.
 package Osysharp.Privacy.OfferSales {
-  version     "0.1.0";
-  minPlatform "0.9.0";
+  version     "0.2.0";
+  minPlatform "0.14.0";
   summary     "Osysharp.Privacy's holder for Osysharp.OfferSales — the purchases a person made or had made for them, how they were paid and what was refunded: kept on the books' legal obligation, counted, in their copy of their data, and erased when that ends.";
-  completes   Osysharp.Privacy@0, Osysharp.OfferSales@0;
+  completes   Osysharp.Privacy@0, Osysharp.OfferSales@1;
   model "model/*.osy";
   use Osysharp.Identity@0;
-  use Osysharp.OfferSales@0;
+  use Osysharp.OfferSales@1;
   use Osysharp.Privacy@0;
   tests "tests";
 }

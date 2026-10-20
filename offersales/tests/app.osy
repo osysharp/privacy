@@ -12,10 +12,10 @@ app PrivacyOfferSalesKitTests {
   use Osysharp.Organizations.ServicePlans@0;
   use Osysharp.Presence@0;
   use Osysharp.ServiceHours;
-  use Osysharp.WorkQueues@0;
+  use Osysharp.WorkQueues@1;
   use Osysharp.Privacy@0;
   use Osysharp.Payments@0;
-  use Osysharp.OfferSales@0;
+  use Osysharp.OfferSales@1;
   // Osysharp.Privacy.OfferSales, the package under test, is not written: it arrives by itself because this app uses
   // Privacy and OfferSales, which it completes (`osy lock` includes it and says so).
   use Osysharp.Storage;

@@ -11,7 +11,7 @@ includes it and says so); to keep it out, `without Osysharp.Privacy.OfferSales;`
 
 ```osy
 use Osysharp.Privacy@0;
-use Osysharp.OfferSales@0;
+use Osysharp.OfferSales@1;
 ```
 
 Its category is `purchases` — *What you bought from us* — kept on a legal obligation: restricted for 84 months after a
