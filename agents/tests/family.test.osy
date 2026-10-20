@@ -1,0 +1,80 @@
+// The agent family under one request. A late loan is chased as a case: an assignment about the borrower, the desk's
+// work attached to it, and what the desk handed back kept in the case's repository. The library says whose data it
+// is ONCE — for the case — and one erasure reaches the case, the agent's record and the item, each through its own
+// holder.
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Assignments;
+using Osysharp.WorkRepositories;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+[Test(Town)]
+void one_erasure_reaches_the_case_the_agents_record_and_what_it_found() {
+  Guid chase = Guid.Empty;
+  runas (Sol) {
+    var loan = Loan.Single(l => l.Title == "Roadside Picnic");
+    var script = AgentScript.Of(
+      Says.Tool(Actions.Of(LoansOf), EmailArg("leo@reader.example")),
+      Says.HandBack(new Reminder { Subject = "Roadside Picnic is late", Text = "Dear Leo Lind, Roadside Picnic was due on 1 March." }));
+    ScriptedAnswer.Stub((model, request) => script.Answer(model, request));
+    chase = ChaseLateLoan(loan);
+  }
+  Background.Settle();
+  Guid task = Guid.Empty;
+  runas (Sol) {
+    var a = Assignment.Single(x => x.Id == chase);
+    // The desk's work is attached to the case, and what it handed back is an item of the case's repository.
+    task = a.Work.Single().Subject!.Value;
+    Assert.Equal(1, RepositoryItem.Count(i => i.Assignment.Id == chase));
+    Assert.Contains("Dear Leo Lind", CurrentOf(RepositoryItem.Single(i => i.Assignment.Id == chase)).Content);
+    MeetCriterion(a.Criteria.Single(), "Sent to Leo on Monday.");
+    CompleteAssignment(a, "Leo Lind brought Roadside Picnic back.");
+  }
+  // Nobody marked the agent's work or the item: only the case.
+  runas (Ada) { Assert.Equal(1, SubjectMark.Count()); Assert.Equal("Assignment", SubjectMark.Single().Kind); }
+  Assert.Contains("Leo Lind", EverythingTheDeskRecorded());
+
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, null, "leo@reader.example", IdentityCheck.KnownDetails, "He wrote from the address on the loan and gave its number.");
+    // One request, three holders: the case, the agent's work it is attached to, and the item in its repository.
+    Assert.Equal(1, PlanLine.Single(l => l.Request == r && l.Category == "assignments.about").Items);
+    Assert.Equal(1, PlanLine.Single(l => l.Request == r && l.Category == "agents.trace").Items);
+    Assert.Equal(1, PlanLine.Single(l => l.Request == r && l.Category == "agents.record").Items);
+    Assert.Equal(1, PlanLine.Single(l => l.Request == r && l.Category == "repositories.items").Items);
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Equal(0, SubjectMark.Count());
+  }
+
+  // The agent's record: not a word left, and it still verifies.
+  Assert.DoesNotContain("Leo", EverythingTheDeskRecorded());
+  runas (Ada) {
+    var receipt = AgentTask.Single(t => t.Id == task);
+    Assert.NotNull(receipt.AnonymisedAt);
+    var check = VerifyTrace(receipt);
+    Assert.True(check.Intact);
+    Assert.Equal(check.Lines, check.Erased);
+    Assert.True(check.Lines >= 6);
+  }
+  runas (Sol) {
+    // The case: still a completed case, about "a former borrower" — nothing says what his name was, so every
+    // sentence went and what happened stayed.
+    var a = Assignment.Single(x => x.Id == chase);
+    Assert.Equal("An assignment about a former borrower", a.Title);
+    Assert.Equal(AssignmentState.Completed, a.State);
+    Assert.Equal(CriterionState.Met, a.Criteria.Single().State);
+    Assert.False(a.Activity.Any(l => l.Said.Contains("Leo")));
+    Assert.False(a.Work.Any(w => w.Title.Contains("Leo")));
+    // The item: its place in the record, and nothing it said.
+    var item = RepositoryItem.Single(i => i.Assignment.Id == chase);
+    Assert.NotNull(item.ErasedAt);
+    Assert.Equal("", CurrentOf(item).Content);
+    Assert.False(item.Title.Contains("Leo"));
+  }
+}

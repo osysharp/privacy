@@ -1,0 +1,158 @@
+// Osysharp.Privacy.Agents — the people named on how the agents were run: who said "from now on, alone" and who took
+// it back, who paused, resumed and sponsored an agent, whom an agent asked and who answered, to whom a proposal was
+// sent and who decided it. Sol, the head librarian, did all of it; when he leaves and asks to be erased he is taken
+// off every one — and what was decided stands. A member's own "alone" goes with her.
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+const string Clerk = "Library.Renewer";
+
+[TestFixture]
+void TownWithIvo() {
+  Town();
+  var ivo = new Person { Email = "ivo@library.example", DisplayName = "Ivo" };
+  new RoleGrant { Member = ivo, Role = LibraryRole.Librarian };
+  new AgentSeat { Agent = "Library.Renewer", Sponsor = Person.Single(p => p.Email == "sol@library.example") };
+}
+
+principal Ivo => Person.Single(p => p.Email == "ivo@library.example");
+
+/// Sol runs the agents for a week: he pauses the desk and lets it work again, says the clerk may renew alone for
+/// everybody and then takes that back, and — renewing his own loan through the clerk — answers its question and says
+/// yes to the renewal it proposes. Mia says "from now on, alone" for her own renewals.
+void SolRunsTheAgents() {
+  runas (Sol) {
+    PauseAgent("Library.DeskAgent", "The catalogue is being moved.");
+    ResumeAgent("Library.DeskAgent", "The catalogue is back.");
+    var everybody = AllowAlone(Clerk, Actions.Of(RenewLoan), forEverybody: true);
+    RevokeStandingRule(everybody, "Renewals are checked again for now.");
+    UnitOfWork.Commit();
+  }
+  // The clerk, renewing Sol's own loan for the display, asks him a question, then proposes the renewal.
+  Guid work = Guid.Empty;
+  runas (Sol) {
+    var piranesi = Loan.Single(l => l.Title == "Piranesi");
+    var script = AgentScript.Of(
+      Says.AskPerson("Should the display copy go back on the shelf afterwards?", "It is due on Thursday.", 100, 20),
+      Says.Tool("It is due on Thursday.", Actions.Of(RenewLoan), LoanArg(piranesi)),
+      Says.HandBack(new Renewed { Loans = 1, Said = "Renewed." }));
+    ScriptedAnswer.Stub((model, request) => script.Answer(model, request));
+    work = (await Agents.Of<Renewer>().Do(new RenewLoans(), "Renew Piranesi for the display.")).Task;
+    AnswerAgentQuestion(QuestionsForMe().Single(), "Yes, on Friday.");
+    UnitOfWork.Commit();
+  }
+  LetItGoOnHere();
+  runas (Sol) {
+    ApproveAgentProposal(ProposalsForMe().Single());
+    UnitOfWork.Commit();
+  }
+  LetItGoOnHere();
+  runas (Mia) {
+    AllowAlone(Clerk, Actions.Of(RenewLoan));
+    UnitOfWork.Commit();
+  }
+}
+
+void LetItGoOnHere() {
+  for (var i = 0; i < 3; i++) {
+    Background.Settle();
+    foreach (var wait in AgentWait.Where(w => w.Status == AgentWaitStatus.Waiting).ToList()) { Workflow.Settle(wait); }
+  }
+}
+
+/// ⭐ SOL LEAVES. While he still answers for the agents his erasure waits — then Ivo is named, and he is taken off
+/// every record of how he ran them. What he decided stands: the rule he took back is still taken back, the desk's
+/// question still has its answer, the renewal he said yes to is still done.
+[Test(TownWithIvo)]
+void erasing_a_lead_takes_her_off_how_she_ran_the_agents_and_nobody_else() {
+  SolRunsTheAgents();
+  var sol = new DataSubject { Account = AccountOf("sol@library.example") };
+  var holder = new AgentOversightPersonalData();
+  runas (Ada) {
+    // His copy says what he did.
+    var copy = holder.Export(sol, CategoryOf("agents.oversight")).Json;
+    Assert.Contains("Paused it", copy);
+    Assert.Contains("Let it act alone", copy);
+    Assert.Contains("Took back letting it act alone", copy);
+    Assert.Contains("Answered it", copy);
+    Assert.Contains("Decided its proposal", copy);
+    Assert.True(holder.Count(sol, CategoryOf("agents.oversight")) >= 8);
+    // He sponsors both agents: his erasure waits until somebody else answers for them.
+    Assert.Contains("they sponsor", holder.BlockedBy(sol, CategoryOf("agents.oversight")));
+  }
+  runas (Sol) {
+    SponsorAgent("Library.DeskAgent", Ivo);
+    SponsorAgent(Clerk, Ivo);
+    UnitOfWork.Commit();
+  }
+  runas (Ada) {
+    Assert.Equal("", holder.BlockedBy(sol, CategoryOf("agents.oversight")));
+    var r = FileRequest(RequestKind.Erasure, AccountOf("sol@library.example"), "", IdentityCheck.InPerson, "He asked on his last day.");
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+
+    var solId = AccountOf("sol@library.example");
+    // Nothing of how the agents were run names him any more…
+    Assert.Equal(0, AgentStandingRule.Count(x => (x.GrantedBy != null && x.GrantedBy!.Id == solId) || (x.RevokedBy != null && x.RevokedBy!.Id == solId)));
+    Assert.Equal(0, AgentSeatChange.Count(x => (x.By != null && x.By!.Id == solId) || (x.Sponsor != null && x.Sponsor!.Id == solId)));
+    Assert.Equal(0, AgentHelp.Count(x => (x.AskedPerson != null && x.AskedPerson!.Id == solId) || (x.AnsweredBy != null && x.AnsweredBy!.Id == solId)));
+    Assert.Equal(0, AgentProposal.Count(x => (x.DecideBy != null && x.DecideBy!.Id == solId) || (x.DecidedBy != null && x.DecidedBy!.Id == solId)));
+    Assert.Equal(0, holder.Count(sol, CategoryOf("agents.oversight")));
+    // …and what he decided stands.
+    var everybody = AgentStandingRule.Single(x => x.For == null && x.ErasedAt == null);
+    Assert.NotNull(everybody.RevokedAt);
+    Assert.Equal("Renewals are checked again for now.", everybody.RevokedWhy);
+    // The question was answered, and stays answered. (What it said went with the rest of his own work's words: the
+    // clerk was renewing HIS loan, so that work is his — agents.trace.)
+    Assert.NotNull(AgentHelp.Single().AnsweredAt);
+    Assert.Equal(HelpStatus.Answered, AgentHelp.Single().Status);
+    Assert.Equal(ProposalStatus.Done, AgentProposal.Single().Status);
+    Assert.Equal(2, AgentSeatChange.Count(c => c.What == AgentSeatChangeKind.Sponsored && c.Sponsor != null && c.Sponsor!.Email == "ivo@library.example"));
+    // Mia's rule is hers, and nobody else's erasure touches it.
+    var hers = AgentStandingRule.Single(x => x.For != null);
+    Assert.Equal(AccountOf("mia@reader.example"), hers.For!.Id);
+    Assert.Null(hers.RevokedAt);
+  }
+}
+
+/// ⭐ A MEMBER'S "FROM NOW ON, ALONE" IS HERS: her copy carries it, and her erasure takes it back — the clerk asks her
+/// again — and leaves it saying nobody's work, so it never comes to cover everybody's.
+[Test(TownWithIvo)]
+void erasing_a_member_takes_back_what_an_agent_may_do_alone_in_her_work() {
+  SolRunsTheAgents();
+  runas (Noor) {
+    AllowAlone(Clerk, Actions.Of(RenewLoan));
+    UnitOfWork.Commit();
+  }
+  var mia = new DataSubject { Account = AccountOf("mia@reader.example") };
+  runas (Ada) {
+    var holder = new AgentTeachingPersonalData();
+    Assert.Contains("It may RenewLoan without asking first, in work for you.", holder.Export(mia, CategoryOf("agents.corrections")).Json);
+    var r = FileRequest(RequestKind.Erasure, AccountOf("mia@reader.example"), "", IdentityCheck.InPerson, "She asked at the desk with her library card.");
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+    var erased = AgentStandingRule.Single(x => x.ErasedAt != null);
+    Assert.NotNull(erased.RevokedAt);
+    Assert.Null(erased.For);
+    Assert.Equal("Erased at the request of the person it was for or about.", erased.RevokedWhy);
+    // Noor's stands, and is still hers.
+    var noors = AgentStandingRule.Single(x => x.For != null);
+    Assert.Equal(AccountOf("noor@reader.example"), noors.For!.Id);
+    Assert.Null(noors.RevokedAt);
+  }
+  // The clerk proposes a renewal for Noor's colleague as before — nothing it did alone for Mia now covers anybody.
+  runas (Ivo) {
+    var loan = Loan.Single(l => l.Title == "Roadside Picnic");
+    var script = AgentScript.Of(Says.Tool(Actions.Of(RenewLoan), LoanArg(loan)), Says.HandBack(new Renewed { Loans = 1 }));
+    ScriptedAnswer.Stub((model, request) => script.Answer(model, request));
+    var outcome = await Agents.Of<Renewer>().Do(new RenewLoans(), "Renew Roadside Picnic.");
+    Assert.True(outcome.Waiting);
+  }
+}

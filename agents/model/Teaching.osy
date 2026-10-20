@@ -1,0 +1,265 @@
+namespace Osysharp.Privacy.Agents;
+
+using Osysharp.Identity;
+using Osysharp.Agents;
+using Osysharp.Privacy;
+
+// ── what teaching an agent holds about a person, and what a request does to it ────────────────────────────────────
+//
+// Two ways again. A correction of work done FOR a person, or marked as ABOUT them, may quote that work — and an
+// instruction for the work an agent does for them is theirs by definition. A request finds both: the corrections
+// through the work (`AgentWorkOf`), the instructions by the account they are for or by what the app marked
+// (`MarkAgentInstructionAbout`). That is `agents.corrections`.
+//
+// And a correction is written BY somebody, an instruction proposed, read, activated and retired by somebody: staff,
+// found by their account. That is `agents.teaching`. An erasure takes them off it; what was said and decided stays,
+// because it is how the agent came to be told what it is told.
+
+public string AgentCorrectionsCategory() { return "agents.corrections"; }
+public string AgentTeachingCategory() { return "agents.teaching"; }
+
+/// What a mark on an instruction is called (`MarkAbout(id, AgentInstructionKind(), subject)`).
+public string AgentInstructionKind() { return "AgentInstruction"; }
+
+/// ⭐ SAY WHOSE DATA AN INSTRUCTION IS, when it names or quotes somebody the agent does not work FOR — "parcels for
+/// the Lind household go to the side door". An instruction for one person's work (`InstructionDraft.For`) is found
+/// without this.
+[Server, Authorize(IsAuthenticated)]
+public void MarkAgentInstructionAbout(Guid instruction, DataSubject subject) { MarkAbout(instruction, AgentInstructionKind(), subject); }
+
+public class AgentTeachingPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Agents.Teaching";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = AgentCorrectionsCategory(),
+      Label = "What somebody wrote to correct an AI agent's work for you or about you, and what our agents are told for your work",
+      Purpose = Translate("Getting the next piece of work right: an agent is corrected by people, and told what they decide"),
+      SubjectKind = "people an agent worked for or about",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("improving how our AI agents do their work"),
+      RetainedMonths = App.Setting<AgentsPrivacySetup>().KeepCorrectionsMonths, RetainedFrom = RetentionStart.Collected,
+      MinMonths = 0, MaxMonths = 120,
+      RetainedFromWords = Translate("from when the correction was written, and never longer than the record of the work it corrects"),
+      OnErasureWords = Translate("What each correction said is erased, and an instruction for your work is taken out of use and erased. That the work was corrected is kept as a count.") },
+    new DataCategory {
+      Key = AgentTeachingCategory(),
+      Label = "That you corrected an AI agent's work, or proposed, approved, retired or rolled back what an agent is told",
+      Purpose = Translate("Accounting for who changed what our AI agents are told, and why"),
+      SubjectKind = "people who correct and teach the agents",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("accounting for who changed what our AI agents are told"),
+      RetainedMonths = 0, RetainedFrom = RetentionStart.Collected, MinMonths = 0, MaxMonths = 0,
+      RetainedFromWords = Translate("for as long as the agent is told it"),
+      OnErasureWords = Translate("You were taken off them: they no longer say who. What was corrected and decided is kept.") },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (c.Key == AgentCorrectionsCategory()) { return CorrectionsAbout(s).Count + InstructionsAbout(s).Count + StandingRulesFor(s).Count; }
+    return TaughtBy(s).Count;
+  }
+
+  // SECURITY-INVARIANT(an-agents-record-is-erased-by-a-privacy-request-not-by-hand): as for the work itself — these
+  // run in the request's own run, as the app, which is what passes the agents kit's `ErasesAgentRecords`; and they
+  // reach only the corrections of `AgentWorkOf(s)`, the instructions for or marked about the person the request
+  // proved, and that person's own name on what they taught. Guarded by tests/teaching.test.osy
+  // `erasing_her_takes_what_her_corrections_said_and_the_instruction_for_her_and_nobody_elses`.
+  public void Erase(DataSubject s, DataCategory c) {
+    if (c.Key == AgentCorrectionsCategory()) {
+      var why = "Erased at the request of the person it was for or about.";
+      foreach (var correction in CorrectionsAbout(s)) { EraseAgentCorrection(correction, why); }
+      foreach (var instruction in InstructionsAbout(s)) {
+        EraseAgentInstruction(instruction, why);
+        ForgetMarksOn(instruction.Id, AgentInstructionKind());
+      }
+      // "From now on, alone" for her work is taken back, and no longer says whose work it was.
+      var her = PersonOf(s);
+      if (her != null) { EraseStandingRulesFor(her!, why); }
+      return;
+    }
+    if (s.Account == null) { return; }
+    var account = s.Account.Value;
+    var person = Principal.FirstOrDefault(p => p.Id == account);
+    if (person != null) { ForgetWhoTaughtAgents(person!); }
+  }
+
+  /// Kept out of use: the corrections are read by nobody until the restriction is lifted, and an instruction for
+  /// the person's work stops being sent to the agent — it is withheld, which is the agent's next instruction set.
+  /// Who taught is not taken out of use: the row that says so is the instruction itself, which everybody's work is
+  /// sent. An erasure takes the person off it.
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
+    if (c.Key != AgentCorrectionsCategory()) { return null; }
+    DateTime? latest = null;
+    foreach (var correction in CorrectionsAbout(s)) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, correction.At);
+      Restriction.Restrict(correction, c.Key, until);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    foreach (var instruction in InstructionsAbout(s)) {
+      WithholdAgentInstruction(instruction, "Kept out of use at the request of the person it is for.");
+      DateTime? until = untilLifted ? null : KeepUntil(c, instruction.ProposedAt);
+      Restriction.Restrict(instruction, c.Key, until);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    // A standing rule for her work, kept out of use, is read by nobody — so the agent proposes again.
+    foreach (var rule in StandingRulesFor(s)) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, rule.At);
+      Restriction.Restrict(rule, c.Key, until);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    return untilLifted ? null : latest;
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    return c.Key == AgentCorrectionsCategory() ? ExportCorrections(s) : ExportTaught(s);
+  }
+
+  /// A correction's words go at the end of their period, for everybody — unless a legal hold covers the work it
+  /// corrects. (They also go, whatever this period, when the record of that work is deleted.) Who taught has no
+  /// period of its own.
+  public int Purge(DataCategory c, DateTime now) {
+    if (c.Key != AgentCorrectionsCategory()) { return 0; }
+    var months = RetentionOf(c).RetainedMonths;
+    if (months <= 0) { return 0; }
+    var cutoff = now.AddMonths(-months);
+    var gone = 0;
+    var held = HeldCaseRows();
+    foreach (var correction in AgentCorrection.Where(x => x.ErasedAt == null && x.At < cutoff).ToList()) {
+      if (KeepUntil(c, correction.At) > now) { continue; }
+      if (correction.Task != null) {
+        var root = correction.Task!.Root ?? correction.Task!;
+        if (held.Contains(root.Id) || IsAgentWorkHeld(root)) { continue; }
+      }
+      EraseAgentCorrection(correction, "It was kept as long as what a correction said is kept.");
+      gone = gone + 1;
+    }
+    return gone;
+  }
+}
+
+// ── who and which ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// The corrections of the work an agent did for or about a person that still say something.
+[SuppressWarning("cost-unbounded-read")]   // one person's agent work — what a request reaches
+public List<AgentCorrection> CorrectionsAbout(DataSubject s) {
+  List<AgentCorrection> found = [];
+  foreach (var root in AgentWorkOf(s)) {
+    foreach (var piece in AgentTask.Where(t => t.Id == root.Id || t.Root == root).ToList()) {
+      foreach (var correction in AgentCorrection.Where(x => x.Task == piece && x.ErasedAt == null).OrderBy(x => x.At).ToList()) { found.Add(correction); }
+    }
+  }
+  return found;
+}
+
+/// The instructions that are a person's: for the work an agent does for their account, or marked as about them —
+/// and that still say something.
+[SuppressWarning("cost-unbounded-read")]   // one person's instructions
+public List<AgentInstruction> InstructionsAbout(DataSubject s) {
+  List<AgentInstruction> found = [];
+  if (s.Account != null) {
+    var id = s.Account.Value;
+    foreach (var i in AgentInstruction.Where(x => x.For != null && x.For.Id == id && x.ErasedAt == null).ToList()) { found.Add(i); }
+  }
+  var marked = RowsAbout(s, AgentInstructionKind());
+  if (marked.Count > 0) {
+    foreach (var i in AgentInstruction.Where(x => marked.Contains(x.Id) && x.ErasedAt == null).ToList()) {
+      if (!found.Any(f => f.Id == i.Id)) { found.Add(i); }
+    }
+  }
+  return found.OrderBy(i => i.ProposedAt).ToList();
+}
+
+/// One thing a person did in teaching the agents.
+public class TaughtRow {
+  public DateTime At;
+  /// The agent, by name, and what they did: "Corrected its work", "Proposed an instruction", "Made an instruction
+  /// active", "Retired an instruction", "Put it back to an earlier instruction set".
+  public string Agent = "";
+  public string Did = "";
+  /// What it was about, in the words of the correction or the instruction.
+  public string About = "";
+}
+
+/// Everything an account did in teaching the agents, oldest first.
+[SuppressWarning("cost-unbounded-read")]   // one person's corrections and decisions
+public List<TaughtRow> TaughtBy(DataSubject s) {
+  List<TaughtRow> rows = [];
+  if (s.Account == null) { return rows; }
+  var id = s.Account.Value;
+  foreach (var c in AgentCorrection.Where(x => x.By != null && x.By.Id == id).ToList()) {
+    rows.Add(new TaughtRow { At = c.At, Agent = BareName(c.Agent), Did = "Corrected its work", About = c.Right });
+  }
+  foreach (var i in AgentInstruction.Where(x => x.ProposedBy != null && x.ProposedBy.Id == id).ToList()) {
+    rows.Add(new TaughtRow { At = i.ProposedAt, Agent = BareName(i.Agent), Did = "Proposed an instruction", About = i.Guidance });
+  }
+  foreach (var i in AgentInstruction.Where(x => x.ReviewedBy != null && x.ReviewedBy.Id == id).ToList()) {
+    rows.Add(new TaughtRow { At = i.ReviewedAt ?? i.ProposedAt, Agent = BareName(i.Agent),
+                             Did = i.State == InstructionState.Rejected ? "Rejected an instruction" : "Made an instruction active", About = i.Guidance });
+  }
+  foreach (var set in AgentInstructionSet.Where(x => x.By != null && x.By.Id == id).ToList()) {
+    if (set.Change == InstructionChange.Activated) { continue; }      // said above, by the instruction itself
+    rows.Add(new TaughtRow { At = set.At, Agent = BareName(set.Agent),
+                             Did = set.Change == InstructionChange.RolledBack ? "Put it back to an earlier instruction set" : "Retired an instruction",
+                             About = set.Why });
+  }
+  return rows.OrderBy(r => r.At).ToList();
+}
+
+// ── the person's copy ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/// One correction, or one instruction, as a person's copy of their data carries it.
+public class TeachingRow {
+  public DateTime At;
+  public string Agent = "";
+  /// "Correction" or "Instruction".
+  public string Kind = "";
+  /// A correction: what was wrong, what it should have been, and why. An instruction: what the agent is told, and why.
+  public string Wrong = "";
+  public string Right = "";
+  public string Why = "";
+  /// An instruction: whether the agent is told it now.
+  public string State = "";
+}
+
+ExportSection ExportCorrections(DataSubject s) {
+  List<TeachingRow> rows = [];
+  List<ExportItem> items = [];
+  foreach (var c in CorrectionsAbout(s)) {
+    rows.Add(new TeachingRow { At = c.At, Agent = BareName(c.Agent), Kind = "Correction", Wrong = c.Wrong, Right = c.Right, Why = c.Because });
+    items.Add(new ExportItem { At = c.At, Title = Translate("A correction of what an agent did"), Body = c.Wrong,
+                               Fields = [new ExportField { Name = Translate("What it should have been"), Value = c.Right },
+                                         new ExportField { Name = Translate("Why"), Value = c.Because },
+                                         new ExportField { Name = Translate("Agent"), Value = BareName(c.Agent) }] });
+  }
+  foreach (var i in InstructionsAbout(s)) {
+    rows.Add(new TeachingRow { At = i.ProposedAt, Agent = BareName(i.Agent), Kind = "Instruction", Right = i.Guidance, Why = i.Why, State = i.State.Label });
+    items.Add(new ExportItem { At = i.ProposedAt, Title = Translate("What an agent is told for your work"), Body = i.Guidance,
+                               Fields = [new ExportField { Name = Translate("Why"), Value = i.Why },
+                                         new ExportField { Name = Translate("Agent"), Value = BareName(i.Agent) },
+                                         new ExportField { Name = Translate("Now"), Value = i.State.Label }] });
+  }
+  foreach (var r in StandingRulesFor(s)) {
+    var state = r.RevokedAt == null ? "Stands" : "Taken back";
+    rows.Add(new TeachingRow { At = r.At, Agent = BareName(r.Agent), Kind = "Standing rule", Right = $"It may {BareName(r.Action)} without asking first, in work for you.", State = state });
+    items.Add(new ExportItem { At = r.At, Title = Translate("What an agent may do alone in your work"), Body = BareName(r.Action),
+                               Fields = [new ExportField { Name = Translate("Agent"), Value = BareName(r.Agent) },
+                                         new ExportField { Name = Translate("Now"), Value = state }] });
+  }
+  return new ExportSection { Category = AgentCorrectionsCategory(), Json = JsonSerializer.Serialize(rows), Items = items };
+}
+
+/// The standing rules for the work an agent does for a person's account ("from now on, alone"), taken back or not.
+[SuppressWarning("cost-unbounded-read")]   // one person's standing rules
+public List<AgentStandingRule> StandingRulesFor(DataSubject s) {
+  var person = PersonOf(s);
+  if (person == null) { return []; }
+  var p = person!;
+  return AgentStandingRule.Where(r => r.For == p).OrderBy(r => r.At).ToList();
+}
+
+ExportSection ExportTaught(DataSubject s) {
+  var rows = TaughtBy(s);
+  List<ExportItem> items = [];
+  foreach (var r in rows) {
+    items.Add(new ExportItem { At = r.At, Title = r.Did, Body = r.About, Fields = [new ExportField { Name = Translate("Agent"), Value = r.Agent }] });
+  }
+  return new ExportSection { Category = AgentTeachingCategory(), Json = JsonSerializer.Serialize(rows), Items = items };
+}

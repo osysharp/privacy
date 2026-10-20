@@ -1,0 +1,101 @@
+// Osysharp.Privacy.Agents — what stays closed: an agent's record is erased by a privacy request's own run and by
+// nobody's hand; whose data a piece of work is, is said through the kit and read back only by the privacy desk; and
+// what everybody else may read of the desk's work is the same before and after somebody is erased.
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+[Test(Town)]
+void nobody_erases_an_agents_record_by_hand_and_a_privacy_request_does() {
+  var mias = MiaRenews();
+  // The library named nobody to erase the desk's records. Ada manages privacy and audits the desk: she may not…
+  runas (Ada) {
+    Assert.Denied(() => EraseAgentWorkContent(AgentTask.Single(t => t.Id == mias), "Tidying up."));
+    Assert.Denied(() => AnonymiseAgentWork(AgentTask.Single(t => t.Id == mias), "Tidying up."));
+    Assert.Denied(() => ForgetAgentWork(AgentTask.Single(t => t.Id == mias)));
+    Assert.Denied(() => { BlankLine(TraceEvent.First(e => e.Task.Id == mias)); UnitOfWork.Commit(); });
+    UnitOfWork.Discard();
+  }
+  // …nor may the librarian in charge of the desk, nor Mia herself.
+  runas (Sol) { Assert.Denied(() => AnonymiseAgentWork(AgentTask.Single(t => t.Id == mias), "Tidying up.")); }
+  runas (Mia) { Assert.Denied(() => EraseAgentWorkContent(AgentTask.Single(t => t.Id == mias), "I would rather it were gone.")); }
+  Assert.Equal(9, LinesWithContent(mias));
+
+  // Positive control: her request, approved, erases it.
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, AccountOf("mia@reader.example"), "", IdentityCheck.InPerson, "She asked at the desk with her library card.");
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  Assert.Equal(0, LinesWithContent(mias));
+}
+
+[Test(Town)]
+void whose_data_a_piece_of_work_is_is_said_through_the_kit_and_read_only_by_the_privacy_desk() {
+  var reminder = SolRemindsLeo();
+  var mia = AccountOf("mia@reader.example");
+  // Sol said whose data the reminder is, and cannot read the note back; nor can a member.
+  runas (Sol) { Assert.Equal(0, SubjectMark.Count()); }
+  runas (Mia) {
+    Assert.Equal(0, SubjectMark.Count());
+    // A note made by hand — "this work is about me" — is refused.
+    Assert.Denied(() => { ForgeMark(reminder, mia); UnitOfWork.Commit(); });
+    UnitOfWork.Discard();
+  }
+  // Positive control: the privacy desk reads the one note the library made, and it holds a fingerprint, not the address.
+  runas (Ada) {
+    var mark = SubjectMark.Single();
+    Assert.Equal(reminder, mark.Row);
+    Assert.Equal("AgentTask", mark.Kind);
+    Assert.Null(mark.Account);
+    Assert.NotEqual("", mark.Key);
+    Assert.DoesNotContain("leo", mark.Key);
+  }
+}
+
+[Test(Town)]
+void what_others_read_of_the_desks_work_is_the_same_before_and_after_somebody_is_erased() {
+  var mias = MiaRenews();
+  var noors = NoorRenews();
+  var reminder = SolRemindsLeo();
+  // Before: Noor reads her own work and nobody else's; the head librarian — who supervises the desk and teaches it —
+  // reads all three, with what they said.
+  runas (Noor) {
+    Assert.Equal(1, AgentTask.Count());
+    Assert.Equal(noors, AgentTask.Single().Id);
+    Assert.Equal(9, TraceEvent.Count(e => e.Payload != null && e.Payload != ""));
+  }
+  runas (Sol) {
+    Assert.Equal(3, AgentTask.Count());
+    Assert.NotNull(TraceEvent.First(e => e.Task.Id == noors && e.Kind == TraceKind.ToolCall).Payload);
+    Assert.NotNull(TraceEvent.First(e => e.Task.Id == mias && e.Kind == TraceKind.ToolCall).Payload);
+  }
+
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, AccountOf("mia@reader.example"), "", IdentityCheck.InPerson, "She asked at the desk with her library card.");
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+
+  // After: exactly the same for Noor. For the librarian, Noor's work reads as it did — and what Mia's said is gone:
+  // erased is erased, for whoever teaches as for anybody.
+  runas (Noor) {
+    Assert.Equal(1, AgentTask.Count());
+    Assert.Equal(noors, AgentTask.Single().Id);
+    Assert.Equal(9, TraceEvent.Count(e => e.Payload != null && e.Payload != ""));
+    Assert.Equal(AgentTaskStatus.Done, AgentTask.Single().Status);
+  }
+  runas (Sol) {
+    Assert.Equal(3, AgentTask.Count());
+    Assert.NotNull(TraceEvent.First(e => e.Task.Id == noors && e.Kind == TraceKind.ToolCall).Payload);
+    Assert.Equal(0, TraceEvent.Count(e => e.Task.Id == mias && e.Payload != null && e.Payload != ""));
+    // The reminder he asked for is still his, with what it said.
+    Assert.NotNull(TraceEvent.First(e => e.Task.Id == reminder && e.Kind == TraceKind.ToolCall).Payload);
+  }
+  // Mia, erased, reads nothing; she is not handed anybody else's work in exchange.
+  runas (Mia) { Assert.Equal(0, AgentTask.Count()); Assert.Equal(0, TraceEvent.Count()); }
+}

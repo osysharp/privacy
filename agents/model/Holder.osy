@@ -1,0 +1,320 @@
+namespace Osysharp.Privacy.Agents;
+
+using Osysharp.Identity;
+using Osysharp.Agents;
+using Osysharp.Privacy;
+
+// ── what the agents kit holds about a person, and what a request does to it ───────────────────────────────────────
+//
+// A piece of an agent's work is a person's in two ways. It was done FOR them — they asked, or somebody asked on
+// their behalf (`AgentTask.Requester`, `StartedBy`) — which a request finds by their ACCOUNT. Or it is ABOUT them — a
+// reminder drafted about a borrower, a claim checked for a customer — which only the app knows, and says
+// (`MarkAgentWorkAbout`); a request then finds it by the account, the address or the number that was marked.
+//
+// A piece of work is found whole: the top piece and everything it handed on share one record and one chain, and are
+// exported, kept out of use, erased and deleted together.
+
+/// How long this app keeps what its agents did — `app.AgentsPrivacy = new AgentsPrivacySetup { KeepContentMonths = 3 };`.
+/// The tenant's own periods, set on the retention page, win.
+[AppSetting("AgentsPrivacy")]
+public class AgentsPrivacySetup {
+  /// How many months what a piece of work SAID is kept after it ended. 0: until somebody asks.
+  public int KeepContentMonths = 1;
+  /// How many months the record THAT it happened is kept after it ended. 0: until somebody asks.
+  public int KeepRecordMonths = 7;
+  /// How many months what a CORRECTION of an agent's work said is kept after it was written. 0: until somebody asks —
+  /// or until the record of the work it corrects is deleted, which takes its words too.
+  public int KeepCorrectionsMonths = 7;
+}
+
+public string AgentContentCategory() { return "agents.trace"; }
+public string AgentRecordCategory() { return "agents.record"; }
+
+/// What a mark on a piece of an agent's work is called (`MarkAbout(id, AgentWorkKind(), subject)`).
+public string AgentWorkKind() { return "AgentTask"; }
+
+/// ⭐ SAY WHOSE DATA A PIECE OF AN AGENT'S WORK IS: `task` — the id an `AgentOutcome` carries — is about `subject`.
+/// Work done FOR a signed-in person is found without this; work ABOUT somebody is found only if the app says so.
+///
+///     var outcome = await Agents.Of<Desk>().Do(new DraftReminder(), loan);
+///     MarkAgentWorkAbout(outcome.Task, new DataSubject { Emails = [loan.BorrowerEmail] });
+[Server, Authorize(IsAuthenticated)]
+public void MarkAgentWorkAbout(Guid task, DataSubject subject) { MarkAbout(task, AgentWorkKind(), subject); }
+
+public class AgentsPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Agents";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = AgentContentCategory(),
+      Label = "What our AI agents were shown and what they answered, while working for you or about you",
+      Purpose = Translate("Doing the work that was asked for, and checking afterwards how it was done"),
+      SubjectKind = "people an agent worked for or about",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("reviewing and correcting what our AI agents did"),
+      RetainedMonths = App.Setting<AgentsPrivacySetup>().KeepContentMonths, RetainedFrom = RetentionStart.Collected,
+      MinMonths = 0, MaxMonths = 120, RetainedFromWords = Translate("from when the work ended"),
+      AutomatedDecisions = Translate("An AI agent may have prepared or made a decision in this work; the record says which steps it took.") },
+    new DataCategory {
+      Key = AgentRecordCategory(),
+      Label = "The record that an AI agent did a piece of work for you or about you: when, each step, what it cost and how it ended",
+      Purpose = Translate("Accounting for what our AI agents did, and showing that the record was not changed"),
+      SubjectKind = "people an agent worked for or about",
+      Basis = RetentionBasis.LegitimateInterest,
+      BasisDetail = Translate("accounting for what our AI agents did (where the EU AI Act applies, Art. 19 and 26(6) ask for at least six months)"),
+      RetainedMonths = App.Setting<AgentsPrivacySetup>().KeepRecordMonths, RetainedFrom = RetentionStart.Collected,
+      MinMonths = 0, MaxMonths = 0, RetainedFromWords = Translate("from when the work ended"),
+      OnErasureWords = Translate("You were taken off it: who it was for, what it was about and every sentence of it are erased. That the work happened, what it cost and the check that nothing was changed are kept.") },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) {
+    var n = 0;
+    foreach (var root in AgentWorkOf(s)) {
+      if (c.Key == AgentContentCategory()) { n = n + AgentTask.Count(t => (t.Id == root.Id || t.Root == root) && t.ContentErasedAt == null); }
+      else { n = n + AgentTask.Count(t => (t.Id == root.Id || t.Root == root) && t.AnonymisedAt == null); }
+    }
+    return n + LooseHelpOf(s).Count;
+  }
+
+  /// Work an agent is still doing — or that is waiting on a person — is erased when it has ended: the request waits, and is asked again every day.
+  public string BlockedBy(DataSubject s, DataCategory c) {
+    foreach (var root in AgentWorkOf(s)) {
+      if (AgentTask.Any(t => (t.Id == root.Id || t.Root == root) && (t.Status == AgentTaskStatus.Working || t.Status == AgentTaskStatus.Waiting))) {
+        return Translate("an AI agent is still working on something for you or about you");
+      }
+    }
+    return "";
+  }
+
+  // SECURITY-INVARIANT(an-agents-record-is-erased-by-a-privacy-request-not-by-hand): these calls run in the
+  // request's own run, as the app itself — which is what lets them pass the agents kit's `ErasesAgentRecords` (nobody,
+  // by default) — and reach only `AgentWorkOf(s)`: the work for the person the request proved, and the work marked
+  // as about them. Widening `AgentWorkOf` erases somebody else's record. Guarded by tests/guards.test.osy
+  // `nobody_erases_an_agents_record_by_hand_and_a_privacy_request_does` and
+  // `what_others_read_of_the_desks_work_is_the_same_before_and_after_somebody_is_erased`.
+  public void Erase(DataSubject s, DataCategory c) {
+    var why ="Erased at the request of the person it was for or about.";
+    foreach (var root in AgentWorkOf(s)) {
+      if (c.Key == AgentContentCategory()) { EraseAgentWorkContent(root, why); }
+      else { AnonymiseAgentWork(root, why); }
+    }
+    // Help asked outside any piece of work is one row: what was asked, and whose it was, go together.
+    foreach (var help in LooseHelpOf(s)) { EraseAgentHelp(help, why); }
+  }
+
+  /// Kept out of use: the lines and the requests for help under the content's category, the receipts under the
+  /// record's. Nobody reads them — whoever asked, a supervisor, an auditor — until the restriction is lifted.
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
+    DateTime? latest = null;
+    foreach (var root in AgentWorkOf(s)) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, root.EndedAt ?? root.StartedAt);
+      if (c.Key == AgentContentCategory()) {
+        foreach (var line in TraceEvent.Where(e => e.Root == root).ToList()) { Restriction.Restrict(line, c.Key, until); }
+        foreach (var piece in AgentTask.Where(t => t.Id == root.Id || t.Root == root).ToList()) {
+          foreach (var help in AgentHelp.Where(h => h.Task == piece).ToList()) { Restriction.Restrict(help, c.Key, until); }
+        }
+      } else {
+        // The pieces of work furthest down first, the top last: a receipt is found through the one above it.
+        foreach (var piece in AgentTask.Where(t => t.Root == root).OrderByDescending(t => t.Depth).ToList()) { Restriction.Restrict(piece, c.Key, until); }
+        Restriction.Restrict(root, c.Key, until);
+      }
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    if (c.Key == AgentContentCategory()) {
+      foreach (var help in LooseHelpOf(s)) { Restriction.Restrict(help, c.Key, untilLifted ? null : KeepUntil(c, help.At)); }
+    }
+    return untilLifted ? null : latest;
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    return c.Key == AgentContentCategory() ? ExportAgentContent(s) : ExportAgentRecord(s);
+  }
+
+  /// What reached the end of its period, for everybody: the content of finished work is erased, and — when the
+  /// record's own period ends — the work is deleted whole. What a legal hold covers is left alone: a held person's
+  /// work, work marked about a held person, and a piece of work held as a case.
+  public int Purge(DataCategory c, DateTime now) {
+    var months = RetentionOf(c).RetainedMonths;
+    if (months <= 0) { return 0; }
+    var cutoff = now.AddMonths(-months);
+    var gone = 0;
+    var content = c.Key == AgentContentCategory();
+    var held = HeldCaseRows();
+    foreach (var root in AgentTask.Where(t => t.Root == null && t.EndedAt != null && t.EndedAt < cutoff).ToList()) {
+      if (content && root.ContentErasedAt != null) { continue; }
+      if (KeepUntil(c, root.EndedAt!.Value) > now) { continue; }
+      if (held.Contains(root.Id) || IsAgentWorkHeld(root)) { continue; }
+      if (AgentTask.Any(t => t.Root == root && (t.Status == AgentTaskStatus.Working || t.Status == AgentTaskStatus.Waiting))) { continue; }
+      if (content) { EraseAgentWorkContent(root, "It was kept as long as what an agent's work said is kept."); }
+      else {
+        foreach (var piece in AgentTask.Where(t => t.Id == root.Id || t.Root == root).ToList()) { ForgetMarksOn(piece.Id, AgentWorkKind()); }
+        ForgetAgentWork(root);
+      }
+      gone = gone + 1;
+    }
+    // Help asked outside any piece of work goes with the content's period: it is one row of words.
+    if (content) {
+      foreach (var help in AgentHelp.Where(h => h.Task == null && h.ErasedAt == null && h.At < cutoff).ToList()) {
+        if (KeepUntil(c, help.At) > now) { continue; }
+        if (IsHeld(SubjectOfAccounts(help.Requester, help.StartedBy))) { continue; }
+        EraseAgentHelp(help, "It was kept as long as what an agent's work said is kept.");
+        gone = gone + 1;
+      }
+    }
+    return gone;
+  }
+}
+
+// ── who and which ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// ⭐ THE WORK AN AGENT DID FOR OR ABOUT A PERSON — the top piece of each, once: work their ACCOUNT asked for or was
+/// given for, and work the app marked as about them (by the account, an address or a number the request proved).
+[SuppressWarning("cost-unbounded-read")]   // one person's agent work — what a request reaches
+public List<AgentTask> AgentWorkOf(DataSubject s) {
+  List<AgentTask> roots = [];
+  if (s.Account != null) {
+    var id = s.Account.Value;
+    foreach (var t in AgentTask.Where(t => (t.Requester != null && t.Requester.Id == id) || (t.StartedBy != null && t.StartedBy.Id == id)).ToList()) {
+      AddRoot(roots, t);
+    }
+  }
+  var marked = RowsAbout(s, AgentWorkKind());
+  if (marked.Count > 0) {
+    foreach (var t in AgentTask.Where(t => marked.Contains(t.Id)).ToList()) { AddRoot(roots, t); }
+  }
+  return roots.OrderBy(t => t.StartedAt).ToList();
+}
+
+void AddRoot(List<AgentTask> roots, AgentTask task) {
+  var root = task.Root ?? task;
+  if (!roots.Any(r => r.Id == root.Id)) { roots.Add(root); }
+}
+
+/// The requests for help a person's account asked outside any piece of work, and that still say something.
+[SuppressWarning("cost-unbounded-read")]   // one person's requests for help
+public List<AgentHelp> LooseHelpOf(DataSubject s) {
+  if (s.Account == null) { return []; }
+  var id = s.Account.Value;
+  return AgentHelp.Where(h => h.Task == null && h.ErasedAt == null
+                           && ((h.Requester != null && h.Requester.Id == id) || (h.StartedBy != null && h.StartedBy.Id == id)))
+                  .OrderBy(h => h.At).ToList();
+}
+
+/// Up to two accounts as one data subject — what a hold is asked about.
+DataSubject SubjectOfAccounts(Principal? first, Principal? second) {
+  return new DataSubject { Account = first != null ? first!.Id : (second != null ? second!.Id : null) };
+}
+
+/// Whether a legal hold covers the work `root` is the top of: whoever it was for, whoever gave it, or anybody a piece
+/// of it was marked as about.
+[SuppressWarning("cost-unbounded-read")]   // one piece of work and what it handed on
+public bool IsAgentWorkHeld(AgentTask root) {
+  foreach (var piece in AgentTask.Where(t => t.Id == root.Id || t.Root == root).ToList()) {
+    if (piece.Requester != null && IsHeld(new DataSubject { Account = piece.Requester!.Id })) { return true; }
+    if (piece.StartedBy != null && IsHeld(new DataSubject { Account = piece.StartedBy!.Id })) { return true; }
+    if (IsMarkedHeld(piece.Id, AgentWorkKind())) { return true; }
+  }
+  return false;
+}
+
+// ── the person's copy ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/// One step of an agent's work, as a person's copy of their data carries it.
+public class AgentStepRow {
+  public DateTime At;
+  /// The agent and the skill, by name.
+  public string Agent = "";
+  public string Skill = "";
+  /// What kind of step it was, and the step in a sentence.
+  public string Step = "";
+  public string Said = "";
+  /// The tool, when it was a tool call or its result.
+  public string Tool = "";
+  /// What the agent was shown, given or answered at this step, as it was recorded.
+  public string Content = "";
+}
+
+/// One piece of an agent's work, as a person's copy of their data carries it.
+public class AgentWorkRow {
+  public DateTime StartedAt;
+  public DateTime? EndedAt;
+  public string Agent = "";
+  public string Skill = "";
+  public string About = "";
+  /// How it ended, and in a sentence.
+  public string Status = "";
+  public string Outcome = "";
+  /// What it cost, in US dollars.
+  public decimal Cost;
+  public int Steps;
+  /// It was done for you; you gave the work; it was marked as about you.
+  public bool ForYou;
+  public bool GivenByYou;
+  public bool AboutYou;
+}
+
+/// What the work said: every step with its content, what was asked when it asked for help, and what it handed back.
+[SuppressWarning("cost-unbounded-read")]   // one person's agent work, every line — an access export reaches all of it
+ExportSection ExportAgentContent(DataSubject s) {
+  List<AgentStepRow> rows = [];
+  List<ExportItem> items = [];
+  foreach (var root in AgentWorkOf(s)) {
+    foreach (var line in TraceEvent.Where(e => e.Root == root).OrderBy(e => e.Seq).ToList()) {
+      var content = line.Payload ?? "";
+      if (content == "" && line.ErasedAt != null) { continue; }
+      var agent = BareName(line.Task.Agent);
+      var skill = BareName(line.Task.Skill);
+      rows.Add(new AgentStepRow { At = line.At, Agent = agent, Skill = skill, Step = line.Kind.Name, Said = line.Summary, Tool = line.Tool, Content = content });
+      items.Add(new ExportItem { At = line.At, Title = line.Summary, Body = content,
+                                 Fields = [new ExportField { Name = Translate("Agent"), Value = agent }] });
+    }
+    foreach (var piece in AgentTask.Where(t => t.Id == root.Id || t.Root == root).ToList()) {
+      foreach (var help in AgentHelp.Where(h => h.Task == piece && h.ErasedAt == null).OrderBy(h => h.At).ToList()) {
+        rows.Add(HelpRow(help));
+        items.Add(HelpItem(help));
+      }
+    }
+  }
+  foreach (var help in LooseHelpOf(s)) {
+    rows.Add(HelpRow(help));
+    items.Add(HelpItem(help));
+  }
+  return new ExportSection { Category = AgentContentCategory(), Json = JsonSerializer.Serialize(rows), Items = items };
+}
+
+AgentStepRow HelpRow(AgentHelp help) {
+  return new AgentStepRow { At = help.At, Agent = BareName(help.Agent), Step = "AskedForHelp", Said = help.Question,
+                            Content = help.Context == "" ? help.Answer : help.Context + "\n\n" + help.Answer };
+}
+
+ExportItem HelpItem(AgentHelp help) {
+  return new ExportItem { At = help.At, Title = Translate("An agent asked for help"), Body = help.Question,
+                          Fields = [new ExportField { Name = Translate("What it was given"), Value = help.Context },
+                                    new ExportField { Name = Translate("What came back"), Value = help.Answer }] };
+}
+
+/// That the work happened: one row per piece of work.
+[SuppressWarning("cost-unbounded-read")]   // one person's agent work — an access export reaches all of it
+ExportSection ExportAgentRecord(DataSubject s) {
+  List<AgentWorkRow> rows = [];
+  List<ExportItem> items = [];
+  var marked = RowsAbout(s, AgentWorkKind());
+  foreach (var root in AgentWorkOf(s)) {
+    foreach (var piece in AgentTask.Where(t => t.Id == root.Id || t.Root == root).OrderBy(t => t.StartedAt).ToList()) {
+      if (piece.AnonymisedAt != null) { continue; }
+      var row = new AgentWorkRow {
+        StartedAt = piece.StartedAt, EndedAt = piece.EndedAt, Agent = BareName(piece.Agent), Skill = BareName(piece.Skill),
+        About = piece.About, Status = piece.Status.Name, Outcome = piece.Outcome, Cost = piece.SpentMicros / 1000000m,
+        Steps = TraceEvent.Count(e => e.Task == piece),
+        ForYou = s.Account != null && piece.Requester != null && piece.Requester!.Id == s.Account,
+        GivenByYou = s.Account != null && piece.StartedBy != null && piece.StartedBy!.Id == s.Account,
+        AboutYou = marked.Contains(piece.Id) || marked.Contains(root.Id),
+      };
+      rows.Add(row);
+      items.Add(new ExportItem {
+        At = piece.StartedAt, Title = row.Agent + (row.Skill == "" ? "" : " — " + row.Skill), Body = piece.About,
+        Fields = [new ExportField { Name = Translate("How it ended"), Value = piece.Outcome == "" ? row.Status : row.Status + ". " + piece.Outcome },
+                  new ExportField { Name = Translate("Steps"), Value = row.Steps.ToString() }] });
+    }
+  }
+  return new ExportSection { Category = AgentRecordCategory(), Json = JsonSerializer.Serialize(rows), Items = items };
+}

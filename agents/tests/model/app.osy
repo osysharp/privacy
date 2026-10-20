@@ -1,0 +1,204 @@
+// A town library. Members borrow books and ask the desk — an AI agent — to renew them; librarians have the desk draft
+// reminders about loans that are late. Ada answers privacy requests and audits what the desk did.
+namespace Library;
+
+using Osysharp.Identity;
+using Osysharp.WorkQueues;
+using Osysharp.ServiceHours;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Osysharp.Privacy.Assignments;
+using Osysharp.Assignments;
+using Osysharp.Assignments.Agents;
+using Osysharp.WorkRepositories;
+
+[Role] enum LibraryRole { Authenticator, Admin, Librarian, Member, Desk }
+
+partial entity RoleGrant { security { allow read when IsAuthenticated; } }
+
+policy IsAdmin     => RoleGrant.Any(g => g.Member == user && g.Role == LibraryRole.Admin);
+policy IsLibrarian => RoleGrant.Any(g => g.Member == user && g.Role == LibraryRole.Librarian);
+policy IsMember    => RoleGrant.Any(g => g.Member == user && g.Role == LibraryRole.Member);
+policy IsDesk      => RoleGrant.Any(g => g.Member == user && g.Role == LibraryRole.Desk);
+
+// Privacy: Ada manages it and places legal holds. A request is inbox work, which she leads.
+policy ManagesPrivacy   => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+
+// Agents: members and librarians give the desk work; the head librarian is in charge of it; Ada reads everything it
+// did. NOBODY is named to erase its records (`ErasesAgentRecords` stays nobody's): a privacy request's own run does.
+policy UsesAgents       => IsMember || IsLibrarian;
+policy SupervisesAgents => IsLibrarian;
+policy AuditsAgents     => IsAdmin;
+// The head librarian also teaches the desk: reads what is proposed for it and makes it active.
+policy TeachesAgents    => IsLibrarian;
+// Whoever an agent proposes to may say "from now on, alone" for their own work; the head librarian for everybody's.
+policy WidensAgentAutonomy => IsMember || IsLibrarian;
+policy ReadsModelUsage   => IsAdmin;
+policy ManagesModelSpend => IsAdmin;
+
+// Assignments: a librarian opens a case about a late loan and oversees every case.
+policy OpensAssignments    => IsLibrarian;
+policy OverseesAssignments => IsLibrarian;
+
+/// Somebody at the library — a member, a librarian — and the desk's own account.
+entity Person : Principal {
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+  }
+}
+
+/// One book out on loan. A borrower who made an account is named; one who only left an address is not.
+entity Loan {
+  [Required, MaxLength(200)] string Title;
+  Person? Borrower;
+  [MaxLength(200)] string BorrowerName = "";
+  [MaxLength(320)] string BorrowerEmail = "";
+  DateTime DueOn;
+  int Renewals = 0;
+  security {
+    allow read, update when IsMember where Borrower == user;
+    allow read, update, create when IsLibrarian || IsDesk;
+    allow read when IsAdmin;
+  }
+}
+
+// ── what can be done with a loan ────────────────────────────────────────────────────────────────────────────────────
+
+/// The titles a borrower has out, by their address.
+[Action("List a borrower's loans", Query)]
+public List<string> LoansOf(string email) {
+  return Loan.Where(l => l.BorrowerEmail == email).OrderBy(l => l.Title).ToList().Select(l => l.Title).ToList();
+}
+
+/// Give a loan three more weeks.
+[Action("Renew a loan")]
+public string RenewLoan(Loan loan) {
+  loan.DueOn = loan.DueOn.AddDays(21);
+  loan.Renewals = loan.Renewals + 1;
+  return $"“{loan.Title}” is renewed for {loan.BorrowerName}.";
+}
+
+/// What the desk hands back when it has renewed somebody's loans.
+public class Renewed {
+  public int Loans;
+  /// What it tells the member, in a sentence.
+  public string Said = "";
+}
+
+/// What the desk hands back when it has drafted a reminder.
+public class Reminder {
+  public string Subject = "";
+  public string Text = "";
+}
+
+/// Renews what a member asks to have renewed.
+public class RenewLoans : Skill<string, Renewed> {
+  public override string Description => "Renew the loans a member asks about.";
+  public override List<ActionInfo> Tools => [Actions.Of(LoansOf), Actions.Of(RenewLoan)];
+}
+
+/// Drafts a reminder about one late loan.
+public class DraftReminder : Skill<Loan, Reminder> {
+  public override string Description => "Draft a friendly reminder about a late loan.";
+  public override List<ActionInfo> Tools => [Actions.Of(LoansOf)];
+  public override string Brief(Loan l) => $"“{l.Title}”, borrowed by {l.BorrowerName} <{l.BorrowerEmail}>, was due {l.DueOn:d MMM yyyy}. The loan's id is {l.Id}.";
+}
+
+/// The library's desk.
+[Actor(Roles = [LibraryRole.Desk])]
+public class DeskAgent : Agent {
+  public static Person Principal => new Person { Email = "desk@library.example", DisplayName = "The desk" };
+  public override string Purpose => "You are the library's desk: you renew loans and draft reminders.";
+  public override List<SkillBase> Skills => [new RenewLoans(), new DraftReminder()];
+  // What it does here it does by itself: this app's tests are not about what a person approves first.
+  public override Permits May => Permits.Everything();
+}
+
+/// The renewals clerk: it renews only what a person has said yes to — until somebody says "from now on, alone".
+[Actor(Roles = [LibraryRole.Desk])]
+public class Renewer : Agent {
+  public static Person Principal => new Person { Email = "renewer@library.example", DisplayName = "The renewals clerk" };
+  public override string Purpose => "You renew loans for the library's members.";
+  public override List<SkillBase> Skills => [new RenewLoans()];
+  // It may ask whoever it works for one focused question.
+  public override AsksPeople People => new AsksPeople { MayChoose = true };
+}
+
+// ── what the library does with it ───────────────────────────────────────────────────────────────────────────────────
+
+/// A member asks the desk to renew their loans — work done FOR whoever is signed in.
+public AgentOutcome<Renewed> AskTheDesk(string wish) {
+  return await Agents.Of<DeskAgent>().Do(new RenewLoans(), wish, about: "Renewals for " + Session.CurrentUser!.DisplayName);
+}
+
+/// A librarian has the desk draft a reminder about a late loan — work ABOUT the borrower, which the library says.
+public AgentOutcome<Reminder> RemindAbout(Loan loan) {
+  var outcome = await Agents.Of<DeskAgent>().Do(new DraftReminder(), loan, about: "Reminder to " + loan.BorrowerName);
+  MarkAgentWorkAbout(outcome.Task, new DataSubject { Emails = [loan.BorrowerEmail] });
+  return outcome;
+}
+
+/// The same reminder, with nobody saying whose data it is.
+public AgentOutcome<Reminder> RemindWithoutSaying(Loan loan) {
+  return await Agents.Of<DeskAgent>().Do(new DraftReminder(), loan, about: "Reminder to " + loan.BorrowerName);
+}
+
+/// A member asks the desk something and watches the answer arrive — asking, at each signal, whether an erasure of
+/// their agent work would have to wait. The last entry is asked once the work has ended.
+public List<string> AskAndWatchWhatWaits(string question) {
+  List<string> waits = [];
+  var me = new DataSubject { Account = Session.CurrentUser!.Id };
+  var holder = new AgentsPersonalData();
+  await foreach (var s in Agents.Of<DeskAgent>().Stream(question)) {
+    waits.Add(holder.BlockedBy(me, CategoryOf(AgentContentCategory())));
+  }
+  waits.Add("after: " + holder.BlockedBy(me, CategoryOf(AgentContentCategory())));
+  return waits;
+}
+
+/// A librarian chases a late loan as a case: an assignment ABOUT the borrower — the library says so once, for the
+/// case — with the desk on it, drafting the reminder as work attached to the case. What the desk hands back is kept
+/// in the case's repository. Answers the case's id.
+public Guid ChaseLateLoan(Loan loan) {
+  var chase = OpenAssignment(new NewAssignment {
+    Title = "Chase " + loan.BorrowerName + " for “" + loan.Title + "”",
+    Goal = loan.BorrowerName + " has brought the book back.",
+    Criteria = ["A reminder has gone out"], Assignees = [Agents.Of<DeskAgent>().Actor],
+  });
+  MarkAssignmentAbout(chase, new DataSubject { Emails = [loan.BorrowerEmail] });
+  UnitOfWork.Commit();
+  await AssignedWork.Do(chase, Agents.Of<DeskAgent>(), new DraftReminder(), loan, key: "reminder", about: "Reminder to " + loan.BorrowerName);
+  return chase.Id;
+}
+
+/// Note what a request tells the model beyond who it is and what its job is: the third part of its system prompt.
+entity SentToModel {
+  [Required, MaxLength(40)] string What;
+  [MaxLength(4000)] string Said = "";
+  security { allow read, create when IsAuthenticated || IsAnonymous; }
+}
+public void NoteTold(LlmRequest request, string what) {
+  new SentToModel { What = what, Said = request.SystemSegments.Count > 2 ? request.SystemSegments[2].Content : "" };
+}
+
+// ── what app code is not able to do ─────────────────────────────────────────────────────────────────────────────────
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity TraceEvent { }
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity SubjectMark { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }
+
+/// A mark made without `MarkAbout`.
+public void ForgeMark(Guid row, Guid account) { new SubjectMark { Row = row, Kind = "AgentTask", Account = account }; }
+
+/// A line's content blanked by hand.
+public void BlankLine(TraceEvent line) { line.Payload = ""; }

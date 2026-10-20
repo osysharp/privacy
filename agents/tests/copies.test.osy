@@ -1,0 +1,167 @@
+// Osysharp.Privacy.Agents — a person's copy of what the desk did for them and about them: found by the account the
+// work was for and by the address the library marked it as about, with every word of it, and nobody else's.
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+[Test(Town)]
+void her_copy_holds_what_the_desk_was_shown_and_answered_for_her_and_nobody_elses() {
+  MiaRenews();
+  NoorRenews();
+  SolRemindsLeo();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Access, AccountOf("mia@reader.example"), "", IdentityCheck.InPerson, "She asked at the desk with her library card.");
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    var export = ExportOf(done);
+    // Both of the agents kit's categories, each with why it is kept and for how long.
+    Assert.Contains("\"category\":\"agents.trace\"", export);
+    Assert.Contains("\"category\":\"agents.record\"", export);
+    Assert.Contains("Kept 1 months from when the work ended", export);
+    Assert.Contains("Kept 7 months from when the work ended", export);
+    // What she asked, what each tool was given and answered, and what the desk handed back.
+    Assert.Contains("Please renew my copy of The Dispossessed. Mia Berg, card 4471.", export);
+    Assert.Contains("mia@reader.example", export);
+    Assert.Contains("is renewed for Mia Berg", export);
+    Assert.Contains("Mia, The Dispossessed is yours for three more weeks.", export);
+    // That it happened: the agent, the skill, what it was about and how it ended.
+    Assert.Contains("\"Agent\":\"DeskAgent\"", export);
+    Assert.Contains("\"Skill\":\"RenewLoans\"", export);
+    Assert.Contains("Renewals for Mia Berg", export);
+    Assert.Contains("\"ForYou\":true", export);
+    // Nobody else's: not Noor's renewal, not the reminder about Leo.
+    Assert.DoesNotContain("Piranesi", export);
+    Assert.DoesNotContain("Noor", export);
+    Assert.DoesNotContain("Leo Lind", export);
+    Assert.DoesNotContain("Roadside Picnic", export);
+    // Asking for a copy erased nothing.
+    Assert.Equal(3, AgentTask.Count());
+  }
+}
+
+[Test(Town)]
+void a_borrower_without_an_account_is_found_by_the_address_the_library_marked() {
+  MiaRenews();
+  var reminder = SolRemindsLeo();
+  runas (Ada) {
+    var holder = new AgentsPersonalData();
+    var leo = new DataSubject { Emails = ["leo@reader.example"] };
+    Assert.Equal(1, holder.Count(leo, CategoryOf("agents.trace")));
+    Assert.Equal(1, holder.Count(leo, CategoryOf("agents.record")));
+    Assert.Equal(reminder, AgentWorkOf(leo).Single().Id);
+
+    var said = holder.Export(leo, CategoryOf("agents.trace"));
+    Assert.Contains("Dear Leo Lind, Roadside Picnic was due on 1 March.", said.Json);
+    Assert.Equal(6, said.Items.Count);
+    Assert.DoesNotContain("Mia", said.Json);
+    var record = holder.Export(leo, CategoryOf("agents.record"));
+    Assert.Contains("Reminder to Leo Lind", record.Json);
+    Assert.Contains("\"AboutYou\":true", record.Json);
+    Assert.Contains("\"ForYou\":false", record.Json);
+
+    // Somebody else's address reaches none of it, and nor does an address written another way round.
+    Assert.Equal(0, holder.Count(new DataSubject { Emails = ["lea@reader.example"] }, CategoryOf("agents.record")));
+    // The same address in capitals is the same person.
+    Assert.Equal(1, holder.Count(new DataSubject { Emails = ["LEO@Reader.example"] }, CategoryOf("agents.record")));
+  }
+}
+
+[Test(Town)]
+void work_nobody_marked_is_not_found_by_an_address() {
+  // The library forgot to say whose data this reminder is: a request that proves Leo's address cannot know.
+  runas (Sol) {
+    var loan = Loan.Single(l => l.Title == "Roadside Picnic");
+    var script = AgentScript.Of(Says.HandBack(new Reminder { Subject = "Roadside Picnic is late", Text = "Dear Leo Lind, please bring Roadside Picnic back." }));
+    ScriptedAnswer.Stub((model, request) => script.Answer(model, request));
+    RemindWithoutSaying(loan);
+  }
+  runas (Ada) {
+    var holder = new AgentsPersonalData();
+    Assert.Equal(0, holder.Count(new DataSubject { Emails = ["leo@reader.example"] }, CategoryOf("agents.record")));
+    // It is found as Sol's own — he gave the work — so it is never out of every request's reach.
+    Assert.Equal(1, holder.Count(new DataSubject { Account = AccountOf("sol@library.example") }, CategoryOf("agents.record")));
+  }
+}
+
+[Test(Town)]
+void erasing_the_borrower_takes_the_reminder_about_him_and_leaves_the_others() {
+  var mias = MiaRenews();
+  var reminder = SolRemindsLeo();
+  Assert.Contains("Leo Lind", EverythingTheDeskRecorded());
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, null, "leo@reader.example", IdentityCheck.KnownDetails, "He wrote from the address on the loan and gave its number.");
+    Assert.Equal(1, PlanLine.Single(l => l.Request == r && l.Category == "agents.trace").Items);
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+  }
+  // Not a word about him is left in anything the desk recorded.
+  var left = EverythingTheDeskRecorded();
+  Assert.DoesNotContain("Leo", left);
+  Assert.DoesNotContain("leo@reader.example", left);
+  Assert.DoesNotContain("Roadside Picnic", left);
+  // Mia's renewal is as it was.
+  Assert.Contains("Mia, The Dispossessed is yours for three more weeks.", left);
+  runas (Ada) {
+    Assert.Equal(9, LinesWithContent(mias));
+    // The reminder's record still checks, with its six lines erased; and the note of whose it was went last.
+    var check = VerifyTrace(AgentTask.Single(t => t.Id == reminder));
+    Assert.True(check.Intact);
+    Assert.Equal(6, check.Erased);
+    Assert.Equal(0, SubjectMark.Count());
+    // A second request finds nothing held.
+    Assert.Equal(0, new AgentsPersonalData().Count(new DataSubject { Emails = ["leo@reader.example"] }, CategoryOf("agents.trace")));
+    Assert.Equal(0, new AgentsPersonalData().Count(new DataSubject { Emails = ["leo@reader.example"] }, CategoryOf("agents.record")));
+  }
+  // Sol, who is in charge of the desk, still reads that the work happened — and nothing of what it said.
+  runas (Sol) {
+    Assert.Equal(1, AgentTask.Count(t => t.Id == reminder));
+    Assert.Equal("", AgentTask.Single(t => t.Id == reminder).About);
+  }
+}
+
+[Test(Town)]
+void after_an_erasure_nothing_of_hers_is_left_in_anything_the_desk_recorded() {
+  var mias = MiaRenews();
+  NoorRenews();
+  var mia = AccountOf("mia@reader.example");
+  Assert.Contains("Mia", EverythingTheDeskRecorded());
+  runas (Ada) { Assert.Equal(3, ModelCall.Count(m => m.Requester == mia)); }
+
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, mia, "", IdentityCheck.InPerson, "She asked at the desk with her library card.");
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+
+  var left = EverythingTheDeskRecorded();
+  Assert.DoesNotContain("Mia", left);
+  Assert.DoesNotContain("mia@reader.example", left);
+  Assert.DoesNotContain("Dispossessed", left);
+  Assert.DoesNotContain("4471", left);
+  // Noor's words are all still there.
+  Assert.Contains("Could I keep Piranesi a little longer? Noor.", left);
+  runas (Ada) {
+    // No receipt, no request for help and no row of the model meter is hers.
+    Assert.Equal(0, AgentTask.Count(t => (t.Requester != null && t.Requester.Id == mia) || (t.StartedBy != null && t.StartedBy.Id == mia)));
+    Assert.Equal(0, ModelCall.Count(m => m.Requester == mia));
+    Assert.Equal(0, ModelCall.Count(m => m.Scopes.Contains(mia.ToString())));
+    // What a record handed out as values says nothing either.
+    foreach (var line in TraceOf(AgentTask.Single(t => t.Id == mias))) {
+      Assert.Equal("Erased.", line.Summary);
+      Assert.True(line.Payload == null || line.Payload == "");
+    }
+    // And a copy asked for afterwards holds nothing from the agents kit.
+    var again = FileRequest(RequestKind.Access, mia, "", IdentityCheck.InPerson, "She asked again, to see what is left.");
+    Assert.Equal(PlanOutcome.NotHeld, PlanLine.Single(l => l.Request == again && l.Category == "agents.trace").Outcome);
+    Assert.Equal(PlanOutcome.NotHeld, PlanLine.Single(l => l.Request == again && l.Category == "agents.record").Outcome);
+    Assert.Equal(PlanOutcome.NotHeld, PlanLine.Single(l => l.Request == again && l.Category == "llm.calls").Outcome);
+  }
+}

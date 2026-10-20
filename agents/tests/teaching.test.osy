@@ -1,0 +1,271 @@
+// Osysharp.Privacy.Agents — what teaching the desk holds about people: a correction of work done for a member may
+// quote her, an instruction for her work is hers, and the librarian who corrected and decided is named on both. A
+// member's copy carries the first two; her erasure takes them, and nobody else's; a librarian who leaves is taken off
+// what he taught, and the desk goes on being told it. The record of the corrected work still verifies throughout.
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+const string Desk = "Library.DeskAgent";
+
+string ForMia()      { return "Write to Mia Berg as Ms Berg."; }
+string ForEverybody() { return "Say the new due date in every answer."; }
+
+/// Sol corrects the desk's work for Mia, and teaches it two things: one for everybody's work, one for hers.
+void SolTeachesTheDesk(Guid miasWork) {
+  runas (Sol) {
+    CorrectAgentWork(AgentTask.Single(t => t.Id == miasWork), new Correction {
+      Wrong = "It called Mia Berg by her first name.", Right = "Ms Berg, as her card says.", Because = "She has asked the library for that.",
+    });
+    var general = ProposeAgentInstruction(new InstructionDraft { Agent = Desk, Guidance = ForEverybody(), Why = "Members ask when it is due." });
+    ActivateAgentInstruction(general, "Agreed at the desk meeting.");
+    var hers = ProposeAgentInstruction(new InstructionDraft {
+      Agent = Desk, For = AgentTask.Single(t => t.Id == miasWork).Requester!.Id, Guidance = ForMia(), Why = "She has asked the library for that.",
+      From = [AgentCorrection.Single().Id],
+    });
+    ActivateAgentInstruction(hers, "Her own wish.");
+    UnitOfWork.Commit();
+  }
+}
+
+/// Noor asks the desk to renew — and the test notes what the model was sent, under `what`.
+Guid NoorRenewsNoting(string what) {
+  Guid task = Guid.Empty;
+  runas (Noor) {
+    ScriptedAnswer.Stub((model, request) => { NoteTold(request, what); return Says.HandBack(new Renewed { Loans = 0, Said = "Nothing to renew." }); });
+    task = AskTheDesk("Anything of mine due?").Task;
+  }
+  return task;
+}
+
+string SaidUnder(string what) { return SentToModel.Single(t => t.What == what).Said; }
+
+[Test(Town)]
+void her_copy_holds_what_was_corrected_in_her_work_and_what_the_desk_is_told_for_her() {
+  var mias = MiaRenews();
+  NoorRenews();
+  SolTeachesTheDesk(mias);
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Access, AccountOf("mia@reader.example"), "", IdentityCheck.InPerson, "She asked at the desk with her library card.");
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    var export = ExportOf(done);
+    Assert.Contains("\"category\":\"agents.corrections\"", export);
+    // The correction of her work, and the instruction that is for her.
+    Assert.Contains("It called Mia Berg by her first name.", export);
+    Assert.Contains("Ms Berg, as her card says.", export);
+    Assert.Contains("Write to Mia Berg as Ms Berg.", export);
+    // Not what the desk is told for everybody's work: that is not hers.
+    Assert.DoesNotContain("Say the new due date in every answer.", export);
+    // She taught nothing herself.
+    var holder = new AgentTeachingPersonalData();
+    var mia = new DataSubject { Account = AccountOf("mia@reader.example") };
+    Assert.Equal(2, holder.Count(mia, CategoryOf("agents.corrections")));
+    Assert.Equal(0, holder.Count(mia, CategoryOf("agents.teaching")));
+    // Sol's copy says what he did, and none of it is Mia's words about herself beyond what he wrote.
+    var sol = new DataSubject { Account = AccountOf("sol@library.example") };
+    Assert.Equal(0, holder.Count(sol, CategoryOf("agents.corrections")));
+    var taught = holder.Export(sol, CategoryOf("agents.teaching")).Json;
+    Assert.Contains("Corrected its work", taught);
+    Assert.Contains("Proposed an instruction", taught);
+    Assert.Contains("Made an instruction active", taught);
+  }
+}
+
+[Test(Town)]
+void erasing_her_takes_what_her_corrections_said_and_the_instruction_for_her_and_nobody_elses() {
+  var mias = MiaRenews();
+  SolTeachesTheDesk(mias);
+  // Noor's work is corrected too, and the desk is told something for her.
+  var noors = NoorRenews();
+  runas (Sol) {
+    var noor = AgentTask.Single(t => t.Id == noors);
+    var hers = CorrectAgentWork(noor, new Correction { Wrong = "It did not say when Piranesi is due.", Right = "Say the date.", Because = "Noor asked." });
+    var told = ProposeAgentInstruction(new InstructionDraft { Agent = Desk, For = noor.Requester!.Id, Guidance = "Tell Noor Aziz a week before a book is due.", Why = "Noor asked.", From = [hers.Id] });
+    ActivateAgentInstruction(told, "Her own wish.");
+    UnitOfWork.Commit();
+  }
+  runas (Ada) {
+    Assert.Equal(3, InstructionSetOf(Desk));
+    var r = FileRequest(RequestKind.Erasure, AccountOf("mia@reader.example"), "", IdentityCheck.InPerson, "She asked at the desk with her library card.");
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Equal(PlanOutcome.Erase, PlanLine.Single(l => l.Request == done && l.Category == "agents.corrections").Outcome);
+    Assert.Equal(2, PlanLine.Single(l => l.Request == done && l.Category == "agents.corrections").Items);
+
+    // What the correction of HER work said is gone; that her work was corrected, and by whom, is not.
+    var correction = AgentCorrection.Single(c => c.ErasedAt != null);
+    Assert.Equal("Erased.", correction.Wrong);
+    Assert.Equal("Erased.", correction.Right);
+    Assert.Equal("Erased.", correction.Because);
+    Assert.Equal(AccountOf("sol@library.example"), correction.By!.Id);
+
+    // The instruction for her work was taken out of use — the desk's next set, made by nobody — and says nothing.
+    var hers = AgentInstruction.Single(i => i.Guidance == "Erased.");
+    Assert.Equal(InstructionState.Retired, hers.State);
+    Assert.Null(hers.For);
+    Assert.Equal(4, InstructionSetOf(Desk));
+    var last = InstructionSetsOf(Desk)[0];
+    Assert.Equal(InstructionChange.Erased, last.Change);
+    Assert.Null(last.By);
+    Assert.Equal(2, last.Count);
+    // What the desk is told for everybody's work stands — and so does everything that is Noor's.
+    Assert.Equal(InstructionState.Active, AgentInstruction.Single(i => i.Guidance == ForEverybody()).State);
+    var noorsRule = AgentInstruction.Single(i => i.Guidance == "Tell Noor Aziz a week before a book is due.");
+    Assert.Equal(InstructionState.Active, noorsRule.State);
+    Assert.Equal(AccountOf("noor@reader.example"), noorsRule.For!.Id);
+    Assert.Equal("Say the date.", AgentCorrection.Single(c => c.ErasedAt == null).Right);
+
+    // ⭐ The record of the corrected work still verifies, every line of it erased.
+    var check = VerifyTrace(AgentTask.Single(t => t.Id == mias));
+    Assert.True(check.Intact);
+    Assert.Equal(9, check.Erased);
+    // Not a word about her is left in anything the agents kit holds.
+    var everything = EverythingTheDeskRecorded();
+    foreach (var c in AgentCorrection.ToList()) { everything = everything + c.Wrong + c.Right + c.Because + c.StepSaid + "\n"; }
+    foreach (var i in AgentInstruction.ToList()) { everything = everything + i.Guidance + i.Why + "\n"; }
+    Assert.DoesNotContain("Berg", everything);
+    Assert.DoesNotContain("Mia", everything);
+  }
+  // The desk's next piece of work for Noor is sent what holds for everybody and what is hers — nothing of Mia's.
+  NoorRenewsNoting("after");
+  Assert.Contains("1. " + ForEverybody() + "\n2. Tell Noor Aziz a week before a book is due.", SaidUnder("after"));
+  Assert.DoesNotContain("Berg", SaidUnder("after"));
+}
+
+[Test(Town)]
+void a_librarian_who_leaves_is_taken_off_what_he_taught_and_the_desk_is_still_told_it() {
+  var mias = MiaRenews();
+  SolTeachesTheDesk(mias);
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, AccountOf("sol@library.example"), "", IdentityCheck.InPerson, "He left the library and asked in person.");
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(PlanOutcome.Erase, PlanLine.Single(l => l.Request == done && l.Category == "agents.teaching").Outcome);
+
+    // Nothing he taught says who any more; all of it still says what, and why.
+    Assert.Null(AgentCorrection.Single().By);
+    Assert.Equal("Ms Berg, as her card says.", AgentCorrection.Single().Right);
+    foreach (var i in AgentInstruction.ToList()) {
+      Assert.Null(i.ProposedBy);
+      Assert.Null(i.ReviewedBy);
+      Assert.Equal(InstructionState.Active, i.State);
+    }
+    var sets = InstructionSetsOf(Desk);
+    Assert.Equal(2, sets.Count);
+    Assert.Null(sets[0].By);
+    Assert.Equal("Her own wish.", sets[0].Why);
+    Assert.Equal(0, new AgentTeachingPersonalData().Count(new DataSubject { Account = AccountOf("sol@library.example") }, CategoryOf("agents.teaching")));
+  }
+  // The desk goes on being told both.
+  runas (Mia) {
+    ScriptedAnswer.Stub((model, request) => { NoteTold(request, "mia after"); return Says.HandBack(new Renewed { Loans = 0, Said = "Nothing to renew." }); });
+    AskTheDesk("Anything due?");
+  }
+  Assert.Contains("1. " + ForEverybody() + "\n2. " + ForMia(), SaidUnder("mia after"));
+}
+
+[Test(Town)]
+void kept_out_of_use_an_instruction_for_her_is_no_longer_sent_and_a_correction_no_longer_read() {
+  var mias = MiaRenews();
+  SolTeachesTheDesk(mias);
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Restriction, AccountOf("mia@reader.example"), "", IdentityCheck.InPerson, "She asked us to stop using her data while a complaint is looked at.");
+    ApproveRequest(r);
+    Assert.Equal("", PrivacyRequest.Single(x => x.Id == r.Id).Problem);
+    // Nobody reads the correction; the instruction for her is withheld — the desk's next set, with why.
+    Assert.Equal(0, AgentCorrection.Count());
+    Assert.Equal(3, InstructionSetOf(Desk));
+    Assert.Equal(InstructionChange.Withheld, InstructionSetsOf(Desk)[0].Change);
+    Assert.Equal(1, InstructionSetsOf(Desk)[0].Count);
+  }
+  runas (Mia) {
+    ScriptedAnswer.Stub((model, request) => { NoteTold(request, "restricted"); return Says.HandBack(new Renewed { Loans = 0, Said = "Nothing to renew." }); });
+    AskTheDesk("Anything due?");
+  }
+  Assert.Contains("1. " + ForEverybody(), SaidUnder("restricted"));
+  Assert.DoesNotContain("Ms Berg", SaidUnder("restricted"));
+}
+
+[Test(Town)]
+void what_a_correction_said_goes_at_the_end_of_its_time_for_everybody() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  var mias = MiaRenews();
+  SolTeachesTheDesk(mias);
+  // Six months on it is all there.
+  TestClock.Set(new DateTime(2026, 9, 1, 10, 0, 0));
+  runas (Ada) {
+    PurgeNow();
+    Assert.Equal("Ms Berg, as her card says.", AgentCorrection.Single().Right);
+  }
+  // Seven months and a day after it was written, what it said is gone; that the work was corrected is not — and
+  // what the desk was told because of it still stands.
+  TestClock.Set(new DateTime(2026, 10, 4, 10, 0, 0));
+  runas (Ada) {
+    PurgeNow();
+    var correction = AgentCorrection.Single();
+    Assert.Equal("Erased.", correction.Right);
+    // Both periods end that day; the correction's own purge is the one that took its words.
+    Assert.Equal("It was kept as long as what a correction said is kept.", correction.ErasedWhy);
+    Assert.Null(correction.Task);
+    Assert.Equal(CorrectionSeverity.Mistake, correction.Severity);
+    Assert.Equal(2, AgentInstruction.Count(i => i.State == InstructionState.Active));
+    Assert.Equal(0, AgentTask.Count());
+  }
+}
+
+/// ⭐ A LIBRARY THAT KEEPS CORRECTIONS FOR LESS TIME THAN THE WORK: what a correction said goes at the end of its own
+/// period, by its own purge — while what the work said, kept longer here, is still there — and says why it went.
+[Test(Town)]
+void a_correction_kept_for_less_time_than_the_work_goes_by_its_own_purge() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  runas (Ada) {
+    SetRetention(AgentContentCategory(), 3, RetentionStart.Collected);
+    SetRetention(AgentCorrectionsCategory(), 1, RetentionStart.Collected);
+  }
+  var mias = MiaRenews();
+  SolTeachesTheDesk(mias);
+  // A month and three days on: the correction's words are gone — and only the correction's.
+  TestClock.Set(new DateTime(2026, 4, 5, 10, 0, 0));
+  runas (Ada) {
+    PurgeNow();
+    var correction = AgentCorrection.Single();
+    Assert.Equal("Erased.", correction.Right);
+    Assert.Equal("It was kept as long as what a correction said is kept.", correction.ErasedWhy);
+    Assert.NotNull(correction.ErasedAt);
+    // It still corrects that work, which is all there.
+    Assert.Equal(mias, correction.Task!.Id);
+    Assert.Equal(1, PurgeRecord.Where(p => p.Category == "agents.corrections").OrderByDescending(p => p.At).First().Count);
+  }
+  Assert.True(LinesWithContent(mias) > 0);
+}
+
+/// …unless a legal hold covers the person the work was for: then the correction is kept through the purge.
+[Test(Town)]
+void a_legal_hold_keeps_a_correction_through_its_own_purge() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  runas (Ada) {
+    SetRetention(AgentContentCategory(), 3, RetentionStart.Collected);
+    SetRetention(AgentCorrectionsCategory(), 1, RetentionStart.Collected);
+  }
+  var mias = MiaRenews();
+  SolTeachesTheDesk(mias);
+  runas (Ada) {
+    PlaceHold("", AccountOf("mia@reader.example"), "A dispute over a lost book", "What the desk told her is part of it.", new DateTime(2027, 6, 1));
+  }
+  TestClock.Set(new DateTime(2026, 4, 5, 10, 0, 0));
+  runas (Ada) {
+    PurgeNow();
+    var correction = AgentCorrection.Single();
+    Assert.Equal("Ms Berg, as her card says.", correction.Right);
+    Assert.Null(correction.ErasedAt);
+  }
+}

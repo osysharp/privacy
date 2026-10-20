@@ -1,0 +1,102 @@
+// The library the tests run in: Ada answers privacy requests and audits the desk; Sol is the head librarian, in
+// charge of the desk; Mia and Noor are members with an account; Leo borrowed a book and only ever left an address.
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+[TestFixture]
+void Town() {
+  var ada = new Person { Email = "ada@library.example", DisplayName = "Ada" };
+  var sol = new Person { Email = "sol@library.example", DisplayName = "Sol" };
+  var mia = new Person { Email = "mia@reader.example", DisplayName = "Mia Berg" };
+  var noor = new Person { Email = "noor@reader.example", DisplayName = "Noor Aziz" };
+  new RoleGrant { Member = ada, Role = LibraryRole.Admin };
+  new RoleGrant { Member = sol, Role = LibraryRole.Librarian };
+  new RoleGrant { Member = mia, Role = LibraryRole.Member };
+  new RoleGrant { Member = noor, Role = LibraryRole.Member };
+  new Loan { Title = "The Dispossessed", Borrower = mia, BorrowerName = "Mia Berg", BorrowerEmail = "mia@reader.example", DueOn = new DateTime(2026, 3, 10) };
+  new Loan { Title = "Piranesi", Borrower = noor, BorrowerName = "Noor Aziz", BorrowerEmail = "noor@reader.example", DueOn = new DateTime(2026, 3, 12) };
+  new Loan { Title = "Roadside Picnic", BorrowerName = "Leo Lind", BorrowerEmail = "leo@reader.example", DueOn = new DateTime(2026, 3, 1) };
+  // The head librarian answers for the desk.
+  new AgentSeat { Agent = "Library.DeskAgent", Sponsor = sol };
+}
+
+principal Ada  => Person.Single(p => p.Email == "ada@library.example");
+principal Sol  => Person.Single(p => p.Email == "sol@library.example");
+principal Mia  => Person.Single(p => p.Email == "mia@reader.example");
+principal Noor => Person.Single(p => p.Email == "noor@reader.example");
+
+Guid AccountOf(string email) {
+  Guid id = Guid.Empty;
+  runas (Ada) { id = Person.Single(p => p.Email == email).Id; }
+  return id;
+}
+
+string LoanArg(Loan loan) { return "{\"loan\":\"" + loan.Id.ToString() + "\"}"; }
+string EmailArg(string email) { return "{\"email\":\"" + email + "\"}"; }
+
+/// Mia asks the desk to renew her book: it looks her loans up, renews one and tells her. Nine lines on its record.
+Guid MiaRenews() {
+  Guid task = Guid.Empty;
+  runas (Mia) {
+    var loan = Loan.Single(l => l.Title == "The Dispossessed");
+    var script = AgentScript.Of(
+      Says.Tool(Actions.Of(LoansOf), EmailArg("mia@reader.example")),
+      Says.Tool(Actions.Of(RenewLoan), LoanArg(loan)),
+      Says.HandBack(new Renewed { Loans = 1, Said = "Mia, The Dispossessed is yours for three more weeks." }));
+    ScriptedAnswer.Stub((model, request) => script.Answer(model, request));
+    task = AskTheDesk("Please renew my copy of The Dispossessed. Mia Berg, card 4471.").Task;
+  }
+  return task;
+}
+
+/// Noor does the same for hers.
+Guid NoorRenews() {
+  Guid task = Guid.Empty;
+  runas (Noor) {
+    var loan = Loan.Single(l => l.Title == "Piranesi");
+    var script = AgentScript.Of(
+      Says.Tool(Actions.Of(LoansOf), EmailArg("noor@reader.example")),
+      Says.Tool(Actions.Of(RenewLoan), LoanArg(loan)),
+      Says.HandBack(new Renewed { Loans = 1, Said = "Noor, Piranesi is yours for three more weeks." }));
+    ScriptedAnswer.Stub((model, request) => script.Answer(model, request));
+    task = AskTheDesk("Could I keep Piranesi a little longer? Noor.").Task;
+  }
+  return task;
+}
+
+/// Sol has the desk draft a reminder about Leo's late book — and the library says whose data that work is. Six lines.
+Guid SolRemindsLeo() {
+  Guid task = Guid.Empty;
+  runas (Sol) {
+    var loan = Loan.Single(l => l.Title == "Roadside Picnic");
+    var script = AgentScript.Of(
+      Says.Tool(Actions.Of(LoansOf), EmailArg("leo@reader.example")),
+      Says.HandBack(new Reminder { Subject = "Roadside Picnic is late", Text = "Dear Leo Lind, Roadside Picnic was due on 1 March. Could you bring it back this week?" }));
+    ScriptedAnswer.Stub((model, request) => script.Answer(model, request));
+    task = RemindAbout(loan).Task;
+  }
+  return task;
+}
+
+/// Every word the agents kit holds, as the auditor reads it — receipts, lines and requests for help, in one text.
+string EverythingTheDeskRecorded() {
+  var all = "";
+  runas (Ada) {
+    foreach (var t in AgentTask.ToList()) { all = all + t.About + "|" + t.Outcome + "|" + (t.Result ?? "") + "|" + t.StopWhy + "\n"; }
+    foreach (var e in TraceEvent.ToList()) { all = all + e.Summary + "|" + (e.Payload ?? "") + "\n"; }
+    foreach (var h in AgentHelp.ToList()) { all = all + h.Question + "|" + h.Context + "|" + h.Answer + "\n"; }
+  }
+  return all;
+}
+
+/// How many lines of a piece of work still say what they were given or answered.
+int LinesWithContent(Guid task) {
+  var n = 0;
+  runas (Ada) { n = TraceEvent.Count(e => e.Task.Id == task && e.Payload != null && e.Payload != ""); }
+  return n;
+}

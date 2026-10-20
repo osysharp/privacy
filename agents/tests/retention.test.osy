@@ -1,0 +1,123 @@
+// Osysharp.Privacy.Agents — nothing is kept past its time: what a piece of work said goes after a month, the record
+// that it happened after seven, for everybody — unless a legal hold covers the person. And while it is kept, a person
+// can have it taken out of use.
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+[Test(Town)]
+void what_the_work_said_goes_after_a_month_and_the_record_after_seven() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  var mias = MiaRenews();
+  var reminder = SolRemindsLeo();
+
+  // Three weeks on, nothing has reached its time.
+  TestClock.Set(new DateTime(2026, 3, 23, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Equal(9, LinesWithContent(mias));
+  Assert.Equal(6, LinesWithContent(reminder));
+
+  // A month and a day after the work ended, what it said is gone — for Mia, who never asked, as for anybody.
+  TestClock.Set(new DateTime(2026, 4, 4, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Equal(0, LinesWithContent(mias));
+  Assert.Equal(0, LinesWithContent(reminder));
+  runas (Ada) {
+    var receipt = AgentTask.Single(t => t.Id == mias);
+    Assert.Null(receipt.Result);
+    Assert.Equal("It was kept as long as what an agent's work said is kept.", receipt.ErasedWhy);
+    // The record is all there: whose it was, what it was about, every sentence — and it checks, with nothing erased.
+    Assert.Equal(AccountOf("mia@reader.example"), receipt.Requester!.Id);
+    Assert.Equal("Renewals for Mia Berg", receipt.About);
+    Assert.Equal("DeskAgent was given renew loans: Renewals for Mia Berg.", TraceEvent.Single(e => e.Task.Id == mias && e.Seq == 1).Summary);
+    var check = VerifyTrace(receipt);
+    Assert.True(check.Intact);
+    Assert.Equal(0, check.Erased);
+    var content = PurgeRecord.Where(p => p.Category == "agents.trace").OrderByDescending(p => p.At).First();
+    Assert.False(content.Failed);
+    Assert.Equal(2, content.Count);
+    Assert.Equal(0, PurgeRecord.Where(p => p.Category == "agents.record").OrderByDescending(p => p.At).First().Count);
+  }
+  // Mia still reads the receipt of her own work.
+  runas (Mia) { Assert.Equal(1, AgentTask.Count()); }
+
+  // Seven months and a day after it ended, the work is gone whole.
+  TestClock.Set(new DateTime(2026, 10, 4, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  runas (Ada) {
+    Assert.Equal(0, AgentTask.Count());
+    Assert.Equal(0, TraceEvent.Count());
+    Assert.Equal(0, SubjectMark.Count());
+    var record = PurgeRecord.Where(p => p.Category == "agents.record").OrderByDescending(p => p.At).First();
+    Assert.False(record.Failed);
+    Assert.Equal(2, record.Count);
+  }
+}
+
+[Test(Town)]
+void a_legal_hold_keeps_a_persons_agent_work_through_the_purge() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  var mias = MiaRenews();
+  var noors = NoorRenews();
+  var reminder = SolRemindsLeo();
+  runas (Ada) {
+    // Mia is held by her account; Leo by the address the reminder was marked with.
+    PlaceHold("", AccountOf("mia@reader.example"), "A dispute over a lost book", "What the desk told her is part of it.", new DateTime(2027, 6, 1));
+    PlaceHold("leo@reader.example", null, "A dispute over a late fee", "The reminder is part of it.", new DateTime(2027, 6, 1));
+  }
+  Background.Settle();
+
+  TestClock.Set(new DateTime(2026, 10, 4, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+
+  // Noor's work reached its time and went. Mia's and the reminder about Leo are untouched, word for word.
+  runas (Ada) {
+    Assert.Equal(0, AgentTask.Count(t => t.Id == noors));
+    Assert.Equal(9, LinesWithContent(mias));
+    Assert.Equal(6, LinesWithContent(reminder));
+    Assert.Equal("Renewals for Mia Berg", AgentTask.Single(t => t.Id == mias).About);
+    Assert.True(VerifyTrace(AgentTask.Single(t => t.Id == reminder)).Intact);
+    Assert.False(PurgeRecord.Any(p => p.Failed || p.Deferred));
+  }
+}
+
+[Test(Town)]
+void a_restriction_takes_her_agent_work_out_of_use_for_everybody() {
+  var mias = MiaRenews();
+  var noors = NoorRenews();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Restriction, AccountOf("mia@reader.example"), "", IdentityCheck.InPerson, "She asked us to stop using her data while a complaint is looked at.");
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+  }
+  // Nobody reads it: not Mia, not the librarian in charge of the desk, not the auditor.
+  runas (Mia) { Assert.Equal(0, AgentTask.Count()); Assert.Equal(0, TraceEvent.Count()); }
+  runas (Sol) { Assert.Equal(0, AgentTask.Count(t => t.Id == mias)); Assert.Equal(1, AgentTask.Count(t => t.Id == noors)); }
+  runas (Ada) {
+    Assert.Equal(0, AgentTask.Count(t => t.Id == mias));
+    Assert.Equal(0, TraceEvent.Count(e => e.Task.Id == mias));
+    // Noor's is in ordinary use.
+    Assert.Equal(9, TraceEvent.Count(e => e.Task.Id == noors));
+  }
+}
+
+[Test(Town)]
+void an_erasure_waits_while_the_desk_is_still_working_for_her() {
+  List<string> waits = [];
+  runas (Mia) {
+    var script = AgentScript.Of(Says.Words("You have one book out, due on 10 March."));
+    ScriptedAnswer.Stub((model, request) => script.Answer(model, request));
+    waits = AskAndWatchWhatWaits("What do I have out?");
+  }
+  // While the answer was arriving the work was under way, and an erasure would have waited for it…
+  Assert.True(waits.Count >= 2);
+  Assert.Equal("an AI agent is still working on something for you or about you", waits[0]);
+  // …and once it had ended, nothing waits.
+  Assert.Equal("after: ", waits[waits.Count - 1]);
+}

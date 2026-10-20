@@ -1,0 +1,23 @@
+// The library's model and its agent. In a file of its own with no `namespace`, because an `app.X = …` statement's
+// value is resolved outside the file's namespace.
+using Osysharp.Agents;
+using Osysharp.Llm;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Assignments;
+using Library;
+
+app.Llm = new LlmSetup {
+  Models = [
+    // $1 a million tokens in and $5 out: a scripted answer of 100 in and 20 out costs 200 millionths of a dollar.
+    new LlmModel { Name = "Small", Client = new ScriptedModel { Name = "Small" }, Model = "scripted-small",
+                   Price = new LlmPrice { Input = 1, Output = 5 }, MaxOutputTokens = 1000 },
+  ],
+  Default = "Small",
+};
+
+app.Agents = new AgentsSetup { Agents = [new DeskAgent(), new Renewer()], TaskBudget = 0.05m };
+
+app.Privacy = new PrivacySetup { Controller = "Town Library", SupervisoryAuthority = "IMY, imy.se" };
+
+// A case about a borrower reads, once they are erased, as a case about "a former borrower".
+app.AssignmentsPrivacy = new AssignmentsPrivacySetup { StandIn = "a former borrower" };

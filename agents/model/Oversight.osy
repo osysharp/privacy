@@ -1,0 +1,118 @@
+namespace Osysharp.Privacy.Agents;
+
+using Osysharp.Identity;
+using Osysharp.Agents;
+using Osysharp.Privacy;
+
+// ── who oversaw the agents ────────────────────────────────────────────────────────────────────────────────────────
+//
+// Staff are named on how the agents were run: a standing rule ("from now on, alone") says who gave it and who took it
+// back, a change to an agent's place says who paused, resumed or named its sponsor — and who was named — a question
+// an agent put to a person says whom it asked and who answered, and a proposal says whom it was sent to and who
+// decided it. That is `agents.oversight`: found by the person's account. An erasure takes them off it; what was
+// decided, answered and changed stays, because it is how the agents came to work as they do.
+//
+// ⚑ IT WAITS FOR WHAT WAITS ON THEM. A question or a proposal still waiting on the person, or an agent they sponsor
+//   now, is theirs to answer or hand on: the request waits (`BlockedBy`) and runs when it clears.
+
+public string AgentOversightCategory() { return "agents.oversight"; }
+
+public class AgentOversightPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.Agents.Oversight";
+
+  public List<DataCategory> Categories() => [
+    new DataCategory {
+      Key = AgentOversightCategory(),
+      Label = "That you let an AI agent act alone or took that back, paused, resumed or sponsored an agent, were asked something by one, or decided what one proposed",
+      Purpose = Translate("Accounting for who decided how our AI agents work, and why"),
+      SubjectKind = "people who oversee the agents",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("accounting for who decided how our AI agents work"),
+      RetainedMonths = 0, RetainedFrom = RetentionStart.Collected, MinMonths = 0, MaxMonths = 0,
+      RetainedFromWords = Translate("for as long as what was decided stands on record"),
+      OnErasureWords = Translate("You were taken off them: they no longer say who. What was decided, answered and changed is kept.") },
+  ];
+
+  public int Count(DataSubject s, DataCategory c) { return OversawBy(s).Count; }
+
+  public string BlockedBy(DataSubject s, DataCategory c) {
+    var person = PersonOf(s);
+    if (person == null) { return ""; }
+    return WhatWaitsOnThem(person!);
+  }
+
+  // SECURITY-INVARIANT(an-agents-record-is-erased-by-a-privacy-request-not-by-hand): runs in the request's own run,
+  // as the app — what passes the agents kit's `ErasesAgentRecords` — and takes off only the account the request
+  // proved. Guarded by tests/oversight.test.osy `erasing_a_lead_takes_her_off_how_she_ran_the_agents_and_nobody_else`.
+  public void Erase(DataSubject s, DataCategory c) {
+    var person = PersonOf(s);
+    if (person != null) { ForgetWhoOversawAgents(person!); }
+  }
+
+  /// Not kept out of use: the rows that say so are the agents' own record of how they were run, which every piece of
+  /// their work is decided by. An erasure takes the person off them.
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) { return null; }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    var rows = OversawBy(s);
+    List<ExportItem> items = [];
+    foreach (var r in rows) {
+      items.Add(new ExportItem { At = r.At, Title = r.Did, Body = r.About, Fields = [new ExportField { Name = Translate("Agent"), Value = r.Agent }] });
+    }
+    return new ExportSection { Category = AgentOversightCategory(), Json = JsonSerializer.Serialize(rows), Items = items };
+  }
+
+  /// Nothing goes by time: it is kept for as long as what was decided is on record.
+  public int Purge(DataCategory c, DateTime now) { return 0; }
+}
+
+Principal? PersonOf(DataSubject s) {
+  if (s.Account == null) { return null; }
+  var id = s.Account.Value;
+  return Principal.FirstOrDefault(p => p.Id == id);
+}
+
+/// One thing a person did in overseeing the agents, or one thing an agent asked of them.
+public class OversawRow {
+  public DateTime At;
+  public string Agent = "";
+  /// "Let it act alone", "Took back letting it act alone", "Paused it", "Resumed it", "Named its sponsor", "Was named
+  /// its sponsor", "Was asked by it", "Answered it", "Was sent its proposal", "Decided its proposal".
+  public string Did = "";
+  /// What it was about: the tool, the reason, the question, the proposal.
+  public string About = "";
+}
+
+/// Everything an account did in overseeing the agents, oldest first.
+[SuppressWarning("cost-unbounded-read")]   // one person's decisions about the agents
+public List<OversawRow> OversawBy(DataSubject s) {
+  List<OversawRow> rows = [];
+  var person = PersonOf(s);
+  if (person == null) { return rows; }
+  var p = person!;
+  foreach (var r in AgentStandingRule.Where(x => x.GrantedBy == p).ToList()) {
+    rows.Add(new OversawRow { At = r.At, Agent = BareName(r.Agent), Did = "Let it act alone", About = BareName(r.Action) });
+  }
+  foreach (var r in AgentStandingRule.Where(x => x.RevokedBy == p).ToList()) {
+    rows.Add(new OversawRow { At = r.RevokedAt ?? r.At, Agent = BareName(r.Agent), Did = "Took back letting it act alone", About = r.RevokedWhy });
+  }
+  foreach (var ch in AgentSeatChange.Where(x => x.By == p).ToList()) {
+    var did = ch.What == AgentSeatChangeKind.Paused ? "Paused it" : (ch.What == AgentSeatChangeKind.Resumed ? "Resumed it" : "Named its sponsor");
+    rows.Add(new OversawRow { At = ch.At, Agent = BareName(ch.Agent), Did = did, About = ch.Why });
+  }
+  foreach (var ch in AgentSeatChange.Where(x => x.Sponsor == p).ToList()) {
+    rows.Add(new OversawRow { At = ch.At, Agent = BareName(ch.Agent), Did = "Was named its sponsor", About = ch.Why });
+  }
+  foreach (var h in AgentHelp.Where(x => x.AskedPerson == p).ToList()) {
+    rows.Add(new OversawRow { At = h.At, Agent = BareName(h.Agent), Did = "Was asked by it", About = h.Question });
+  }
+  foreach (var h in AgentHelp.Where(x => x.AnsweredBy == p).ToList()) {
+    rows.Add(new OversawRow { At = h.AnsweredAt ?? h.At, Agent = BareName(h.Agent), Did = "Answered it", About = h.Answer });
+  }
+  foreach (var proposal in AgentProposal.Where(x => x.DecideBy == p).ToList()) {
+    rows.Add(new OversawRow { At = proposal.At, Agent = BareName(proposal.Agent), Did = "Was sent its proposal", About = proposal.Label });
+  }
+  foreach (var proposal in AgentProposal.Where(x => x.DecidedBy == p).ToList()) {
+    rows.Add(new OversawRow { At = proposal.DecidedAt ?? proposal.At, Agent = BareName(proposal.Agent), Did = "Decided its proposal", About = proposal.Label });
+  }
+  return rows.OrderBy(r => r.At).ToList();
+}

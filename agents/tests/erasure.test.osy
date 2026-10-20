@@ -1,0 +1,90 @@
+// Osysharp.Privacy.Agents — a person asks to be erased: what the desk was shown and answered for her goes, she is
+// taken off the record, and the record still proves what happened. Nobody else's work is touched.
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+/// Ada files Mia's erasure — she asked at the desk with her card — and approves the plan. Answers the request's id.
+Guid EraseMia() {
+  Guid id = Guid.Empty;
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, AccountOf("mia@reader.example"), "", IdentityCheck.InPerson, "She asked at the desk with her library card.");
+    ApproveRequest(r);
+    id = r.Id;
+  }
+  return id;
+}
+
+[Test(Town)]
+void the_chain_verifies_after_a_person_is_erased() {
+  var mias = MiaRenews();
+  var noors = NoorRenews();
+  // Before: the record says what it said, and checks.
+  runas (Ada) {
+    Assert.Equal(9, LinesWithContent(mias));
+    var before = VerifyTrace(AgentTask.Single(t => t.Id == mias));
+    Assert.True(before.Intact);
+    Assert.Equal(0, before.Erased);
+  }
+
+  var request = EraseMia();
+
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Equal(PlanOutcome.Erase, PlanLine.Single(l => l.Request == done && l.Category == "agents.trace").Outcome);
+    Assert.Equal(1, PlanLine.Single(l => l.Request == done && l.Category == "agents.record").Items);
+
+    // Hers: nobody's now, about nothing, and not a word of it left — for the auditor, who reads everything there is.
+    var receipt = AgentTask.Single(t => t.Id == mias);
+    Assert.Null(receipt.Requester);
+    Assert.Null(receipt.StartedBy);
+    Assert.Equal("", receipt.About);
+    Assert.Null(receipt.Result);
+    Assert.Equal(0, LinesWithContent(mias));
+    Assert.Equal(9, TraceEvent.Count(e => e.Task.Id == mias && e.Summary == "Erased."));
+
+    // ⭐ The chain still verifies: every line is where it was written, and nine of them no longer say what they said.
+    var check = VerifyTrace(receipt);
+    Assert.True(check.Intact);
+    Assert.Equal(9, check.Lines);
+    Assert.Equal(9, check.Erased);
+    // What happened is still told: the steps in order, the model, the tools, what it cost.
+    Assert.Equal(["Started", "ModelCall", "ToolCall", "ToolResult", "ModelCall", "ToolCall", "ToolResult", "ModelCall", "Ended"],
+                 Trajectory.Kinds(mias));
+    Assert.Equal(["LoansOf", "RenewLoan"], Trajectory.Of(mias));
+    Assert.Equal(600, receipt.SpentMicros);
+    Assert.Equal(AgentTaskStatus.Done, receipt.Status);
+
+    // ⭐ And a line changed after the erasure is still found.
+    var lines = TraceOf(receipt);
+    lines[1].CostMicros = 1;
+    Assert.Equal("Line 2 is not as it was written.", CheckChain(lines).Problem);
+    lines = TraceOf(receipt);
+    lines[5].Tool = "Library.LoansOf";
+    Assert.Equal(6, CheckChain(lines).BrokenAt);
+    lines = TraceOf(receipt);
+    lines[0].Summary = "The desk was given nothing.";
+    Assert.Equal("Line 1 was erased, and something was written in its place.", CheckChain(lines).Problem);
+    lines = TraceOf(receipt);
+    lines.RemoveAt(3);
+    Assert.Equal("Line 4 is missing.", CheckChain(lines).Problem);
+
+    // Noor's work is as it was: hers, with every word, and it checks with nothing erased.
+    var other = AgentTask.Single(t => t.Id == noors);
+    Assert.Equal(AccountOf("noor@reader.example"), other.Requester!.Id);
+    Assert.Equal("Renewals for Noor Aziz", other.About);
+    Assert.Equal(9, LinesWithContent(noors));
+    var untouched = VerifyTrace(other);
+    Assert.True(untouched.Intact);
+    Assert.Equal(0, untouched.Erased);
+  }
+  // Mia reads none of it any more; Noor reads her own as before.
+  runas (Mia)  { Assert.Equal(0, AgentTask.Count()); Assert.Equal(0, TraceEvent.Count()); }
+  runas (Noor) { Assert.Equal(1, AgentTask.Count()); Assert.Equal(9, TraceEvent.Count(e => e.Payload != null && e.Payload != "")); }
+}
