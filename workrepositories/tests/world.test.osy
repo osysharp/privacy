@@ -1,0 +1,112 @@
+// The studio the tests run in: Ada answers privacy requests; Hanna, the studio manager, asks for the hire; Rut, the
+// recruiter, owns it; Ivo and Lena interview; Otto looks after what is kept. Two candidates wrote in — Maja Okafor
+// and Sven Lind — and neither has an account.
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.WorkRepositories;
+using Osysharp.Privacy;
+using Osysharp.Privacy.WorkRepositories;
+using Recruiting;
+
+[TestFixture]
+void Fjord() {
+  var ada   = new Person { Email = "ada@fjord.example",   DisplayName = "Ada Strand" };
+  var hanna = new Person { Email = "hanna@fjord.example", DisplayName = "Hanna Roos" };
+  var rut   = new Person { Email = "rut@fjord.example",   DisplayName = "Rut Sand" };
+  var ivo   = new Person { Email = "ivo@fjord.example",   DisplayName = "Ivo Berg" };
+  var lena  = new Person { Email = "lena@fjord.example",  DisplayName = "Lena Falk" };
+  var otto  = new Person { Email = "otto@fjord.example",  DisplayName = "Otto Lund" };
+  new RoleGrant { Member = ada,   Role = StudioRole.Admin };
+  new RoleGrant { Member = hanna, Role = StudioRole.Manager };
+  new RoleGrant { Member = rut,   Role = StudioRole.Recruiter };
+  new RoleGrant { Member = ivo,   Role = StudioRole.Interviewer };
+  new RoleGrant { Member = lena,  Role = StudioRole.Interviewer };
+  new RoleGrant { Member = otto,  Role = StudioRole.Records };
+}
+
+principal Ada   => Person.Single(p => p.Email == "ada@fjord.example");
+principal Hanna => Person.Single(p => p.Email == "hanna@fjord.example");
+principal Rut   => Person.Single(p => p.Email == "rut@fjord.example");
+principal Ivo   => Person.Single(p => p.Email == "ivo@fjord.example");
+principal Lena  => Person.Single(p => p.Email == "lena@fjord.example");
+principal Otto  => Person.Single(p => p.Email == "otto@fjord.example");
+
+Guid AccountOf(string email) {
+  Guid id = Guid.Empty;
+  runas (Ada) { id = Person.Single(p => p.Email == email).Id; }
+  return id;
+}
+
+Assignment Hire(Guid id) { return Assignment.Single(a => a.Id == id); }
+RepositoryItem Item(Guid id) { return RepositoryItem.Single(i => i.Id == id); }
+
+/// What the hire holds: its id, and the id of each item in it.
+class TheHire {
+  public Guid Id;
+  public Guid Brief;
+  public Guid MajasApplication;
+  public Guid SvensApplication;
+  public Guid IvoOnMaja;
+  public Guid LenaOnMaja;
+  public Guid IvoOnSven;
+  public Guid LetterToMaja;
+}
+
+/// The hire under way: the brief, both applications, a letter to Maja, and the feedback — both interviewers on Maja,
+/// Ivo on Sven. The hiring manager is given the feedback to read.
+TheHire HireUnderWay() {
+  var h = new TheHire();
+  runas (Hanna) { h.Id = OpenHire(Rut, [Ivo, Lena]).Id; }
+  runas (Rut) {
+    var hire = Hire(h.Id);
+    h.Brief = ItemOf(hire, "brief")!.Id;
+    h.MajasApplication = ReceiveApplication(hire, "Maja Okafor", "maja@candidate.example", "Ten years of picture books; portfolio enclosed.").Id;
+    h.SvensApplication = ReceiveApplication(hire, "Sven Lind", "sven@candidate.example", "Editorial work for two dailies.").Id;
+    h.LetterToMaja = WriteTo(hire, "Maja Okafor", "maja@candidate.example", "Dear Maja, could you come on Thursday at ten?").Id;
+    OpenKindTo(hire, ItemKind.Finding, Hanna);
+  }
+  runas (Ivo) {
+    h.IvoOnMaja = GiveFeedback(Hire(h.Id), "Maja Okafor", "maja@candidate.example", "Maja's line work is the strongest we have seen.").Id;
+    h.IvoOnSven = GiveFeedback(Hire(h.Id), "Sven Lind", "sven@candidate.example", "Sven is fast, and has not drawn for children.").Id;
+  }
+  runas (Lena) {
+    h.LenaOnMaja = GiveFeedback(Hire(h.Id), "Maja Okafor", "maja@candidate.example", "Maja would need a quieter desk; hire her.").Id;
+  }
+  return h;
+}
+
+/// Close the hire: both criteria met, completed.
+void CloseTheHire(Guid id) {
+  runas (Rut) {
+    var a = Hire(id);
+    foreach (var c in a.Criteria.ToList()) { MeetCriterion(c, "Done"); }
+    CompleteAssignment(a, "The offer was accepted.");
+  }
+  Background.Settle();
+}
+
+/// What an item's standing version says — read by the records officer, who reads every item.
+string Says(Guid item) {
+  var text = "";
+  runas (Otto) { text = CurrentOf(Item(item)).Content; }
+  return text;
+}
+
+/// Everything the repositories and the hire's activity say, as the records officer and the recruiter read it.
+string EverythingSaid(Guid hire) {
+  var all = "";
+  runas (Otto) { all = EverythingKept(); }
+  runas (Rut) { all = all + ActivityText(Hire(hire)); }
+  return all;
+}
+
+/// A request Ada files and approves. Answers its id.
+Guid Ask(RequestKind right, Guid? account, string email, string how) {
+  Guid id = Guid.Empty;
+  runas (Ada) {
+    var r = FileRequest(right, account, email, IdentityCheck.KnownDetails, how);
+    ApproveRequest(r);
+    id = r.Id;
+  }
+  return id;
+}

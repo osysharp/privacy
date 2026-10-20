@@ -1,0 +1,169 @@
+// Osysharp.Privacy.WorkRepositories — a candidate's copy, a candidate who withdraws, and an interviewer who leaves:
+// what the hire knows about a person goes when it should, and each item keeps its place in the record.
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.WorkRepositories;
+using Osysharp.Privacy;
+using Osysharp.Privacy.WorkRepositories;
+using Recruiting;
+
+[Test(Fjord)]
+void a_candidates_copy_holds_her_application_the_letter_and_what_was_written_about_her_and_no_other_candidates() {
+  var h = HireUnderWay();
+  var request = Ask(RequestKind.Access, null, "maja@candidate.example", "She wrote from the address on her application.");
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    // Each kind is a category of its own, with its own time.
+    Assert.Equal(1, PlanLine.Single(l => l.Request == done && l.Category == "repositories.document").Items);
+    Assert.Equal(2, PlanLine.Single(l => l.Request == done && l.Category == "repositories.finding").Items);
+    Assert.Equal(1, PlanLine.Single(l => l.Request == done && l.Category == "repositories.correspondence").Items);
+    Assert.Equal(PlanOutcome.NotHeld, PlanLine.Single(l => l.Request == done && l.Category == "repositories.items").Outcome);
+    var export = ExportOf(done);
+    Assert.Contains("Kept 6 months from when the work it belongs to was closed", export);
+    Assert.Contains("Kept 12 months from when the work it belongs to was closed", export);
+    Assert.Contains("Kept 1 months from when it was added", export);
+    // Her application, the letter, and what BOTH interviewers wrote about her — feedback she could never read at
+    // the studio is hers to see in her copy.
+    Assert.Contains("Ten years of picture books; portfolio enclosed.", export);
+    Assert.Contains("could you come on Thursday at ten?", export);
+    Assert.Contains("line work is the strongest we have seen.", export);
+    Assert.Contains("would need a quieter desk; hire her.", export);
+    // Nothing of the other candidate, and not the studio's own brief.
+    Assert.DoesNotContain("Sven", export);
+    Assert.DoesNotContain("Editorial work", export);
+    Assert.DoesNotContain("two days a week", export);
+  }
+  // The privacy desk answered the request without being able to read one item of the hire.
+  runas (Ada) { Assert.Equal(0, RepositoryItem.Count()); Assert.Equal(0, RepositoryItemVersion.Count()); }
+  Assert.Equal("Ten years of picture books; portfolio enclosed.", Says(h.MajasApplication));
+}
+
+[Test(Fjord)]
+void a_candidate_who_withdraws_is_erased_while_the_hire_goes_on() {
+  var h = HireUnderWay();
+  Assert.Contains("Maja", EverythingSaid(h.Id));
+
+  var request = Ask(RequestKind.Erasure, null, "maja@candidate.example", "She wrote from the address on her application.");
+
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+  }
+  // Not a word about her is left: in any item, any version, any note on one, or any line on the hire.
+  var left = EverythingSaid(h.Id);
+  Assert.DoesNotContain("Maja", left);
+  Assert.DoesNotContain("Okafor", left);
+  Assert.DoesNotContain("picture books", left);
+  Assert.DoesNotContain("quieter desk", left);
+  Assert.DoesNotContain("Thursday", left);
+  runas (Otto) {
+    // Each item keeps its place in the record: that there was one, what kind, who added it and when, and that it
+    // was erased, when and why.
+    var cv = Item(h.MajasApplication);
+    Assert.Equal("Document (erased)", cv.Title);
+    Assert.Equal(ItemKind.Document, cv.Kind);
+    Assert.Equal(AccountOf("rut@fjord.example"), cv.AddedBy!.Id);
+    Assert.NotNull(cv.ErasedAt);
+    Assert.Equal("The person it was about asked to be erased.", cv.ErasedWhy);
+    Assert.Equal(1, VersionsOf(cv).Count);
+    Assert.Equal("Finding (erased)", Item(h.LenaOnMaja).Title);
+    Assert.Equal(AccountOf("lena@fjord.example"), Item(h.LenaOnMaja).AddedBy!.Id);
+    Assert.True(Item(h.LenaOnMaja).Restricted);
+    // The other candidate, and the brief, are word for word as they were.
+    Assert.Equal("Application: Sven Lind", Item(h.SvensApplication).Title);
+    Assert.Null(Item(h.SvensApplication).ErasedAt);
+  }
+  Assert.Equal("Editorial work for two dailies.", Says(h.SvensApplication));
+  Assert.Equal("Sven is fast, and has not drawn for children.", Says(h.IvoOnSven));
+  Assert.Equal("Children's books; two days a week.", Says(h.Brief));
+  // The hire is open, and goes on: the recruiter adds the decision and closes it.
+  runas (Rut) {
+    var hire = Hire(h.Id);
+    Assert.Equal(AssignmentState.Open, hire.State);
+    Assert.Contains("Document added: an item that was erased", ActivityText(hire));
+    Assert.Contains("Document added: Application: Sven Lind", ActivityText(hire));
+    AddItem(hire, new NewItem { Kind = ItemKind.Decision, Title = "We offer Sven the place", Content = "Two days a week from May." });
+    foreach (var c in hire.Criteria.ToList()) { MeetCriterion(c, "Done"); }
+    CompleteAssignment(hire, "Sven accepted.");
+    Assert.Equal(AssignmentState.Completed, Hire(h.Id).State);
+  }
+  // A second request finds nothing held, and the notes of whose it was are gone — Sven's two stand.
+  runas (Ada) {
+    var again = FileRequest(RequestKind.Access, null, "maja@candidate.example", IdentityCheck.KnownDetails, "She asked again.");
+    Assert.Equal(PlanOutcome.NotHeld, PlanLine.Single(l => l.Request == again && l.Category == "repositories.document").Outcome);
+    Assert.Equal(PlanOutcome.NotHeld, PlanLine.Single(l => l.Request == again && l.Category == "repositories.finding").Outcome);
+    Assert.Equal(2, SubjectMark.Count());
+  }
+}
+
+[Test(Fjord)]
+void an_interviewer_who_leaves_is_taken_off_what_she_wrote_and_the_feedback_stays() {
+  var h = HireUnderWay();
+  var lena = AccountOf("lena@fjord.example");
+
+  // Her copy, first: what she added, with her own words.
+  var copy = Ask(RequestKind.Access, lena, "", "She asked in the studio, on her last day.");
+  runas (Ada) {
+    var export = ExportOf(PrivacyRequest.Single(r => r.Id == copy));
+    Assert.Contains("\"category\":\"repositories.contributions\"", export);
+    Assert.Contains("would need a quieter desk; hire her.", export);
+    // What Ivo wrote is not hers, and she is the subject of nothing here.
+    Assert.DoesNotContain("strongest we have seen", export);
+    Assert.DoesNotContain("\"category\":\"repositories.finding\"", export);
+  }
+
+  var request = Ask(RequestKind.Erasure, lena, "", "She asked in the studio, on her last day.");
+
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Equal(1, PlanLine.Single(l => l.Request == done && l.Category == "repositories.contributions").Items);
+  }
+  runas (Otto) {
+    // The feedback is all there — the hire still knows what an interviewer thought — and it is nobody's.
+    var item = Item(h.LenaOnMaja);
+    Assert.Null(item.AddedBy);
+    Assert.Null(CurrentOf(item).By);
+    Assert.Equal("Maja would need a quieter desk; hire her.", CurrentOf(item).Content);
+    Assert.Null(item.ErasedAt);
+    // A page says who wrote it as somebody no longer here — never as the app.
+    Assert.StartsWith("Somebody no longer here · ", ItemSheetOf(h.LenaOnMaja)!.Item.Added);
+    // Ivo's feedback is his still.
+    Assert.Equal(AccountOf("ivo@fjord.example"), Item(h.IvoOnMaja).AddedBy!.Id);
+  }
+  // The hiring manager, who was given the feedback to read, still reads all three.
+  runas (Hanna) { Assert.Equal(3, ItemsOf(Hire(h.Id), ItemKind.Finding).Count); }
+}
+
+[Test(Fjord)]
+void an_item_of_an_assignment_marked_as_about_somebody_is_found_without_a_mark_of_its_own() {
+  // A reference check is its own assignment, about one candidate: the studio says so once, for the assignment.
+  Guid check = Guid.Empty;
+  Guid note = Guid.Empty;
+  runas (Hanna) {
+    var a = OpenAssignment(new NewAssignment { Title = "Check a reference", Goal = "We know what the last studio thought.", Criteria = ["The reference is on file"], Owner = Rut });
+    MarkAbout(a.Id, "Assignment", new DataSubject { Emails = ["sven@candidate.example"] });
+    check = a.Id;
+  }
+  runas (Rut) {
+    note = AddItem(Hire(check), new NewItem { Kind = ItemKind.Evidence, Title = "Call with the last studio", Content = "They would hire Sven again." }).Id;
+    MeetCriterion(Hire(check).Criteria.Single(), "On file.");
+    CompleteAssignment(Hire(check), "A good reference.");
+  }
+
+  var request = Ask(RequestKind.Erasure, null, "sven@candidate.example", "He wrote from the address on his application.");
+
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    // Evidence has no period of its own here, so it is in the general category.
+    Assert.Equal(1, PlanLine.Single(l => l.Request == done && l.Category == "repositories.items").Items);
+  }
+  Assert.Equal("", Says(note));
+  runas (Otto) { Assert.Equal("Evidence (erased)", Item(note).Title); }
+}

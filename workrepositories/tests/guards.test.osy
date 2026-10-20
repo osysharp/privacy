@@ -1,0 +1,162 @@
+// Osysharp.Privacy.WorkRepositories — each kind for its own time, holds, restriction, and what stays closed: who
+// reads which item is the same before and after a candidate is erased, and nobody erases one by hand who could not
+// before.
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.WorkRepositories;
+using Osysharp.Privacy;
+using Osysharp.Privacy.WorkRepositories;
+using Recruiting;
+
+[Test(Fjord)]
+void each_kind_is_erased_when_its_own_time_is_up_for_everybody_and_nothing_else_is() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  var h = HireUnderWay();
+
+  // Three weeks on, nothing has reached its time: the letter's thirty days are running, the others' clocks have not
+  // started — the hire is open.
+  TestClock.Set(new DateTime(2026, 3, 23, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Equal("Dear Maja, could you come on Thursday at ten?", Says(h.LetterToMaja));
+  runas (Otto) {
+    // Each item says the day it will go — the same day the purge will take it.
+    Assert.Equal(new DateTime(2026, 4, 3), Item(h.LetterToMaja).RetainUntil);
+    Assert.Null(Item(h.MajasApplication).RetainUntil);
+  }
+
+  // The hire closes on 1 April. On 4 April the letter is past its month; nothing else is.
+  TestClock.Set(new DateTime(2026, 4, 1, 12, 0, 0));
+  CloseTheHire(h.Id);
+  TestClock.Set(new DateTime(2026, 4, 4, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Equal("", Says(h.LetterToMaja));
+  Assert.Equal("Ten years of picture books; portfolio enclosed.", Says(h.MajasApplication));
+  Assert.Equal("Maja's line work is the strongest we have seen.", Says(h.IvoOnMaja));
+  runas (Otto) {
+    Assert.Equal("It was kept as long as its kind is.", Item(h.LetterToMaja).ErasedWhy);
+    Assert.Equal(new DateTime(2026, 10, 2), Item(h.MajasApplication).RetainUntil);
+    Assert.Equal(new DateTime(2027, 4, 2), Item(h.IvoOnMaja).RetainUntil);
+    Assert.Null(Item(h.Brief).RetainUntil);
+  }
+
+  // Six months and a few days after the hire closed, both applications go — Sven's too, who never asked.
+  TestClock.Set(new DateTime(2026, 10, 5, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Equal("", Says(h.MajasApplication));
+  Assert.Equal("", Says(h.SvensApplication));
+  Assert.Equal("Maja's line work is the strongest we have seen.", Says(h.IvoOnMaja));
+  runas (Ada) {
+    var record = PurgeRecord.Where(p => p.Category == "repositories.document").OrderByDescending(p => p.At).First();
+    Assert.False(record.Failed);
+    Assert.Equal(2, record.Count);
+  }
+
+  // A year and a few days after it closed, the feedback goes. The brief — a kind with no time of its own — stays.
+  TestClock.Set(new DateTime(2027, 4, 5, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Equal("", Says(h.IvoOnMaja));
+  Assert.Equal("", Says(h.LenaOnMaja));
+  Assert.Equal("", Says(h.IvoOnSven));
+  Assert.Equal("Children's books; two days a week.", Says(h.Brief));
+  runas (Ada) {
+    Assert.False(PurgeRecord.Any(p => p.Failed || p.Deferred));
+    // Nothing is left to say whose anything was.
+    Assert.Equal(0, SubjectMark.Count());
+  }
+}
+
+[Test(Fjord)]
+void the_tenants_own_period_wins_over_the_apps_rule() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  var h = HireUnderWay();
+  CloseTheHire(h.Id);
+  // The studio's rule says six months for applications; the tenant keeps them a year.
+  runas (Ada) { SetRetention("repositories.document", 12, RetentionStart.Collected); }
+
+  TestClock.Set(new DateTime(2026, 10, 5, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Equal("Ten years of picture books; portfolio enclosed.", Says(h.MajasApplication));
+  runas (Otto) { Assert.Equal(new DateTime(2027, 3, 3), Item(h.MajasApplication).RetainUntil); }
+
+  TestClock.Set(new DateTime(2027, 3, 5, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Equal("", Says(h.MajasApplication));
+}
+
+[Test(Fjord)]
+void a_legal_hold_on_a_candidate_keeps_what_is_about_them_through_the_purge() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  var h = HireUnderWay();
+  CloseTheHire(h.Id);
+  runas (Ada) { PlaceHold("sven@candidate.example", null, "A discrimination complaint", "His application is part of it.", new DateTime(2028, 1, 1)); }
+  Background.Settle();
+
+  TestClock.Set(new DateTime(2026, 10, 5, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  // Maja's application reached its time and went. Sven's is untouched: a hold covers him.
+  Assert.Equal("", Says(h.MajasApplication));
+  Assert.Equal("Editorial work for two dailies.", Says(h.SvensApplication));
+  runas (Ada) { Assert.False(PurgeRecord.Any(p => p.Failed || p.Deferred)); }
+}
+
+[Test(Fjord)]
+void a_restriction_takes_what_is_about_her_out_of_use_for_everybody() {
+  var h = HireUnderWay();
+  var request = Ask(RequestKind.Restriction, null, "maja@candidate.example", "She asked us to stop using her data while a complaint is looked at.");
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+  }
+  // Nobody reads her application or the feedback on her: not the recruiter, not the hiring manager, not the
+  // interviewer who wrote it, not the records officer.
+  runas (Rut)   { Assert.Equal(0, RepositoryItem.Count(i => i.Id == h.MajasApplication)); Assert.Equal(1, RepositoryItem.Count(i => i.Id == h.SvensApplication)); }
+  runas (Hanna) { Assert.Equal(1, ItemsOf(Hire(h.Id), ItemKind.Finding).Count); }
+  runas (Ivo)   { Assert.Equal(0, RepositoryItem.Count(i => i.Id == h.IvoOnMaja)); Assert.Equal(1, RepositoryItem.Count(i => i.Id == h.IvoOnSven)); }
+  runas (Otto)  { Assert.Equal(0, RepositoryItemVersion.Count(v => v.Item.Id == h.MajasApplication)); }
+}
+
+[Test(Fjord)]
+void what_others_read_is_the_same_before_and_after_a_candidate_is_erased() {
+  var h = HireUnderWay();
+  // Before. Feedback is restricted: each interviewer reads their own and not the other's; the recruiter, who
+  // oversees every hire, reads no feedback at all; the hiring manager was given it.
+  runas (Ivo)   { Assert.Equal(2, ItemsOf(Hire(h.Id), ItemKind.Finding).Count); Assert.Equal(0, RepositoryItem.Count(i => i.Id == h.LenaOnMaja)); }
+  runas (Lena)  { Assert.Equal(1, ItemsOf(Hire(h.Id), ItemKind.Finding).Count); Assert.Equal(0, RepositoryItem.Count(i => i.Id == h.IvoOnSven)); }
+  runas (Rut)   { Assert.Equal(0, ItemsOf(Hire(h.Id), ItemKind.Finding).Count); Assert.Equal(2, ItemsOf(Hire(h.Id), ItemKind.Document).Count); }
+  runas (Hanna) { Assert.Equal(3, ItemsOf(Hire(h.Id), ItemKind.Finding).Count); }
+  runas (Ada)   { Assert.Equal(0, RepositoryItem.Count()); }
+
+  var request = Ask(RequestKind.Erasure, null, "maja@candidate.example", "She wrote from the address on her application.");
+  runas (Ada) { Assert.Equal(RequestState.Done, PrivacyRequest.Single(r => r.Id == request).State); }
+
+  // After: exactly the same items for exactly the same people — an erased item is still an item of the hire, and
+  // still restricted. Nobody gained a view of what they could not read before.
+  runas (Ivo)   { Assert.Equal(2, ItemsOf(Hire(h.Id), ItemKind.Finding).Count); Assert.Equal(0, RepositoryItem.Count(i => i.Id == h.LenaOnMaja)); }
+  runas (Lena)  { Assert.Equal(1, ItemsOf(Hire(h.Id), ItemKind.Finding).Count); Assert.Equal(0, RepositoryItem.Count(i => i.Id == h.IvoOnSven)); }
+  runas (Rut)   { Assert.Equal(0, ItemsOf(Hire(h.Id), ItemKind.Finding).Count); Assert.Equal(2, ItemsOf(Hire(h.Id), ItemKind.Document).Count); }
+  runas (Hanna) { Assert.Equal(3, ItemsOf(Hire(h.Id), ItemKind.Finding).Count); }
+  runas (Ada)   { Assert.Equal(0, RepositoryItem.Count()); }
+  // What Ivo wrote about the other candidate is his to read still, word for word.
+  runas (Ivo)   { Assert.Equal("Sven is fast, and has not drawn for children.", CurrentOf(Item(h.IvoOnSven)).Content); }
+}
+
+[Test(Fjord)]
+void nobody_who_could_not_erase_an_item_before_can_now_and_a_privacy_request_does() {
+  var h = HireUnderWay();
+  // An interviewer is on the hire and not in charge of it: he erases nothing — not even his own feedback — and
+  // nobody blanks a version by hand.
+  runas (Ivo) {
+    Assert.Throws<NotAuthorized>(() => EraseItem(Item(h.IvoOnMaja), "I changed my mind."));
+    Assert.Denied(() => { BlankVersion(CurrentOf(Item(h.IvoOnMaja))); UnitOfWork.Commit(); });
+    UnitOfWork.Discard();
+  }
+  // The privacy desk cannot even find an item to erase.
+  runas (Ada) { Assert.Equal(0, RepositoryItem.Count()); }
+  Assert.Equal("Maja's line work is the strongest we have seen.", Says(h.IvoOnMaja));
+
+  // Positive control: her request, approved, erases it.
+  var request = Ask(RequestKind.Erasure, null, "maja@candidate.example", "She wrote from the address on her application.");
+  runas (Ada) { Assert.Equal(RequestState.Done, PrivacyRequest.Single(r => r.Id == request).State); }
+  Assert.Equal("", Says(h.IvoOnMaja));
+}

@@ -1,0 +1,30 @@
+// Osysharp.Privacy.WorkRepositories — what an assignment knows about a person, under that person's privacy request:
+// the items of its repository — a candidate's application, what each interviewer thought, the letters — found by
+// what the app marked them as about, in their copy of their data, kept out of use when they ask, erased when they
+// ask, and each kind erased for everybody when its own time is up.
+//
+//     var cv = AddItem(hire, new NewItem { Kind = ItemKind.Document, Title = "Application: " + name, Content = text });
+//     MarkItemAbout(cv, new DataSubject { Emails = [email] });                          // whose data it is
+//
+// ⚑ EACH KIND HAS ITS OWN TIME. The app's rule for a kind (`KindRule.RetainFor`) is a privacy category of its own —
+//   applications six months after the hire closes, letters thirty days after they are written — which the tenant
+//   reads and changes on the retention page, and the daily purge keeps: for everybody, not only for people who asked.
+//
+// ⚑ AN ERASED ITEM KEEPS ITS PLACE. What it said is gone from every version, with what was written about it and its
+//   title on the assignment's activity; that there was one, what kind, who added it, when, and that it was erased and
+//   why, stay.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: an app that uses Osysharp.Privacy and Osysharp.WorkRepositories
+//   writes nothing to get it — `completes` below, and `osy lock` says so. The holder is DISCOVERED, nothing is wired.
+package Osysharp.Privacy.WorkRepositories {
+  version     "1.1.0";
+  minPlatform "0.14.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.WorkRepositories — the items of an assignment's repository that are about a person (found by what the app marked, or by the assignment they belong to) and what a person contributed (found by account): in their copy of their data, kept out of use on request, erased on request while each item keeps its place in the record, and each kind erased for everybody when its own period ends — the app's rule per kind as a category the tenant can change, with legal holds honoured.";
+  completes   Osysharp.Privacy@0, Osysharp.WorkRepositories@1;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Assignments@1;
+  use Osysharp.WorkRepositories@1;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}

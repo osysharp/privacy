@@ -1,0 +1,304 @@
+namespace Osysharp.Privacy.WorkRepositories;
+
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.WorkRepositories;
+using Osysharp.Privacy;
+
+// ── what a repository holds about a person, and what a request does to it ─────────────────────────────────────────
+//
+// An item is about whoever the app says it is about: a candidate's application, what an interviewer thought of them,
+// a letter to them. The app says so where it adds the item (`MarkItemAbout`) — or says it once for the whole
+// assignment, when everything in its repository is about one person (the privacy holder for assignments marks those;
+// every item of a marked assignment is found without a mark of its own). A request finds the items by the account,
+// the address or the number that was marked.
+//
+// The people who CONTRIBUTED — who added an item, wrote a version, accepted or rejected one — are found by their
+// account. Taking them off leaves what they added: it is the assignment's knowledge, not theirs.
+
+/// How this app keeps its repositories private —
+/// `app.WorkRepositoriesPrivacy = new WorkRepositoriesPrivacySetup { KeepOtherMonths = 24 };`. The period of a kind
+/// the app gave a rule to (`KindRule.RetainFor`) comes from that rule. The tenant's own periods, set on the retention
+/// page, win.
+[AppSetting("WorkRepositoriesPrivacy")]
+public class WorkRepositoriesPrivacySetup {
+  /// How many months after the assignment closed an item of a kind with NO rule of its own is kept. 0: as long as
+  /// the assignment is.
+  public int KeepOtherMonths = 0;
+}
+
+public string RepositoryItemsCategory() { return "repositories.items"; }
+public string RepositoryContributionsCategory() { return "repositories.contributions"; }
+
+/// The category of one kind of item that the app keeps for a time of its own: "repositories.document".
+public string RepositoryKindCategory(ItemKind kind) { return "repositories." + kind.Name.ToLower(); }
+
+/// What a mark on an item is called (`MarkAbout(id, RepositoryItemKind(), subject)`), and on an assignment.
+public string RepositoryItemKind() { return "RepositoryItem"; }
+string AssignmentMarkKind() { return "Assignment"; }
+
+/// ⭐ SAY WHOSE DATA AN ITEM IS: `item` is about `subject`. Every item of an assignment that was itself marked as
+/// about somebody is found without this.
+///
+///     var cv = AddItem(hire, new NewItem { Kind = ItemKind.Document, Title = "Application: " + name, Content = text });
+///     MarkItemAbout(cv, new DataSubject { Emails = [email] });
+[Server, Authorize(IsAuthenticated)]
+public void MarkItemAbout(RepositoryItem item, DataSubject subject) { MarkAbout(item.Id, RepositoryItemKind(), subject); }
+
+/// What hangs under an assignment and under an item: every item of an assignment's repository, and the piece of an
+/// agent's work each version of an item was written in. Marked about somebody, they are about them too.
+public class UnderARepository : ISubjectLinks {
+  [SuppressWarning("cost-unbounded-read")]   // one assignment's items, one item's versions
+  public List<SubjectRow> Under(Guid row, string kind) {
+    List<SubjectRow> under = [];
+    if (kind == AssignmentMarkKind()) {
+      foreach (var item in RepositoryItem.Where(i => i.Assignment.Id == row).ToList()) {
+        under.Add(new SubjectRow { Row = item.Id, Kind = RepositoryItemKind() });
+      }
+    } else if (kind == RepositoryItemKind()) {
+      foreach (var v in RepositoryItemVersion.Where(v => v.Item.Id == row && v.Task != null).ToList()) {
+        under.Add(new SubjectRow { Row = v.Task!.Value, Kind = "AgentTask" });
+      }
+    }
+    return under;
+  }
+}
+
+public class WorkRepositoriesPersonalData : IPersonalDataHolder {
+  public string Key() => "Osysharp.WorkRepositories";
+
+  public List<DataCategory> Categories() {
+    List<DataCategory> all = [];
+    // One category for each kind the app keeps for a time of its own…
+    foreach (var kind in EveryItemKind()) {
+      var rule = RuleFor(kind);
+      if (rule.RetainFor == null) { continue; }
+      var fromAdded = rule.From == RetainFrom.Added;
+      all.Add(new DataCategory {
+        Key = RepositoryKindCategory(kind),
+        Label = KindPlural(kind) + " about you that are kept with a piece of work",
+        Purpose = Translate("Doing the work they belong to, and showing afterwards what it rested on"),
+        SubjectKind = "people a piece of work is about",
+        Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("showing what a piece of work rested on"),
+        RetainedMonths = MonthsOf(rule.RetainFor!.Value), RetainedFrom = RetentionStart.Collected,
+        MinMonths = 0, MaxMonths = 0,
+        RetainedFromWords = fromAdded ? Translate("from when it was added") : Translate("from when the work it belongs to was closed"),
+        OnErasureWords = Translate("What it says is erased. That there was one, who added it and when are kept.") });
+    }
+    // …one for everything else in a repository…
+    all.Add(new DataCategory {
+      Key = RepositoryItemsCategory(),
+      Label = "Whatever else about you is kept with a piece of work: evidence, findings, decisions",
+      Purpose = Translate("Doing the work they belong to, and showing afterwards what it rested on"),
+      SubjectKind = "people a piece of work is about",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("showing what a piece of work rested on"),
+      RetainedMonths = App.Setting<WorkRepositoriesPrivacySetup>().KeepOtherMonths, RetainedFrom = RetentionStart.Collected,
+      MinMonths = 0, MaxMonths = 0, RetainedFromWords = Translate("from when the work it belongs to was closed"),
+      OnErasureWords = Translate("What it says is erased. That there was one, who added it and when are kept.") });
+    // …and one for the people who contributed.
+    all.Add(new DataCategory {
+      Key = RepositoryContributionsCategory(),
+      Label = "What you added to a piece of work, and what you accepted, rejected or settled",
+      Purpose = Translate("Knowing who established what a piece of work rests on"),
+      SubjectKind = "people who contribute to work",
+      Basis = RetentionBasis.LegitimateInterest, BasisDetail = Translate("accounting for who established what"),
+      OnErasureWords = Translate("You are taken off it. What you added stays, as added by somebody no longer here.") });
+    return all;
+  }
+
+  public int Count(DataSubject s, DataCategory c) {
+    if (c.Key == RepositoryContributionsCategory()) {
+      var person = ContributorOf(s);
+      if (person == null) { return 0; }
+      return RepositoryItem.Count(i => i.AddedBy == person) + RepositoryItemVersion.Count(v => v.By == person && v.Number > 1);
+    }
+    return ItemsAbout(s, c).Count;
+  }
+
+  // SECURITY-INVARIANT(a-repository-item-is-erased-for-the-person-it-is-about-and-nobody-else): these calls run in
+  // the request's own run, as the app itself — which is what lets them erase without being on the assignment — and
+  // reach only `ItemsAbout(s, c)`: the items marked as about the person the request proved, and the items of an
+  // assignment marked as about them. Widening it erases another candidate's application. Guarded by
+  // tests/hire.test.osy `a_candidate_who_withdraws_is_erased_while_the_hire_goes_on` and tests/guards.test.osy
+  // `what_others_read_is_the_same_before_and_after_a_candidate_is_erased`.
+  public void Erase(DataSubject s, DataCategory c) {
+    if (c.Key == RepositoryContributionsCategory()) {
+      var person = ContributorOf(s);
+      if (person != null) { TakeContributorOffRepositories(person!, "They asked to be erased."); }
+      return;
+    }
+    foreach (var item in ItemsAbout(s, c)) { EraseItem(item, "The person it was about asked to be erased."); }
+  }
+
+  /// Kept out of use: an item about them, with every version of it, leaves every ordinary read — the assignment's
+  /// people, whoever its kind was opened to, whoever looks after the repositories. What somebody contributed leaves
+  /// the same way: the items they added and the versions they wrote.
+  public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
+    DateTime? latest = null;
+    if (c.Key == RepositoryContributionsCategory()) {
+      var person = ContributorOf(s);
+      if (person == null) { return null; }
+      foreach (var v in RepositoryItemVersion.Where(v => v.By == person).ToList()) {
+        DateTime? until = untilLifted ? null : KeepUntil(c, v.At);
+        Restriction.Restrict(v, c.Key, until);
+        if (until != null && (latest == null || until > latest)) { latest = until; }
+      }
+      return untilLifted ? null : latest;
+    }
+    foreach (var item in ItemsAbout(s, c)) {
+      DateTime? until = untilLifted ? null : KeepUntil(c, item.AddedAt);
+      foreach (var v in RepositoryItemVersion.Where(v => v.Item == item).ToList()) { Restriction.Restrict(v, c.Key, until); }
+      Restriction.Restrict(item, c.Key, until);
+      if (until != null && (latest == null || until > latest)) { latest = until; }
+    }
+    return untilLifted ? null : latest;
+  }
+
+  public ExportSection Export(DataSubject s, DataCategory c) {
+    return c.Key == RepositoryContributionsCategory() ? ExportContributions(s) : ExportItems(s, c);
+  }
+
+  /// Every item of the category's kinds whose time is up is erased — for everybody, marked or not: a kind is kept as
+  /// long as its period says, whoever it is about. Each item's own date (`RetainUntil`) is set to the day it will
+  /// go, so the repository says the same thing the purge does. What a legal hold covers is left alone.
+  public int Purge(DataCategory c, DateTime now) {
+    if (c.Key == RepositoryContributionsCategory()) { return 0; }
+    var months = RetentionOf(c).RetainedMonths;
+    var held = HeldCaseRows();
+    var gone = 0;
+    foreach (var item in RepositoryItem.Where(i => i.ErasedAt == null).ToList()) {
+      if (CategoryOfKind(item.Kind) != c.Key) { continue; }
+      var until = months <= 0 ? null : EndOf(c, item);
+      if (item.RetainUntil != until) { KeepItemUntil(item, until); }
+      if (until == null || until > now) { continue; }
+      if (held.Contains(item.Id) || held.Contains(item.Assignment.Id)) { continue; }
+      if (IsMarkedHeld(item.Id, RepositoryItemKind()) || IsMarkedHeld(item.Assignment.Id, AssignmentMarkKind())) { continue; }
+      EraseItem(item, "It was kept as long as its kind is.");
+      ForgetMarksOn(item.Id, RepositoryItemKind());
+      gone = gone + 1;
+    }
+    return gone;
+  }
+}
+
+// ── who and which ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// Every kind of item there is.
+List<ItemKind> EveryItemKind() {
+  return [ItemKind.Input, ItemKind.Document, ItemKind.Extracted, ItemKind.Evidence, ItemKind.Correspondence,
+          ItemKind.Finding, ItemKind.Proposal, ItemKind.Decision, ItemKind.Deliverable];
+}
+
+/// The category an item of `kind` is held under: the kind's own when the app keeps it for a time of its own, the
+/// general one otherwise.
+public string CategoryOfKind(ItemKind kind) {
+  return RuleFor(kind).RetainFor == null ? RepositoryItemsCategory() : RepositoryKindCategory(kind);
+}
+
+/// A kind, as a person reads many of it.
+string KindPlural(ItemKind kind) {
+  return kind == ItemKind.Input ? "What was handed in" : kind == ItemKind.Document ? "Documents"
+       : kind == ItemKind.Extracted ? "Data read out of documents" : kind == ItemKind.Evidence ? "Evidence"
+       : kind == ItemKind.Correspondence ? "Letters and messages" : kind == ItemKind.Finding ? "Findings"
+       : kind == ItemKind.Proposal ? "Proposals" : kind == ItemKind.Decision ? "Decisions" : "Results";
+}
+
+/// A span as whole months, a month being thirty days: 30 days is 1, 180 days is 6, a year is 12.
+int MonthsOf(TimeSpan span) {
+  var months = (int)Math.Round(span.TotalDays / 30.4);
+  return months < 1 ? 1 : months;
+}
+
+/// The first instant an item is no longer kept under `c`: counted from when it was added, or from when its
+/// assignment closed — null while the assignment is open, because that clock has not started.
+DateTime? EndOf(DataCategory c, RepositoryItem item) {
+  var rule = RuleFor(item.Kind);
+  if (rule.RetainFor != null && rule.From == RetainFrom.Added) { return KeepUntil(c, item.AddedAt); }
+  var a = item.Assignment;
+  if (a.State == AssignmentState.Open || a.ClosedAt == null) { return null; }
+  return KeepUntil(c, a.ClosedAt!.Value);
+}
+
+/// ⭐ THE ITEMS OF ONE CATEGORY THAT ARE ABOUT A PERSON and still say something: the ones the app marked as about
+/// them, and every item of an assignment marked as about them. Oldest first.
+[SuppressWarning("cost-unbounded-read")]   // one person's items — what a request reaches
+public List<RepositoryItem> ItemsAbout(DataSubject s, DataCategory c) {
+  var ids = RowsAbout(s, RepositoryItemKind());
+  if (ids.Count == 0) { return []; }
+  return RepositoryItem.Where(i => ids.Contains(i.Id) && i.ErasedAt == null).OrderBy(i => i.AddedAt).ToList()
+                       .Where(i => CategoryOfKind(i.Kind) == c.Key).ToList();
+}
+
+/// The account a request proved, as the contributor it is.
+Principal? ContributorOf(DataSubject s) {
+  if (s.Account == null) { return null; }
+  var id = s.Account.Value;
+  return Principal.FirstOrDefault(p => p.Id == id);
+}
+
+// ── the person's copy ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/// One item about somebody, in their copy of their data.
+public class RepositoryItemRow {
+  public DateTime AddedAt;
+  public string Kind = "";
+  public string Title = "";
+  /// Where it stands, and why.
+  public string Standing = "";
+  public string StandingWhy = "";
+  /// Every version: what it said, what changed, where it came from, and when.
+  public List<RepositoryVersionRow> Versions = [];
+}
+
+/// One version of an item.
+public class RepositoryVersionRow {
+  public int Number;
+  public DateTime At;
+  public string Content = "";
+  public string Data = "";
+  public string Note = "";
+  public string From = "";
+}
+
+[SuppressWarning("cost-unbounded-read")]   // one person's items, every version — an access export reaches all of it
+ExportSection ExportItems(DataSubject s, DataCategory c) {
+  List<RepositoryItemRow> rows = [];
+  List<ExportItem> items = [];
+  foreach (var item in ItemsAbout(s, c)) {
+    var row = new RepositoryItemRow { AddedAt = item.AddedAt, Kind = item.Kind.Name, Title = item.Title, Standing = item.Standing.Name, StandingWhy = item.StandingWhy };
+    foreach (var v in RepositoryItemVersion.Where(v => v.Item == item).OrderBy(v => v.Number).ToList()) {
+      row.Versions.Add(new RepositoryVersionRow { Number = v.Number, At = v.At, Content = v.Content, Data = v.Data == null ? "" : JsonSerializer.Serialize(v.Data), Note = v.Note, From = v.From });
+    }
+    rows.Add(row);
+    var stands = row.Versions.Count == 0 ? "" : row.Versions[row.Versions.Count - 1].Content;
+    items.Add(new ExportItem { At = item.AddedAt, Title = item.Title, Body = stands,
+                               Fields = [new ExportField { Name = Translate("What it is"), Value = item.Kind.Label },
+                                         new ExportField { Name = Translate("Where it stands"), Value = item.Standing.Label }] });
+  }
+  return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
+}
+
+/// One thing somebody contributed, in their copy of their data.
+public class ContributionRow {
+  public DateTime At;
+  public string Kind = "";
+  public string Title = "";
+  public int Version;
+  /// What they wrote.
+  public string Content = "";
+}
+
+[SuppressWarning("cost-unbounded-read")]   // one person's contributions — an access export reaches all of them
+ExportSection ExportContributions(DataSubject s) {
+  List<ContributionRow> rows = [];
+  List<ExportItem> items = [];
+  var person = ContributorOf(s);
+  if (person != null) {
+    foreach (var v in RepositoryItemVersion.Where(v => v.By == person).OrderBy(v => v.At).ToList()) {
+      rows.Add(new ContributionRow { At = v.At, Kind = v.Kind.Name, Title = v.Item.Title, Version = v.Number, Content = v.Content });
+      items.Add(new ExportItem { At = v.At, Title = v.Item.Title, Body = v.Content,
+                                 Fields = [new ExportField { Name = Translate("Version"), Value = v.Number.ToString() }] });
+    }
+  }
+  return new ExportSection { Category = RepositoryContributionsCategory(), Json = JsonSerializer.Serialize(rows), Items = items };
+}

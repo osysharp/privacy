@@ -1,0 +1,105 @@
+// A design studio hiring an illustrator. The hire is an assignment; everything it learns on the way — the brief, the
+// applications, the interviewers' feedback, the letters — is an item in its repository. Ada answers privacy requests.
+namespace Recruiting;
+
+using Osysharp.Identity;
+using Osysharp.WorkQueues;
+using Osysharp.ServiceHours;
+using Osysharp.Assignments;
+using Osysharp.WorkRepositories;
+using Osysharp.Privacy;
+using Osysharp.Privacy.WorkRepositories;
+
+[Role] enum StudioRole { Authenticator, Admin, Manager, Recruiter, Interviewer, Records }
+
+partial entity RoleGrant { security { allow read when IsAuthenticated; } }
+
+policy IsAdmin     => RoleGrant.Any(g => g.Member == user && g.Role == StudioRole.Admin);
+policy IsManager   => RoleGrant.Any(g => g.Member == user && g.Role == StudioRole.Manager);
+policy IsRecruiter => RoleGrant.Any(g => g.Member == user && g.Role == StudioRole.Recruiter);
+policy IsRecords   => RoleGrant.Any(g => g.Member == user && g.Role == StudioRole.Records);
+
+// Privacy: Ada manages it and places legal holds. A request is inbox work, which she leads.
+policy ManagesPrivacy   => IsAdmin;
+policy PlacesLegalHolds => IsAdmin;
+policy WorksInbox => IsAdmin;
+policy LeadsInbox => IsAdmin;
+policy AdministersInbox => IsAdmin;
+policy ManagesOrganizations => IsAdmin;
+policy CollaboratesOnRecords => IsAdmin;
+
+// The hire: managers ask for one, recruiters oversee every hire; the records officer looks after what is kept.
+// NOBODY is named to erase from an assignment's activity: a privacy request's own run does.
+policy OpensAssignments            => IsManager;
+policy OverseesAssignments         => IsRecruiter;
+policy AcceptsAssignmentExceptions => IsManager;
+policy ManagesWorkRepositories     => IsRecords;
+
+/// Somebody at the studio. Candidates have no account: they write in.
+entity Person : Principal {
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+  }
+}
+
+/// Open the hire: the recruiter owns it, the interviewers are on it, and the brief is its first item.
+public Assignment OpenHire(Person recruiter, List<Person> interviewers) {
+  var hire = OpenAssignment(new NewAssignment {
+    Title = "Hire an illustrator", Goal = "An illustrator has accepted our offer.",
+    Criteria = ["Two candidates have been interviewed", "The decision is recorded"], Owner = recruiter,
+  });
+  foreach (var who in interviewers) { AddParticipant(hire, who, ParticipantRole.Contributor); }
+  AddItem(hire, new NewItem { Kind = ItemKind.Input, Key = "brief", Title = "The brief", Content = "Children's books; two days a week." });
+  return hire;
+}
+
+/// A candidate's application arrives — and the studio says whose data it is.
+public RepositoryItem ReceiveApplication(Assignment hire, string name, string email, string text) {
+  var item = AddItem(hire, new NewItem {
+    Kind = ItemKind.Document, Title = "Application: " + name, Content = text,
+    Source = new ItemSource { From = name + "'s mail" } });
+  MarkItemAbout(item, new DataSubject { Emails = [email] });
+  return item;
+}
+
+/// What an interviewer thought of a candidate — restricted, and about the candidate.
+public RepositoryItem GiveFeedback(Assignment hire, string name, string email, string feedback) {
+  var item = AddItem(hire, new NewItem {
+    Kind = ItemKind.Finding, Title = Session.CurrentUser!.DisplayName + " on " + name, Content = feedback,
+    Source = new ItemSource { From = "An interview with " + name } });
+  MarkItemAbout(item, new DataSubject { Emails = [email] });
+  return item;
+}
+
+/// A letter to a candidate.
+public RepositoryItem WriteTo(Assignment hire, string name, string email, string text) {
+  var item = AddItem(hire, new NewItem { Kind = ItemKind.Correspondence, Title = "Letter to " + name, Content = text });
+  MarkItemAbout(item, new DataSubject { Emails = [email] });
+  return item;
+}
+
+/// Every line of a hire's activity, in one text.
+public string ActivityText(Assignment hire) {
+  var all = "";
+  foreach (var l in hire.Activity.OrderBy(l => l.Seq).ToList()) { all = all + l.Said + "\n"; }
+  return all;
+}
+
+/// Everything the repositories say that whoever is reading may read — every item's title and standing, every
+/// version's words — in one text.
+public string EverythingKept() {
+  var all = "";
+  foreach (var i in RepositoryItem.ToList()) { all = all + i.Title + "|" + i.StandingWhy + "\n"; }
+  foreach (var v in RepositoryItemVersion.ToList()) { all = all + v.Content + "|" + v.Note + "|" + v.From + "\n"; }
+  return all;
+}
+
+// ── what app code is not able to do ─────────────────────────────────────────────────────────────────────────────────
+
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }
+[SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity RepositoryItemVersion { }
+partial entity ServiceHours { security { allow read, create, update, delete when IsAdmin; } }
+
+/// A version's words blanked by hand.
+public void BlankVersion(RepositoryItemVersion version) { version.Content = ""; }
