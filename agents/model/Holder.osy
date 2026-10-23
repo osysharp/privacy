@@ -299,7 +299,9 @@ ExportSection ExportAgentRecord(DataSubject s) {
   List<ExportItem> items = [];
   var marked = RowsAbout(s, AgentWorkKind());
   foreach (var root in AgentWorkOf(s)) {
-    foreach (var piece in AgentTask.Where(t => t.Id == root.Id || t.Root == root).OrderBy(t => t.StartedAt).ToList()) {
+    // By the clock, and — for pieces handed on in one instant, which the clock cannot tell apart — the top first, then
+    // each level in the order its pieces were handed on, so an export reads the same every time it is made.
+    foreach (var piece in AgentTask.Where(t => t.Id == root.Id || t.Root == root).OrderBy(t => t.StartedAt).ThenBy(t => t.Depth).ThenBy(t => t.Sequence).ToList()) {
       if (piece.AnonymisedAt != null) { continue; }
       var row = new AgentWorkRow {
         StartedAt = piece.StartedAt, EndedAt = piece.EndedAt, Agent = BareName(piece.Agent), Skill = BareName(piece.Skill),
