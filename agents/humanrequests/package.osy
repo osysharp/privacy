@@ -1,0 +1,24 @@
+// Osysharp.Privacy.Agents.HumanRequests — who handed an inbox item to an AI agent, under their privacy request: the
+// handovers they made are in their copy of their data, and they are taken off them when they ask to be erased — once
+// every item they handed over has come back.
+//
+//     await AgentDesk.Hand(claim, Agents.Of<Matcher>(), new MatchClaim(), claim.Title);   // a handover, by whoever is signed in
+//
+// ⚑ AN ERASURE LEAVES THE HANDOVER, NOT THE PERSON. That the item was handed over, to which agent, its work, and how
+//   it came back stay — the inbox's own record. An item an agent still holds waits for the erasure.
+//
+// ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: an app that uses Osysharp.Privacy and Osysharp.Agents.HumanRequests
+//   writes nothing to get it — `completes` below, and `osy lock` says so. The holder is DISCOVERED, nothing is wired.
+package Osysharp.Privacy.Agents.HumanRequests {
+  version     "1.1.0";
+  minPlatform "0.14.0";
+  summary     "Osysharp.Privacy's holder for Osysharp.Agents.HumanRequests — the inbox items a person handed to an AI agent: in their copy of their data, and taken off them when they ask to be erased, once every item has come back; that it was handed over, to which agent and how it came back stay";
+  completes   Osysharp.Privacy@0, Osysharp.Agents.HumanRequests@1;
+  model "model/*.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Agents@1;
+  use Osysharp.Agents.HumanRequests@1;
+  use Osysharp.WorkQueues@1;
+  use Osysharp.Privacy@0;
+  tests "tests";
+}
