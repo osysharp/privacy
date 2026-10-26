@@ -68,3 +68,102 @@ withdrew, and asserts the request and the run's lines afterwards.
 - Package: `Osysharp.Privacy.HumanRequests` — arrives by itself in an app that uses both `Osysharp.Privacy@0` and
   `Osysharp.HumanRequests@1`
 - Source: [`kits/privacy-human-requests`](.) — `model/Holder.osy`
+
+## Examples
+
+Taken from this package's own tests, which compile and run on every release.
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Organizations;
+using Osysharp.Organizations.ServicePlans;
+using Osysharp.WorkQueues;
+using Osysharp.HumanRequests;
+using Osysharp.Privacy;
+using Osysharp.Privacy.HumanRequests;
+using Marina;
+
+[Test(Harbour)]
+void a_persons_copy_holds_what_they_were_asked_and_answered_and_what_was_asked_about_them() {
+  var a = EverybodyAsked();
+  var done = Ask(Osysharp.Privacy.RequestKind.Access, AccountOf("olav@sailor.example"), "");
+  runas (Petra) {
+    Assert.Equal("", done.Problem);
+    Assert.Equal(2, PlanLine.Single(l => l.Request == done && l.Category == RequestsCategory()).Items);
+    var export = ExportOf(done);
+    // What he was asked and what he answered…
+    Assert.Contains("Which week suits you for lifting Skarv out?", export);
+    Assert.Contains("week 43, my brother helps", export);
+    // …and what was asked of somebody else about his boat, with the answer.
+    Assert.Contains("Is the hull of Skarv sound?", export);
+    Assert.Contains("Osmosis blisters below the waterline.", export);
+    // Nothing of Ines.
+    Assert.DoesNotContain("Tärna", export);
+    Assert.DoesNotContain("week 44", export);
+  }
+}
+```
+
+From [`tests/erasure.test.osy`](tests/erasure.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Organizations;
+using Osysharp.Organizations.ServicePlans;
+using Osysharp.WorkQueues;
+using Osysharp.HumanRequests;
+using Osysharp.Privacy;
+using Osysharp.Privacy.HumanRequests;
+using Marina;
+
+[Test(Harbour)]
+void somebody_outside_is_found_by_the_address_the_link_went_to() {
+  var a = EverybodyAsked();
+  var done = Ask(Osysharp.Privacy.RequestKind.Erasure, null, "kai@surveys.example");
+  runas (Petra) { Assert.Equal("", done.Problem); }
+  runas (Hilde) {
+    var survey = Request(a.Survey);
+    Assert.Equal("", survey.OutsideName);
+    Assert.Equal("", survey.OutsideEmail);
+    Assert.Equal("", survey.AnsweredByName);
+    Assert.Equal(RequestStatus.Answered, survey.Status);
+    // The berth holders' own requests are untouched.
+    Assert.Contains("week 43", Request(a.OlavsWeek).AnswerJson!);
+  }
+}
+```
+
+From [`tests/erasure.test.osy`](tests/erasure.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Organizations;
+using Osysharp.Organizations.ServicePlans;
+using Osysharp.WorkQueues;
+using Osysharp.HumanRequests;
+using Osysharp.Privacy;
+using Osysharp.Privacy.HumanRequests;
+using Marina;
+
+[Test(Harbour)]
+void a_request_still_waiting_for_the_persons_answer_holds_the_erasure_until_it_is_answered() {
+  Guid week = Guid.Empty;
+  runas (Hilde) { week = AskForAWeek(Olav, "Skarv").Id; }
+  var waiting = Ask(Osysharp.Privacy.RequestKind.Erasure, AccountOf("olav@sailor.example"), "");
+  runas (Petra) { Assert.NotEqual(RequestState.Done, waiting.State); }
+  runas (Hilde) { Assert.Equal("Olav Berg", Request(week).To!.DisplayName); }
+}
+```
+
+From [`tests/erasure.test.osy`](tests/erasure.test.osy).
+
+## Learn more
+
+- [The Osysharp.Privacy.HumanRequests reference](https://osysharp.com/reference/agent/kit-privacy-human-requests/)
+- [Osysharp.Privacy.HumanRequests in the package catalogue](https://osysharp.com/packages/#osysharp-privacy-humanrequests)
+- [The Osy# reference](https://osysharp.com/reference/) — the language, the runtime and every kit
+- [`llms-full.txt`](https://osysharp.com/llms-full.txt) — the whole reference and specification as one Markdown file, for a coding agent
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
