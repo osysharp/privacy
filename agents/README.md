@@ -129,3 +129,133 @@ osy test kits/privacy-agents/tests
 - Builds on [`Osysharp.Agents`](../agents) (`EraseAgentWorkContent`, `AnonymiseAgentWork`, `ForgetAgentWork`,
   `VerifyTrace`) and [`Osysharp.Privacy`](../privacy) (the holder contract, `MarkAbout`, requests, the purge, holds).
 - The model calls an agent made are on `Osysharp.Llm`'s meter, which [`Osysharp.Privacy.Llm`](../privacy-llm) holds.
+
+## Examples
+
+Taken from this package's own tests, which compile and run on every release.
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+[Test(Town)]
+void a_borrower_without_an_account_is_found_by_the_address_the_library_marked() {
+  MiaRenews();
+  var reminder = SolRemindsLeo();
+  runas (Ada) {
+    var holder = new AgentsPersonalData();
+    var leo = new DataSubject { Emails = ["leo@reader.example"] };
+    Assert.Equal(1, holder.Count(leo, CategoryOf("agents.trace")));
+    Assert.Equal(1, holder.Count(leo, CategoryOf("agents.record")));
+    Assert.Equal(reminder, AgentWorkOf(leo).Single().Id);
+
+    var said = holder.Export(leo, CategoryOf("agents.trace"));
+    Assert.Contains("Dear Leo Lind, Roadside Picnic was due on 1 March.", said.Json);
+    Assert.Equal(6, said.Items.Count);
+    Assert.DoesNotContain("Mia", said.Json);
+    var record = holder.Export(leo, CategoryOf("agents.record"));
+    Assert.Contains("Reminder to Leo Lind", record.Json);
+    Assert.Contains("\"AboutYou\":true", record.Json);
+    Assert.Contains("\"ForYou\":false", record.Json);
+
+    // Somebody else's address reaches none of it, and nor does an address written another way round.
+    Assert.Equal(0, holder.Count(new DataSubject { Emails = ["lea@reader.example"] }, CategoryOf("agents.record")));
+    // The same address in capitals is the same person.
+    Assert.Equal(1, holder.Count(new DataSubject { Emails = ["LEO@Reader.example"] }, CategoryOf("agents.record")));
+  }
+}
+```
+
+From [`tests/copies.test.osy`](tests/copies.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+[Test(Town)]
+void nobody_erases_an_agents_record_by_hand_and_a_privacy_request_does() {
+  var mias = MiaRenews();
+  // The library named nobody to erase the desk's records. Ada manages privacy and audits the desk: she may not…
+  runas (Ada) {
+    Assert.Denied(() => EraseAgentWorkContent(AgentTask.Single(t => t.Id == mias), "Tidying up."));
+    Assert.Denied(() => AnonymiseAgentWork(AgentTask.Single(t => t.Id == mias), "Tidying up."));
+    Assert.Denied(() => ForgetAgentWork(AgentTask.Single(t => t.Id == mias)));
+    Assert.Denied(() => { BlankLine(TraceEvent.First(e => e.Task.Id == mias)); UnitOfWork.Commit(); });
+    UnitOfWork.Discard();
+  }
+  // …nor may the librarian in charge of the desk, nor Mia herself.
+  runas (Sol) { Assert.Denied(() => AnonymiseAgentWork(AgentTask.Single(t => t.Id == mias), "Tidying up.")); }
+  runas (Mia) { Assert.Denied(() => EraseAgentWorkContent(AgentTask.Single(t => t.Id == mias), "I would rather it were gone.")); }
+  Assert.Equal(9, LinesWithContent(mias));
+
+  // Positive control: her request, approved, erases it.
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, AccountOf("mia@reader.example"), "", IdentityCheck.InPerson, "She asked at the desk with her library card.");
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  Assert.Equal(0, LinesWithContent(mias));
+}
+```
+
+From [`tests/guards.test.osy`](tests/guards.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents;
+using Library;
+
+[Test(Town)]
+void a_legal_hold_keeps_a_persons_agent_work_through_the_purge() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  var mias = MiaRenews();
+  var noors = NoorRenews();
+  var reminder = SolRemindsLeo();
+  runas (Ada) {
+    // Mia is held by her account; Leo by the address the reminder was marked with.
+    PlaceHold("", AccountOf("mia@reader.example"), "A dispute over a lost book", "What the desk told her is part of it.", new DateTime(2027, 6, 1));
+    PlaceHold("leo@reader.example", null, "A dispute over a late fee", "The reminder is part of it.", new DateTime(2027, 6, 1));
+  }
+  Background.Settle();
+
+  TestClock.Set(new DateTime(2026, 10, 4, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+
+  // Noor's work reached its time and went. Mia's and the reminder about Leo are untouched, word for word.
+  runas (Ada) {
+    Assert.Equal(0, AgentTask.Count(t => t.Id == noors));
+    Assert.Equal(9, LinesWithContent(mias));
+    Assert.Equal(6, LinesWithContent(reminder));
+    Assert.Equal("Renewals for Mia Berg", AgentTask.Single(t => t.Id == mias).About);
+    Assert.True(VerifyTrace(AgentTask.Single(t => t.Id == reminder)).Intact);
+    Assert.False(PurgeRecord.Any(p => p.Failed || p.Deferred));
+  }
+}
+```
+
+From [`tests/retention.test.osy`](tests/retention.test.osy).
+
+## Learn more
+
+- [The Osysharp.Privacy.Agents reference](https://osysharp.com/reference/agent/kit-privacy-agents/)
+- [Osysharp.Privacy.Agents in the package catalogue](https://osysharp.com/packages/#osysharp-privacy-agents)
+- [The Osy# reference](https://osysharp.com/reference/) — the language, the runtime and every kit
+- [`llms-full.txt`](https://osysharp.com/llms-full.txt) — the whole reference and specification as one Markdown file, for a coding agent
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
