@@ -14,13 +14,13 @@
 // ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: an app that uses Osysharp.Privacy and Osysharp.Assignments
 //   writes nothing to get it — `completes` below, and `osy lock` says so. The holder is DISCOVERED, nothing is wired.
 package Osysharp.Privacy.Assignments {
-  version     "1.1.0";
-  minPlatform "0.14.0";
+  version     "1.2.0";
+  minPlatform "0.17.0";
   summary     "Osysharp.Privacy's holder for Osysharp.Assignments — the people on an assignment (found by account) and the person an assignment is about (found by what the app marked): in their copy of their data, kept out of use on request, and erased on request while the assignment, its criteria and how it ended stay — a colleague reads as somebody no longer here, the person it was about as a former customer; an assignment about somebody loses its words two years after it closed, with legal holds honoured.";
-  completes   Osysharp.Privacy@0, Osysharp.Assignments@1;
+  completes   Osysharp.Privacy@0, Osysharp.Assignments@2;
   model "model/*.osy";
   use Osysharp.Identity@0;
-  use Osysharp.Assignments@1;
+  use Osysharp.Assignments@2;
   use Osysharp.Privacy@0;
   tests "tests";
 }

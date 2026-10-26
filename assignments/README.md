@@ -6,7 +6,7 @@
 person was, never a hole: the work your organisation did stays on its books.
 
 ```osy
-use Osysharp.Assignments@1;
+use Osysharp.Assignments@2;
 use Osysharp.Privacy@0;
 // Osysharp.Privacy.Assignments is not written: it arrives by itself, because the app uses what it completes (`osy lock` says so)
 ```
