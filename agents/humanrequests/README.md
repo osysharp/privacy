@@ -40,3 +40,75 @@ Tests: `tests/handovers.test.osy`.
 - Uses [`Osysharp.Privacy`](../privacy) and [`Osysharp.Agents.HumanRequests`](../agents-human-requests).
 - The people on the rest of the agents' records — standing rules, changes to an agent's place, questions and
   proposals — are [`Osysharp.Privacy.Agents`](../privacy-agents)' `agents.oversight`.
+
+## Examples
+
+Taken from this package's own tests, which compile and run on every release.
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Workflow;
+using Osysharp.WorkQueues;
+using Osysharp.Agents;
+using Osysharp.Agents.Testing;
+using Osysharp.Agents.HumanRequests;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Agents.HumanRequests;
+using LostProperty;
+
+[Test(Desk)]
+void who_handed_an_item_to_an_agent_is_taken_off_it_and_nobody_else() {
+  runas (Lena) {
+    HandsOver("A black umbrella", true);
+    HandsOver("A green scarf", false);
+  }
+  GoOn();
+  runas (Omar) { HandsOver("A grey rucksack", false); }
+  GoOn();
+  var lena = new DataSubject { Account = AccountOf("lena@ferryline.example") };
+  var holder = new AgentHandoverPersonalData();
+  runas (Pia) {
+    // Her copy lists both items she handed over.
+    var copy = holder.Export(lena, CategoryOf("agents.handovers")).Json;
+    Assert.Contains("A black umbrella", copy);
+    Assert.Contains("A green scarf", copy);
+    Assert.DoesNotContain("A grey rucksack", copy);
+    Assert.Equal(2, holder.Count(lena, CategoryOf("agents.handovers")));
+    // The matcher still holds the umbrella: her erasure would wait.
+    Assert.Equal("an AI agent still holds an item you handed over", holder.BlockedBy(lena, CategoryOf("agents.handovers")));
+  }
+  runas (Lena) {
+    AnswerAgentQuestion(QuestionsForMe().Single(), "Yes, the 07:40.");
+    UnitOfWork.Commit();
+  }
+  GoOn();
+  runas (Pia) {
+    Assert.Equal("", holder.BlockedBy(lena, CategoryOf("agents.handovers")));
+    var r = FileRequest(RequestKind.Erasure, AccountOf("lena@ferryline.example"), "", IdentityCheck.InPerson, "She asked on her last day.");
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    // Taken off both of hers; that each was handed over, and how it came back, stays.
+    Assert.Equal(0, holder.Count(lena, CategoryOf("agents.handovers")));
+    Assert.Equal(2, AgentHandover.Count(h => h.By == null));
+    Assert.Equal(3, AgentHandover.Count(h => h.State == AgentHandoverState.Back));
+    // Omar's is still his.
+    Assert.Equal(AccountOf("omar@ferryline.example"), AgentHandover.Single(h => h.By != null).By!.Id);
+  }
+}
+```
+
+From [`tests/handovers.test.osy`](tests/handovers.test.osy).
+
+## Learn more
+
+- [The Osysharp.Privacy.Agents.HumanRequests reference](https://osysharp.com/reference/agent/kit-privacy-agents-human-requests/)
+- [Osysharp.Privacy.Agents.HumanRequests in the package catalogue](https://osysharp.com/packages/#osysharp-privacy-agents-humanrequests)
+- [The Osy# reference](https://osysharp.com/reference/) — the language, the runtime and every kit
+- [`llms-full.txt`](https://osysharp.com/llms-full.txt) — the whole reference and specification as one Markdown file, for a coding agent
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
