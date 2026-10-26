@@ -58,6 +58,8 @@ partial entity MessageDelivery { security { allow read, create, update when IsCo
 partial entity ConversationThreadKey { security { allow read, create when IsConversationStaff; } }
 partial entity PartyMerge { security { allow read, create when IsConversationStaff; } }
 partial entity ConversationSplit { security { allow read, create when IsConversationStaff; } }
+// No grant writes an erasure: only a privacy request does, through the plan — so the denial test has no positive twin to find.
+[SuppressWarning("testing-write-denial-unproven")]
 partial entity PartyErasure { security { allow read when IsConversationStaff; } }
 partial entity PointCheck { security { allow read when IsConversationStaff; } }
 [SuppressWarning("IMPORTED_ENTITY_HAS_NO_POLICY")] partial entity WorkItem { }

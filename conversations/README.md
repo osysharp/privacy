@@ -62,3 +62,110 @@ app = new() { Classifications = [ new Classification(Personal.Contact) { Open = 
 
 Its test app (`tests/app.osy`) with `tests/erasure.test.osy` and `tests/files.test.osy` show an erasure across a
 desk's conversations and their files.
+
+## Examples
+
+Taken from this package's own tests, which compile and run on every release.
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Conversations;
+using PrivacyConversationsKitTests;
+
+[Test(Desk)]
+void keeping_a_complaint_reads_the_same_however_long_it_is() {
+  ComplaintFrom("cy@example.test", "FIRST1", 2);
+  ComplaintFrom("ana@example.test", "SHORT1", 2);
+  ComplaintFrom("bea@example.test", "LONG16", 16);
+  // The desk's first erasure sets up what every later one reuses — it is not what this compares.
+  ErasureOf("cy@example.test");
+  var mark = Cost.Mark();
+  ErasureOf("ana@example.test");
+  var two = Cost.StatementsSince(mark);
+  mark = Cost.Mark();
+  ErasureOf("bea@example.test");
+  var sixteen = Cost.StatementsSince(mark);
+  Log.Information("Keeping a complaint: " + two + " statements with two replies, " + sixteen + " with sixteen");
+  Assert.AtMost(two + 1, sixteen);
+}
+```
+
+From [`tests/cost.test.osy`](tests/cost.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Conversations;
+using Osysharp.Memory.Testing;
+using PrivacyConversationsKitTests;
+
+[Test(Desk)]
+void whoever_handles_claims_reads_the_kept_complaint_and_nobody_else_does() {
+  var complaint = AnaWithAComplaint("IBIS40");
+  runas (Ada) { ErasureOfAna(); }
+  runas (Lou) {
+    var t = ConversationForAClaim(complaint);
+    Assert.Equal("Klagomål IBIS40", t.Subject);
+    Assert.True(t.Entries.Any(e => e.Text.Contains("klagomal IBIS40")));
+    Assert.True(t.Entries.Any(e => e.Text == "Thank you — we are looking at it."));
+    Assert.True(t.People.Any(p => p.Contains("ana@example.test")));
+    // A purpose read hands over what the claim needs — the desk's ordinary reads still find nothing.
+    Assert.Equal(0, Message.Count(m => m.Text.Contains("klagomal IBIS40")));
+  }
+  // Managing privacy is not handling claims.
+  runas (Ada) { Assert.Denied(() => ConversationForAClaim(complaint)); }
+}
+```
+
+From [`tests/erasure.test.osy`](tests/erasure.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Conversations;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Conversations;
+using Osysharp.Storage;
+using PrivacyConversationsKitTests;
+
+[Test(Desk)]
+void a_file_she_sent_stays_and_a_file_marked_about_her_goes_with_her_erasure() {
+  Writes("ana@example.test", "f-1", "Files", "Two files, attached.");
+  Guid hers = Guid.Empty;
+  Guid theirs = Guid.Empty;
+  runas (Ada) {
+    var m = Message.Single(x => x.Text == "Two files, attached.");
+    var id = File.Create("passport.png", "image/png", Png());
+    var plan = File.Create("floor-plan.png", "image/png", Png());
+    var a = new MessageAttachment { Message = m, File = id, FileName = "passport.png", ContentType = "image/png", Kind = AttachmentKind.Image };
+    new MessageAttachment { Message = m, File = plan, FileName = "floor-plan.png", ContentType = "image/png", Kind = AttachmentKind.Image };
+    UnitOfWork.Commit();
+    // Her passport is about her — the desk says so. The floor plan is her company's, and says nothing about her.
+    MarkFileAbout(a, m.ByParty);
+    hers = id.Id;
+    theirs = plan.Id;
+  }
+  runas (Ada) {
+    var r = ErasureOfAna();
+    Assert.Equal(RequestState.Done, r.State);
+    Assert.False(FileAsset.Any(f => f.Id == hers));
+    Assert.True(FileAsset.Any(f => f.Id == theirs));
+    Assert.Equal(1, MessageAttachment.Count(x => x.FileName == "floor-plan.png"));
+    Assert.Equal(1, PartyErasure.Single(e => e.Reach == ErasureReach.Words).FilesDeleted);
+  }
+}
+```
+
+From [`tests/files.test.osy`](tests/files.test.osy).
+
+## Learn more
+
+- [Osysharp.Privacy.Conversations in the package catalogue](https://osysharp.com/packages/#osysharp-privacy-conversations)
+- [The Osy# reference](https://osysharp.com/reference/) — the language, the runtime and every kit
+- [`llms-full.txt`](https://osysharp.com/llms-full.txt) — the whole reference and specification as one Markdown file, for a coding agent
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
