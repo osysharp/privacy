@@ -76,3 +76,116 @@ osy test kits/privacy-llm/tests
   [`Osysharp.Privacy`](../privacy) (the holder contract, requests, the purge, holds).
 - What an agent was shown and answered is not on the meter: it is `Osysharp.Agents`' record, which
   [`Osysharp.Privacy.Agents`](../privacy-agents) holds.
+
+## Examples
+
+Taken from this package's own tests, which compile and run on every release.
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Llm;
+using Phrasebook;
+
+[Test(Book)]
+void her_copy_lists_the_calls_made_for_her_and_nobody_elses() {
+  Asked();
+  runas (Ada) {
+    var mia = new DataSubject { Account = AccountOf("mia@traveller.example") };
+    var holder = new ModelCallsPersonalData();
+    Assert.Equal(2, holder.Count(mia, CategoryOf("llm.calls")));
+    var section = holder.Export(mia, CategoryOf("llm.calls"));
+    Assert.Equal(2, section.Items.Count);
+    Assert.Contains("\"Model\":\"Small\"", section.Json);
+    Assert.Contains("\"Cost\":0.002", section.Json);
+    // The meter keeps no text of a call, so her copy holds none.
+    Assert.DoesNotContain("station", section.Json);
+    // A call is a person's because they were signed in: an address alone reaches none.
+    Assert.Equal(0, holder.Count(new DataSubject { Emails = ["mia@traveller.example"] }, CategoryOf("llm.calls")));
+  }
+}
+```
+
+From [`tests/calls.test.osy`](tests/calls.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Llm;
+using Phrasebook;
+
+[Test(Book)]
+void an_erasure_takes_her_off_the_meter_and_keeps_what_her_calls_cost() {
+  Asked();
+  var mia = AccountOf("mia@traveller.example");
+  var noor = AccountOf("noor@traveller.example");
+  runas (Ada) {
+    Assert.Equal(2, ModelCall.Count(m => m.Requester == mia));
+    var r = FileRequest(RequestKind.Erasure, mia, "", IdentityCheck.InPerson, "She showed her passport at the counter.");
+    Assert.Equal(2, PlanLine.Single(l => l.Request == r && l.Category == "llm.calls").Items);
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Contains("What we erased: The AI model calls made for you", done.Response);
+  }
+  runas (Ada) {
+    // No row is hers, and none names her in what it was charged to.
+    Assert.Equal(0, ModelCall.Count(m => m.Requester == mia));
+    Assert.Equal(0, ModelCall.Count(m => m.Scopes.Contains(mia.ToString())));
+    // The three calls are still on the meter, and still cost what they cost.
+    Assert.Equal(3, ModelCall.Count());
+    Assert.Equal(0.006m, SpentOn("app:"));
+    // Noor's is still hers.
+    Assert.Equal(1, ModelCall.Count(m => m.Requester == noor));
+    Assert.Equal(1, new ModelCallsPersonalData().Count(new DataSubject { Account = noor }, CategoryOf("llm.calls")));
+    Assert.Equal(0, new ModelCallsPersonalData().Count(new DataSubject { Account = mia }, CategoryOf("llm.calls")));
+  }
+}
+```
+
+From [`tests/calls.test.osy`](tests/calls.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Llm;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Llm;
+using Phrasebook;
+
+[Test(Book)]
+void what_was_counted_against_her_own_budget_goes_with_her() {
+  runas (Ada) { SetBudget("requester", "", LlmBudgetWindow.Day, 1m); UnitOfWork.Commit(); }
+  Asked();
+  var mia = AccountOf("mia@traveller.example");
+  runas (Ada) {
+    Assert.Equal(0.004m, SpentIn("requester", mia.ToString(), LlmBudgetWindow.Day));
+    // Two calls and one allowance are about her.
+    Assert.Equal(3, new ModelCallsPersonalData().Count(new DataSubject { Account = mia }, CategoryOf("llm.calls")));
+    var r = FileRequest(RequestKind.Erasure, mia, "", IdentityCheck.InPerson, "She showed her passport at the counter.");
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  runas (Ada) {
+    Assert.Equal(0, LlmSpend.Count(s => s.Subject == mia.ToString()));
+    // The limit for every person still stands, and Noor's allowance with it.
+    Assert.Equal(1, LlmBudget.Count());
+    Assert.Equal(0.002m, SpentIn("requester", AccountOf("noor@traveller.example").ToString(), LlmBudgetWindow.Day));
+  }
+}
+```
+
+From [`tests/calls.test.osy`](tests/calls.test.osy).
+
+## Learn more
+
+- [The Osysharp.Privacy.Llm reference](https://osysharp.com/reference/agent/kit-privacy-llm/)
+- [Osysharp.Privacy.Llm in the package catalogue](https://osysharp.com/packages/#osysharp-privacy-llm)
+- [The Osy# reference](https://osysharp.com/reference/) — the language, the runtime and every kit
+- [`llms-full.txt`](https://osysharp.com/llms-full.txt) — the whole reference and specification as one Markdown file, for a coding agent
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
