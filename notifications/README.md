@@ -20,3 +20,82 @@ partial entity NotificationPreferences { security { allow read when ManagesPriva
 
 Found only by the ACCOUNT a request proved — an address alone reaches none. Category `notifications.told` (Contract,
 portable).
+
+## Examples
+
+Taken from this package's own tests, which compile and run on every release.
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Notifications;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Notifications;
+using PrivacyNotificationsKitTests;
+
+[Test(Team)]
+void her_copy_lists_what_she_was_told_and_how_she_asked_to_be_mailed() {
+  TellTheTeam();
+  runas (Ada) {
+    var section = new NotificationsPersonalData().Export(new DataSubject { Account = MiasAccount() }, CategoryOf("notifications.told"));
+    Assert.Equal(3, section.Items.Count);
+    Assert.Contains("A task is yours now.", section.Json);
+    Assert.Contains("A daily digest of what I have not seen", section.Json);
+  }
+}
+```
+
+From [`tests/told.test.osy`](tests/told.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Notifications;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Notifications;
+using PrivacyNotificationsKitTests;
+
+[Test(Team)]
+void an_erasure_of_her_account_takes_her_notifications_and_preferences_and_no_others() {
+  TellTheTeam();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, MiasAccount(), "", IdentityCheck.InPerson, "She asked at the front desk with her ID card.");
+    Assert.Equal(3, PlanLine.Single(l => l.Request == r && l.Category == "notifications.told").Items);
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  runas (Mia) {
+    Assert.Equal(0, Notification.Count());
+    Assert.Equal(0, NotificationPreferences.Count());
+  }
+  runas (Leo) { Assert.Equal(1, Notification.Count()); }
+}
+```
+
+From [`tests/told.test.osy`](tests/told.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Notifications;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Notifications;
+using PrivacyNotificationsKitTests;
+
+[Test(Team)]
+void a_request_that_proved_only_an_address_reaches_no_notifications() {
+  TellTheTeam();
+  runas (Ada) {
+    Assert.Equal(0, new NotificationsPersonalData().Count(new DataSubject { Emails = ["mia@team.test"] }, CategoryOf("notifications.told")));
+  }
+}
+```
+
+From [`tests/told.test.osy`](tests/told.test.osy).
+
+## Learn more
+
+- [Osysharp.Privacy.Notifications in the package catalogue](https://osysharp.com/packages/#osysharp-privacy-notifications)
+- [The Osy# reference](https://osysharp.com/reference/) — the language, the runtime and every kit
+- [`llms-full.txt`](https://osysharp.com/llms-full.txt) — the whole reference and specification as one Markdown file, for a coding agent
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
