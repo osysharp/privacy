@@ -26,3 +26,84 @@ The category is "What you told us when we asked how it went", kept on consent, a
 
 Its test app runs a ferry line's passengers through a copy, a restriction and an erasure. The feedback kit itself is
 `osy docs ui-feedback-kit`.
+
+## Examples
+
+Taken from this package's own tests, which compile and run on every release.
+
+```osy
+using Osysharp.Identity;
+using Osysharp.SatisfactionSurveys;
+using Osysharp.Privacy;
+using Osysharp.Privacy.SatisfactionSurveys;
+using PrivacyFeedbackKitTests;
+
+[Test(Line)]
+void her_copy_lists_what_she_answered() {
+  AskedAndAnswered();
+  runas (Ada) {
+    var section = new FeedbackPersonalData().Export(new DataSubject { Account = MiasAccount() }, CategoryOf("feedback.answers"));
+    Assert.Equal(1, section.Items.Count);
+    Assert.Contains("Calm sea, kind crew.", section.Json);
+    Assert.DoesNotContain("café", section.Json);
+  }
+}
+```
+
+From [`tests/answers.test.osy`](tests/answers.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.SatisfactionSurveys;
+using Osysharp.Privacy;
+using Osysharp.Privacy.SatisfactionSurveys;
+using PrivacyFeedbackKitTests;
+
+[Test(Line)]
+void a_request_that_proved_an_address_reaches_the_answers_mailed_there() {
+  AskedAndAnswered();
+  runas (Ada) {
+    Assert.Equal(1, new FeedbackPersonalData().Count(new DataSubject { Emails = ["leo@sea.test"] }, CategoryOf("feedback.answers")));
+    Assert.Equal(0, new FeedbackPersonalData().Count(new DataSubject { Emails = ["nobody@sea.test"] }, CategoryOf("feedback.answers")));
+  }
+}
+```
+
+From [`tests/answers.test.osy`](tests/answers.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.SatisfactionSurveys;
+using Osysharp.Privacy;
+using Osysharp.Privacy.SatisfactionSurveys;
+using PrivacyFeedbackKitTests;
+
+[Test(Line)]
+void an_erasure_of_her_account_takes_her_answers_and_no_others() {
+  AskedAndAnswered();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, MiasAccount(), "", IdentityCheck.InPerson, "She asked at the ticket office with her ID card.");
+    Assert.Equal(1, PlanLine.Single(l => l.Request == r && l.Category == "feedback.answers").Items);
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  runas (Ola) {
+    Assert.Equal(1, FeedbackAsk.Count());
+    Assert.Equal("leo@sea.test", FeedbackAsk.Single().Address);
+    Assert.Equal(1, FeedbackReply.Count());
+  }
+}
+```
+
+From [`tests/answers.test.osy`](tests/answers.test.osy).
+
+## Learn more
+
+- [The Osysharp.Privacy.SatisfactionSurveys reference](https://osysharp.com/reference/ui/feedback-kit/)
+- [Osysharp.Privacy.SatisfactionSurveys in the package catalogue](https://osysharp.com/packages/#osysharp-privacy-satisfactionsurveys)
+- [The Osy# reference](https://osysharp.com/reference/) — the language, the runtime and every kit
+- [`llms-full.txt`](https://osysharp.com/llms-full.txt) — the whole reference and specification as one Markdown file, for a coding agent
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
