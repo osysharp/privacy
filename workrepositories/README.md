@@ -118,3 +118,114 @@ osy test kits/privacy-work-repositories/tests
   (the holder contract, `MarkAbout`, requests, the purge, holds).
 - With the daily purge running you need not schedule the repositories kit's own `EraseExpiredItems`: the purge sets
   each item's date and takes it on that day.
+
+## Examples
+
+Taken from this package's own tests, which compile and run on every release.
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.WorkRepositories;
+using Osysharp.Privacy;
+using Osysharp.Privacy.WorkRepositories;
+using Recruiting;
+
+[Test(Fjord)]
+void the_tenants_own_period_wins_over_the_apps_rule() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  var h = HireUnderWay();
+  CloseTheHire(h.Id);
+  // The studio's rule says six months for applications; the tenant keeps them a year.
+  runas (Ada) { SetRetention("repositories.document", 12, RetentionStart.Collected); }
+
+  TestClock.Set(new DateTime(2026, 10, 5, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Equal("Ten years of picture books; portfolio enclosed.", Says(h.MajasApplication));
+  runas (Otto) { Assert.Equal(new DateTime(2027, 3, 3), Item(h.MajasApplication).RetainUntil); }
+
+  TestClock.Set(new DateTime(2027, 3, 5, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  Assert.Equal("", Says(h.MajasApplication));
+}
+```
+
+From [`tests/guards.test.osy`](tests/guards.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.WorkRepositories;
+using Osysharp.Privacy;
+using Osysharp.Privacy.WorkRepositories;
+using Recruiting;
+
+[Test(Fjord)]
+void an_item_of_an_assignment_marked_as_about_somebody_is_found_without_a_mark_of_its_own() {
+  // A reference check is its own assignment, about one candidate: the studio says so once, for the assignment.
+  Guid check = Guid.Empty;
+  Guid note = Guid.Empty;
+  runas (Hanna) {
+    var a = OpenAssignment(new NewAssignment { Title = "Check a reference", Goal = "We know what the last studio thought.", Criteria = ["The reference is on file"], Owner = Rut });
+    MarkAbout(a.Id, "Assignment", new DataSubject { Emails = ["sven@candidate.example"] });
+    check = a.Id;
+  }
+  runas (Rut) {
+    note = AddItem(Hire(check), new NewItem { Kind = ItemKind.Evidence, Title = "Call with the last studio", Content = "They would hire Sven again." }).Id;
+    MeetCriterion(Hire(check).Criteria.Single(), "On file.");
+    CompleteAssignment(Hire(check), "A good reference.");
+  }
+
+  var request = Ask(RequestKind.Erasure, null, "sven@candidate.example", "He wrote from the address on his application.");
+
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    // Evidence has no period of its own here, so it is in the general category.
+    Assert.Equal(1, PlanLine.Single(l => l.Request == done && l.Category == "repositories.items").Items);
+  }
+  Assert.Equal("", Says(note));
+  runas (Otto) { Assert.Equal("Evidence (erased)", Item(note).Title); }
+}
+```
+
+From [`tests/hire.test.osy`](tests/hire.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.WorkRepositories;
+using Osysharp.Privacy;
+using Osysharp.Privacy.WorkRepositories;
+using Recruiting;
+
+[Test(Fjord)]
+void a_legal_hold_on_a_candidate_keeps_what_is_about_them_through_the_purge() {
+  TestClock.Set(new DateTime(2026, 3, 2, 10, 0, 0));
+  var h = HireUnderWay();
+  CloseTheHire(h.Id);
+  runas (Ada) { PlaceHold("sven@candidate.example", null, "A discrimination complaint", "His application is part of it.", new DateTime(2028, 1, 1)); }
+  Background.Settle();
+
+  TestClock.Set(new DateTime(2026, 10, 5, 10, 0, 0));
+  runas (Ada) { PurgeNow(); }
+  // Maja's application reached its time and went. Sven's is untouched: a hold covers him.
+  Assert.Equal("", Says(h.MajasApplication));
+  Assert.Equal("Editorial work for two dailies.", Says(h.SvensApplication));
+  runas (Ada) { Assert.False(PurgeRecord.Any(p => p.Failed || p.Deferred)); }
+}
+```
+
+From [`tests/guards.test.osy`](tests/guards.test.osy).
+
+## Learn more
+
+- [The Osysharp.Privacy.WorkRepositories reference](https://osysharp.com/reference/agent/kit-privacy-work-repositories/)
+- [Osysharp.Privacy.WorkRepositories in the package catalogue](https://osysharp.com/packages/#osysharp-privacy-workrepositories)
+- [The Osy# reference](https://osysharp.com/reference/) — the language, the runtime and every kit
+- [`llms-full.txt`](https://osysharp.com/llms-full.txt) — the whole reference and specification as one Markdown file, for a coding agent
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).

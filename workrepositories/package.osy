@@ -17,7 +17,7 @@
 // ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: an app that uses Osysharp.Privacy and Osysharp.WorkRepositories
 //   writes nothing to get it — `completes` below, and `osy lock` says so. The holder is DISCOVERED, nothing is wired.
 package Osysharp.Privacy.WorkRepositories {
-  version     "1.3.0";
+  version     "1.4.0";
   minPlatform "0.17.0";
   summary     "Osysharp.Privacy's holder for Osysharp.WorkRepositories — the items of an assignment's repository that are about a person (found by what the app marked, or by the assignment they belong to) and what a person contributed (found by account): in their copy of their data, kept out of use on request, erased on request while each item keeps its place in the record, and each kind erased for everybody when its own period ends — the app's rule per kind as a category the tenant can change, with legal holds honoured.";
   completes   Osysharp.Privacy@0, Osysharp.WorkRepositories@1;
