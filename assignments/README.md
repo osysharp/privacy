@@ -132,3 +132,119 @@ osy test kits/privacy-assignments/tests
   `AssignmentsOf`) and [`Osysharp.Privacy`](../privacy) (the holder contract, `MarkAbout`, requests, the purge, holds).
 - The items in an assignment's repository are held by [`Osysharp.Privacy.WorkRepositories`](../privacy-work-repositories);
   an agent's work on it by [`Osysharp.Privacy.Agents`](../privacy-agents).
+
+## Examples
+
+Taken from this package's own tests, which compile and run on every release.
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Assignments;
+using Housing;
+
+[Test(Linden)]
+void a_restriction_takes_the_repair_about_her_out_of_use_for_everybody() {
+  var ines = InesRepairDone();
+  var bo = BoRepairOpen();
+  var request = Ask(RequestKind.Restriction, null, "ines@tenant.example", "She asked us to stop using her data while a complaint is looked at.");
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+  }
+  // Nobody reads it: not the coordinator who oversees every repair, not the caretaker who did it.
+  runas (Lena) {
+    Assert.Equal(0, Assignment.Count(a => a.Id == ines));
+    Assert.Equal(0, AssignmentActivity.Count(l => l.Assignment.Id == ines));
+    Assert.Equal(0, AssignmentCriterion.Count(c => c.Assignment.Id == ines));
+    // Bo's is in ordinary use.
+    Assert.Equal(1, Assignment.Count(a => a.Id == bo));
+  }
+  runas (Omar) { Assert.Equal(0, Assignment.Count()); }
+}
+```
+
+From [`tests/guards.test.osy`](tests/guards.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Assignments;
+using Housing;
+
+[Test(Linden)]
+void her_copy_holds_the_assignment_about_her_and_nobody_elses() {
+  InesRepairDone();
+  BoRepairOpen();
+  var request = Ask(RequestKind.Access, null, "ines@tenant.example", "She wrote from the address on her lease and gave the flat.");
+  runas (Ada) {
+    var done = PrivacyRequest.Single(r => r.Id == request);
+    Assert.Equal("", done.Problem);
+    Assert.Equal(RequestState.Done, done.State);
+    Assert.Equal(1, PlanLine.Single(l => l.Request == done && l.Category == "assignments.about").Items);
+    var export = ExportOf(done);
+    // The repair about her, every sentence: what was asked for, what done meant and what met it, the work, each line.
+    Assert.Contains("\"category\":\"assignments.about\"", export);
+    Assert.Contains("kitchen tap leaks", export);
+    Assert.Contains("A new washer; Ines saw it run dry.", export);
+    Assert.Contains("\"Met: Ines Falk has been told", export);
+    Assert.Contains("Visit Ines on Tuesday", export);
+    Assert.Contains("Ines Falk was not home at first", export);
+    Assert.Contains("Fixed for Ines Falk on the second visit.", export);
+    Assert.Contains("\"State\":\"Completed\"", export);
+    Assert.Contains("Kept 24 months from when the assignment was closed", export);
+    // She was on no assignment herself, and nobody else's repair is in her copy.
+    Assert.DoesNotContain("\"category\":\"assignments.people\"", export);
+    Assert.DoesNotContain("hallway light", export);
+    Assert.DoesNotContain("Bo Ek", export);
+  }
+  // Asking for a copy changed nothing.
+  Assert.Contains("Ines Falk", Says(InesRepairId()));
+}
+```
+
+From [`tests/requests.test.osy`](tests/requests.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Assignments;
+using Osysharp.Privacy;
+using Osysharp.Privacy.Assignments;
+using Housing;
+
+[Test(Linden)]
+void nobody_erases_an_assignment_by_hand_and_a_privacy_request_does() {
+  var ines = InesRepairDone();
+  // The co-operative named nobody to erase assignments. Lena asked for the repair and oversees every one: she may not…
+  runas (Lena) {
+    Assert.Denied(() => AnonymiseAssignment(Repair(ines), new AssignmentScrub { Blank = true, Why = "Tidying up." }));
+    Assert.Denied(() => TakePersonOffAssignment(Repair(ines), Omar, "somebody", "Tidying up."));
+    Assert.Denied(() => { RewriteActivity(Repair(ines).Activity.OrderBy(l => l.Seq).First()); UnitOfWork.Commit(); });
+    UnitOfWork.Discard();
+  }
+  // …nor may Omar, who owns it.
+  runas (Omar) { Assert.Denied(() => AnonymiseAssignment(Repair(ines), new AssignmentScrub { Blank = true, Why = "Tidying up." })); }
+  Assert.Contains("Ines Falk", Says(ines));
+
+  // Positive control: her request, approved, erases it.
+  var request = Ask(RequestKind.Erasure, null, "ines@tenant.example", "She wrote from the address on her lease and gave the flat.");
+  runas (Ada) { Assert.Equal(RequestState.Done, PrivacyRequest.Single(r => r.Id == request).State); }
+  Assert.DoesNotContain("Ines", Says(ines));
+}
+```
+
+From [`tests/guards.test.osy`](tests/guards.test.osy).
+
+## Learn more
+
+- [The Osysharp.Privacy.Assignments reference](https://osysharp.com/reference/agent/kit-privacy-assignments/)
+- [Osysharp.Privacy.Assignments in the package catalogue](https://osysharp.com/packages/#osysharp-privacy-assignments)
+- [The Osy# reference](https://osysharp.com/reference/) — the language, the runtime and every kit
+- [`llms-full.txt`](https://osysharp.com/llms-full.txt) — the whole reference and specification as one Markdown file, for a coding agent
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
