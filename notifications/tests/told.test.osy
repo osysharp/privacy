@@ -35,6 +35,19 @@ void TellTheTeam() {
   Background.Settle();
 }
 
+const string MiasPhone = "https://fcm.googleapis.com/fcm/send/mia-phone-1";
+const string MiasLaptop = "https://updates.push.services.mozilla.com/wpush/v2/mia-laptop-1";
+const string LeosPhone = "https://fcm.googleapis.com/fcm/send/leo-phone-1";
+
+/// Mia allowed her phone and her laptop to notify her; Leo his phone.
+void AllowTheirBrowsers() {
+  runas (Mia) {
+    SubscribeToPush(MiasPhone, "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM", "tBHItJI5svbpez7KI4CCXg");
+    SubscribeToPush(MiasLaptop);
+  }
+  runas (Leo) { SubscribeToPush(LeosPhone); }
+}
+
 Guid MiasAccount() {
   Guid id = Guid.Empty;
   runas (Ada) { id = Person.Single(p => p.Email == "mia@team.test").Id; }
@@ -46,9 +59,10 @@ void her_copy_lists_what_she_was_told_and_how_she_asked_to_be_mailed() {
   TellTheTeam();
   runas (Ada) {
     var section = new NotificationsPersonalData().Export(new DataSubject { Account = MiasAccount() }, CategoryOf("notifications.told"));
-    Assert.Equal(3, section.Items.Count);
+    Assert.Equal(4, section.Items.Count);
     Assert.Contains("A task is yours now.", section.Json);
     Assert.Contains("A daily digest of what I have not seen", section.Json);
+    Assert.Contains("Everything, as it happens", section.Json);
   }
 }
 
@@ -71,6 +85,53 @@ void an_erasure_of_her_account_takes_her_notifications_and_preferences_and_no_ot
 [Test(Team)]
 void a_request_that_proved_only_an_address_reaches_no_notifications() {
   TellTheTeam();
+  runas (Ada) {
+    Assert.Equal(0, new NotificationsPersonalData().Count(new DataSubject { Emails = ["mia@team.test"] }, CategoryOf("notifications.told")));
+  }
+}
+
+[Test(Team)]
+void her_copy_lists_the_push_services_of_her_browsers_and_never_their_endpoints() {
+  TellTheTeam();
+  AllowTheirBrowsers();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Access, MiasAccount(), "", IdentityCheck.InPerson, "She asked at the front desk with her ID card.");
+    Assert.Equal(5, PlanLine.Single(l => l.Request == r && l.Category == "notifications.told").Items);
+    ApproveRequest(r);
+    var done = PrivacyRequest.Single(x => x.Id == r.Id);
+    Assert.Equal(RequestState.Done, done.State);
+    var export = ExportOf(done);
+    // Which push service, and since when…
+    Assert.Contains("fcm.googleapis.com", export);
+    Assert.Contains("updates.push.services.mozilla.com", export);
+    // …never the address that wakes the browser, nor its keys — and nothing of Leo's.
+    Assert.False(export.Contains("/fcm/send/"));
+    Assert.False(export.Contains("mia-phone-1"));
+    Assert.False(export.Contains("/wpush/"));
+    Assert.False(export.Contains("mia-laptop-1"));
+    Assert.False(export.Contains("tBHItJI5svbpez7KI4CCXg"));
+    Assert.False(export.Contains("leo-phone-1"));
+  }
+}
+
+[Test(Team)]
+void an_erasure_of_her_account_takes_her_browsers_and_no_others() {
+  TellTheTeam();
+  AllowTheirBrowsers();
+  runas (Ada) {
+    var r = FileRequest(RequestKind.Erasure, MiasAccount(), "", IdentityCheck.InPerson, "She asked at the front desk with her ID card.");
+    Assert.Equal(5, PlanLine.Single(l => l.Request == r && l.Category == "notifications.told").Items);
+    ApproveRequest(r);
+    Assert.Equal(RequestState.Done, PrivacyRequest.Single(x => x.Id == r.Id).State);
+  }
+  runas (Mia) { Assert.Equal(0, PushSubscription.Count()); }
+  runas (Leo) { Assert.Equal(1, PushSubscription.Count()); }
+}
+
+[Test(Team)]
+void a_request_that_proved_only_an_address_reaches_no_browsers() {
+  TellTheTeam();
+  AllowTheirBrowsers();
   runas (Ada) {
     Assert.Equal(0, new NotificationsPersonalData().Count(new DataSubject { Emails = ["mia@team.test"] }, CategoryOf("notifications.told")));
   }

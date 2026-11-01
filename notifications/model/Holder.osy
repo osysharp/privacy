@@ -4,7 +4,8 @@ using Osysharp.Identity;
 using Osysharp.Notifications;
 using Osysharp.Privacy;
 
-/// What the app told a person in its bell, and how they asked to be told — found by the account a request proved.
+/// What the app told a person in its bell, how they asked to be told, and the browsers they allowed to notify them —
+/// found by the account a request proved.
 ///
 /// ⚑ ONLY BY THE ACCOUNT. A notification is a person's because it was told TO them; a request that proved only an
 ///   address or a number reaches none (an address is not an account here, and guessing would hand somebody another
@@ -23,7 +24,8 @@ public class NotificationsPersonalData : IPersonalDataHolder {
   public int Count(DataSubject s, DataCategory c) {
     if (s.Account == null) { return 0; }
     var id = s.Account.Value;
-    return Notification.Count(n => n.Recipient.Id == id) + NotificationPreferences.Count(p => p.Person.Id == id);
+    return Notification.Count(n => n.Recipient.Id == id) + NotificationPreferences.Count(p => p.Person.Id == id)
+      + PushSubscription.Count(b => b.Person.Id == id);
   }
 
   public void Erase(DataSubject s, DataCategory c) {
@@ -31,6 +33,7 @@ public class NotificationsPersonalData : IPersonalDataHolder {
     var id = s.Account.Value;
     foreach (var n in Notification.Where(n => n.Recipient.Id == id).ToList()) { n.Delete(); }
     foreach (var p in NotificationPreferences.Where(p => p.Person.Id == id).ToList()) { p.Delete(); }
+    foreach (var b in PushSubscription.Where(b => b.Person.Id == id).ToList()) { b.Delete(); }
   }
 
   public DateTime? Restrict(DataSubject s, DataCategory c, bool untilLifted) {
@@ -43,7 +46,8 @@ public class NotificationsPersonalData : IPersonalDataHolder {
       if (until != null && (latest == null || until > latest)) { latest = until; }
     }
     // Their preferences are not restricted: they say only what may be mailed to them, and a restriction is the one
-    // moment that matters most to keep honouring "nothing".
+    // moment that matters most to keep honouring "nothing". Nor are their browsers: a push carries nothing of what it
+    // is about, and the bell it opens reads only what is not restricted.
     return untilLifted ? null : latest;
   }
 
@@ -60,6 +64,14 @@ public class NotificationsPersonalData : IPersonalDataHolder {
       foreach (var p in NotificationPreferences.Where(p => p.Person.Id == id).ToList()) {
         rows.Add(new ToldRow { Kind = "preferences", Said = p.Mail.Label });
         items.Add(new ExportItem { Title = Translate("What you asked to be mailed"), Body = p.Mail.Label });
+        rows.Add(new ToldRow { Kind = "push preferences", Said = p.Push.Label });
+        items.Add(new ExportItem { Title = Translate("What you asked to be pushed to your devices"), Body = p.Push.Label });
+      }
+      // ⚑ A BROWSER BY ITS HOST ONLY. Its endpoint is a credential — whoever holds it can wake that browser — so it is
+      //   never opened here, nor its keys: a copy of her data says which push service and since when, nothing more.
+      foreach (var b in PushSubscription.Where(b => b.Person.Id == id).OrderBy(b => b.At).ToList()) {
+        rows.Add(new ToldRow { At = b.At, Kind = "push", Said = b.Host });
+        items.Add(new ExportItem { At = b.At, Title = Translate("A browser you allowed to notify you"), Body = b.Host });
       }
     }
     return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
