@@ -17,13 +17,13 @@
 // ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: an app that uses Osysharp.Privacy and Osysharp.Agents writes
 //   nothing to get it — `completes` below, and `osy lock` says so. The holder is DISCOVERED, nothing is wired.
 package Osysharp.Privacy.Agents {
-  version     "1.2.0";
-  minPlatform "0.15.0";
+  version     "2.0.0";
+  minPlatform "0.19.0";
   summary     "Osysharp.Privacy's holder for Osysharp.Agents — what the app's AI agents did for a person and about a person: found by the account it was for and by what the app marked it as about, in their copy of their data, kept out of use on request, erased on request while every record's hash chain still verifies, its content gone after a month and the record after seven for everybody, with legal holds honoured.";
-  completes   Osysharp.Privacy@0, Osysharp.Agents@1;
+  completes   Osysharp.Privacy@0, Osysharp.Agents@2;
   model "model/*.osy";
   use Osysharp.Identity@0;
-  use Osysharp.Agents@1;
+  use Osysharp.Agents@2;
   use Osysharp.Privacy@0;
   tests "tests";
 }

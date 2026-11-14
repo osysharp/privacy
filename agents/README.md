@@ -6,7 +6,7 @@ out of use, or have erased — and none of it is kept past its time. After an er
 still proves it was not changed.
 
 ```osy
-use Osysharp.Agents@1;
+use Osysharp.Agents@2;
 use Osysharp.Privacy@0;
 // Osysharp.Privacy.Agents is not written: it arrives by itself, because the app uses what it completes (`osy lock` says so)
 ```
