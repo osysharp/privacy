@@ -4,7 +4,7 @@ Who handed an inbox item to an AI agent — under their privacy request.
 
 ```osy
 use Osysharp.Privacy@0;
-use Osysharp.Agents.HumanRequests@1;     // …and this bridge is there: nothing to wire.
+use Osysharp.Agents.HumanRequests@2;     // …and this bridge is there: nothing to wire.
 
 // A person hands an item of their inbox to an agent. The handover says who.
 await AgentDesk.Hand(claim, Agents.Of<Matcher>(), new MatchClaim(), claim.Described);
@@ -34,7 +34,7 @@ Tests: `tests/handovers.test.osy`.
 
 ## Source and package
 
-- Package: `Osysharp.Privacy.Agents.HumanRequests` — `use Osysharp.Privacy.Agents.HumanRequests@1;` (an app that uses
+- Package: `Osysharp.Privacy.Agents.HumanRequests` — `use Osysharp.Privacy.Agents.HumanRequests@2;` (an app that uses
   both kits gets it without saying so)
 - Source: [`kits/privacy-agents-human-requests`](.) — `model/Holder.osy`
 - Uses [`Osysharp.Privacy`](../privacy) and [`Osysharp.Agents.HumanRequests`](../agents-human-requests).

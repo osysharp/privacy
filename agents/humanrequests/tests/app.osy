@@ -4,10 +4,10 @@
 app LostProperty {
   model "model/**/*.osy";
   tests "**/*.test.osy";
-  use Osysharp.Agents@1;
-  use Osysharp.Agents.Testing@1;
-  use Osysharp.Agents.HumanRequests@1;
-  use Osysharp.Privacy.Agents.HumanRequests@1;
+  use Osysharp.Agents@2;
+  use Osysharp.Agents.Testing@2;
+  use Osysharp.Agents.HumanRequests@2;
+  use Osysharp.Privacy.Agents.HumanRequests@2;
   use Osysharp.HumanRequests@1;
   use Osysharp.Privacy@0;
   use Osysharp.WorkQueues@1;
