@@ -103,16 +103,47 @@ public string ConfirmAnAddress(Guid proof, string code) {
   return p!.Prove(proof, code);
 }
 
+/// Who may ask about an address with no account (`AskAboutAnAddress`) — anybody, signed in or not, by default; an app
+/// narrows it by answering the policy itself.
+virtual policy AsksWithoutAnAccount => IsAnonymous || IsAuthenticated;
+
 /// Ask about the address you just proved, with no account: a copy, your data to take elsewhere, erasure, or restriction.
 /// Answers the ask; its `Request` is the request once the kit's run filed it (`Problem` says why it did not).
+/// Refused, writing nothing, where nothing proves an address (`CanAskWithoutAnAccount`), and past five asks with no
+/// account an hour from one place (`Request.ClientAddress`) — nobody fills the privacy inbox from a script.
 [AllowAnonymous]
 public PrivacyAsk AskAboutAnAddress(RequestKind right, Guid proof) {
   if (Visitor.Id == null) {
     throw new ValidationException("This browser cannot keep your request — let it keep cookies for this site and ask again.");
   }
-  var ask = new PrivacyAsk { Right = right, Proof = proof, Language = Session.Language };
+  return AskWithNoAccount(right, proof);
+}
+
+/// The one writer of an ask with no account (`deny create … except via`), so its limits hold however the row is asked
+/// for — a write a browser sends makes none.
+///
+/// SECURITY-INVARIANT(privacy-anonymous-asks-are-bounded): an ask with no account is written only here, never where the
+/// app has no address proof, and at most five an hour per caller's address — counted by its keyed fingerprint, so the
+/// address itself is never kept. Guarded by tests/self.test.osy
+/// `asks_with_no_account_from_one_place_stop_at_five_an_hour` and Platform.Tests
+/// `PrivacyAskWithoutABrowserTests.AnAppThatProvesNoAddress_RefusesAnAskWithNoAccount_AndWritesNothing`.
+[Authorize(AsksWithoutAnAccount)]
+PrivacyAsk AskWithNoAccount(RequestKind right, Guid proof) {
+  if (AddressProofs().Count == 0) { throw new ValidationException(NoSelfService()); }
+  var caller = Security.Fingerprint(Request.ClientAddress);
+  if (AsksWithNoAccountFrom(caller) >= 5) {
+    throw new ValidationException("Several requests were sent from here in the last hour — wait an hour and ask again, or write to us.");
+  }
+  var ask = new PrivacyAsk { Right = right, Proof = proof, Language = Session.Language, Caller = caller };
   UnitOfWork.Commit();
   return PrivacyAsk.Single(a => a.Id == ask.Id);
+}
+
+/// How many asks with no account came from the caller fingerprinted `caller` within the last hour — what
+/// `AskWithNoAccount` holds to five. Counts every browser's asks, which no caller may read.
+int AsksWithNoAccountFrom(string caller) {
+  var since = DateTime.UtcNow - TimeSpan.FromHours(1);
+  return PrivacyAsk.Count(a => a.Requester == null && a.Caller == caller && a.CreatedAt > since);
 }
 
 /// What the page says when nobody can ask for themselves here.
@@ -142,6 +173,7 @@ public enum AskState {
 /// `a_person_cannot_write_a_request_or_its_subject` and `a_request_staff_filed_is_never_mailed_to_the_address_they_typed`;
 /// on a request with no browser visit (an API client) by Platform.Tests `PrivacyAskWithoutABrowserTests`.
 public entity PrivacyAsk {
+  [CreatedAt] DateTime? CreatedAt;
   RequestKind Right;
   /// The signed-in person asking — none for a person with no account, who asks from their browser (`Visit`).
   Principal? Requester;
@@ -155,6 +187,9 @@ public entity PrivacyAsk {
   [MaxLength(300)] string Problem = "";
   /// The language they asked in — their answer's readable copy is written in it.
   [MaxLength(16)] string Language = "";
+  /// For an ask with no account: the keyed fingerprint of the address it came from (`Request.ClientAddress`) — what
+  /// `AskWithNoAccount` limits by; the address itself is not kept.
+  [MaxLength(64)] string? Caller;
   AskState State;                                   // no default — PrivacyIntake owns it
   security {
     allow read when ManagesPrivacy;
@@ -171,6 +206,9 @@ public entity PrivacyAsk {
     // UNKNOWN, and an UNKNOWN deny applies. Unscoped, this line refused every signed-in ask there (measured on the
     // beta in Admin, 2026-10-20). Guarded by PrivacyAskWithoutABrowserTests.
     deny create where Requester == null && Visit != Visitor.Id;
+    // An ask with no account is made only by `AskAboutAnAddress`, which holds it to its limits — never sent as a write.
+    deny create where Requester == null except via AskWithNoAccount;
+    allow read via AsksWithNoAccountFrom;
     deny update;
   }
 }

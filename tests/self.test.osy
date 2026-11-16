@@ -185,6 +185,31 @@ void a_customer_with_no_account_proves_their_address_and_asks_about_it() {
   }
 }
 
+/// A browser with no account asks — with a proof nobody made, which is all a flood needs.
+void AsksFrom(string visit) {
+  runas (new Visitor { Id = visit }) { AskAboutAnAddress(RequestKind.Access, Guid.NewGuid()); }
+}
+
+[Test(Desk)]
+void asks_with_no_account_from_one_place_stop_at_five_an_hour() {
+  // Nobody fills the privacy inbox from one place: five asks with no account an hour from one address, whichever
+  // browser they come from. The sixth is refused, and writes nothing.
+  AsksFrom("v-1");
+  AsksFrom("v-2");
+  AsksFrom("v-3");
+  AsksFrom("v-4");
+  AsksFrom("v-5");
+  runas (new Visitor { Id = "v-6" }) {
+    var e = Assert.Throws<ValidationException>(() => AskAboutAnAddress(RequestKind.Access, Guid.NewGuid()));
+    Assert.Contains("in the last hour", e.Message);
+  }
+  runas (Ada) { Assert.Equal(5, PrivacyAsk.Count(a => a.Requester == null)); }
+  // An hour on, that place may ask again.
+  TestClock.Advance(TimeSpan.FromMinutes(61));
+  AsksFrom("v-6");
+  runas (Ada) { Assert.Equal(6, PrivacyAsk.Count(a => a.Requester == null)); }
+}
+
 [Test(Desk)]
 void an_ask_without_a_fresh_unspent_proof_files_nothing() {
   runas (Ann) {

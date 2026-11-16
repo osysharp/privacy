@@ -60,6 +60,12 @@ knows, each kind kept for its own time). A person without an account asks
 the desk: staff file the request on their behalf (`FileRequest`), record how they checked who it is, and deliver the
 answer themselves.
 
+Where something proves an address (`IAddressProof` — `Osysharp.Privacy.Conversations` mails a code), a person with no
+account asks for themselves on the kit's page (`AskAboutAnAddress`). Where nothing does, that ask is refused before
+anything is written, with the way to ask that works. It is also held to **five asks an hour from one place** (the
+caller's address, `Request.ClientAddress`, counted by its keyed fingerprint — the address is not kept), and only the
+kit's own function writes one: who may ask that way is `policy AsksWithoutAnAccount` (anybody, by default).
+
 ## Examples
 
 Taken from this package's own tests, which compile and run on every release.
