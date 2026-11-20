@@ -5,7 +5,7 @@
 off — and a call stops being anybody's when its time is up.
 
 ```osy
-use Osysharp.Llm@2;
+use Osysharp.Llm@3;
 use Osysharp.Privacy@0;
 // Osysharp.Privacy.Llm is not written: it arrives by itself, because the app uses what it completes (`osy lock` says so)
 ```

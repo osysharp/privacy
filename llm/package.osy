@@ -12,13 +12,13 @@
 // ⚑ AN ADAPTER, SO NEITHER KIT DEPENDS ON THE OTHER: an app that uses Osysharp.Privacy and Osysharp.Llm writes
 //   nothing to get it — `completes` below, and `osy lock` says so. The holder is DISCOVERED, nothing is wired.
 package Osysharp.Privacy.Llm {
-  version     "1.1.0";
-  minPlatform "0.14.0";
+  version     "1.2.0";
+  minPlatform "0.22.0";
   summary     "Osysharp.Privacy's holder for Osysharp.Llm's meter — the AI model calls made for a person: found by their account, in their copy of their data, kept out of use on request, taken off the meter when they ask to be erased or after thirteen months while what the calls cost stays counted, with legal holds honoured.";
-  completes   Osysharp.Privacy@0, Osysharp.Llm@2;
+  completes   Osysharp.Privacy@0, Osysharp.Llm@3;
   model "model/*.osy";
   use Osysharp.Identity@0;
-  use Osysharp.Llm@2;
+  use Osysharp.Llm@3;
   use Osysharp.Privacy@0;
   tests "tests";
 }
