@@ -33,7 +33,10 @@ public class ConversationPrivacyRules {
   /// The person's words in `conversation` were just erased, or its period ended — erase what the APP keeps beside it
   /// that carries those words: a reply draft somebody left on its ticket, the ticket's own copy of the subject. Runs as
   /// the system, in the same commit.
-  public virtual void Erased(Conversation conversation) { }
+  /// An ENTRY of the app's own: the privacy run carries out a request the app already approved (or a period that ended), so
+  /// a raise the app makes here with no person behind it — the daily purge — passes a door; an officer's approval stays
+  /// the officer's.
+  [Entry(App)] public virtual void Erased(Conversation conversation) { }
   /// `conversation` is now KEPT RESTRICTED for `category` until `until` (null: until a hold, or the person, lifts it) —
   /// absent from every ordinary read, read only for its purpose. Keep what the APP holds beside it the same way: say so
   /// on the ticket it belongs to, restrict the answers a customer gave on it (`Restriction.Restrict(row, category,
@@ -41,5 +44,6 @@ public class ConversationPrivacyRules {
   /// moves (a legal hold placed or lifted). Runs as the system, in the same commit. When a kept conversation's period
   /// ends, `Erased` is called inside a purpose read for its category — so what the app restricted here is in reach
   /// again, to lift and erase with it.
-  public virtual void Kept(Conversation conversation, string category, DateTime? until) { }
+  /// An ENTRY of the app's own, as `Erased` is.
+  [Entry(App)] public virtual void Kept(Conversation conversation, string category, DateTime? until) { }
 }
