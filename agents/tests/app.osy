@@ -16,7 +16,7 @@ app Library {
   use Osysharp.Privacy@0;
   use Osysharp.Agents@2;
   use Osysharp.Agents.Testing@2;
-  use Osysharp.Llm@2;
+  use Osysharp.Llm@3;
   // A late loan is chased as an assignment, the desk's work attached to it and its result kept in the repository —
   // so the family's other holders arrive too, and one request reaches all of it.
   use Osysharp.Assignments@2;
