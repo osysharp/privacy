@@ -16,7 +16,7 @@ app Recruiting {
   use Osysharp.Privacy@0;
   use Osysharp.Assignments@2;
   use Osysharp.WorkRepositories@1;
-  use Osysharp.Llm@2;
+  use Osysharp.Llm@3;
   // Osysharp.Privacy.WorkRepositories, the package under test, is not written: it arrives by itself because this app
   // uses Privacy and WorkRepositories, which it completes (`osy lock` includes it and says so). So does
   // Osysharp.Privacy.Assignments.
