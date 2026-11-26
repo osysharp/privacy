@@ -1,6 +1,5 @@
 namespace Osysharp.Privacy.ClassBookings;
 
-using Osysharp.Identity;
 using Osysharp.ClassBookings;
 using Osysharp.Privacy;
 
@@ -47,16 +46,16 @@ public class ClassBookingsPersonalData : IPersonalDataHolder {
     }
     return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
   }
-}
 
-/// One booking in a person's export.
-public class BookingExportRow {
-  public string Session = "";
-  public DateTime StartsAt;
-  public string State = "";
-  public int? Place;
-  public DateTime BookedAt;
-  public DateTime? CheckedInAt;
-  public DateTime? CancelledAt;
-  public bool LateCancel;
+  /// One booking in a person's export.
+  public class BookingExportRow {
+    public string Session = "";
+    public DateTime StartsAt;
+    public string State = "";
+    public int? Place;
+    public DateTime BookedAt;
+    public DateTime? CheckedInAt;
+    public DateTime? CancelledAt;
+    public bool LateCancel;
+  }
 }
