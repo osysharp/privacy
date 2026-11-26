@@ -47,14 +47,14 @@ public class PrepaidCreditsPersonalData : IPersonalDataHolder {
     }
     return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
   }
-}
 
-/// One line of a person's credits in their export.
-public class CreditLedgerRow {
-  public DateTime At;
-  public string What = "";
-  public string Pack = "";
-  public int Change;
-  public int BalanceAfter;
-  public string Reason = "";
+  /// One line of a person's credits in their export.
+  public class CreditLedgerRow {
+    public DateTime At;
+    public string What = "";
+    public string Pack = "";
+    public int Change;
+    public int BalanceAfter;
+    public string Reason = "";
+  }
 }
