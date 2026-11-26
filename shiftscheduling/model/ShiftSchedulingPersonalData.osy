@@ -62,11 +62,11 @@ public class ShiftSchedulingPersonalData : IPersonalDataHolder {
     }
     return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
   }
-}
 
-/// One line of a person's rota in their export.
-public class RotaRow {
-  public DateTime At;
-  public string What = "";
-  public string Detail = "";
+  /// One line of a person's rota in their export.
+  public class RotaRow {
+    public DateTime At;
+    public string What = "";
+    public string Detail = "";
+  }
 }
