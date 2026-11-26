@@ -35,11 +35,11 @@ public class ReceivedMailPersonalData : IPersonalDataHolder {
     }
     return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
   }
-}
 
-/// One received mail in a person's export.
-public class ReceivedMailRow {
-  public DateTime At;
-  public string To = "";
-  public string Subject = "";
+  /// One received mail in a person's export.
+  public class ReceivedMailRow {
+    public DateTime At;
+    public string To = "";
+    public string Subject = "";
+  }
 }
