@@ -48,11 +48,11 @@ public class OfferSalesPersonalData : IPersonalDataHolder {
     }
     return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
   }
-}
 
-/// One purchase in a person's export.
-public class PurchaseRow {
-  public DateTime At;
-  public string Receipt = "";
-  public string Detail = "";
+  /// One purchase in a person's export.
+  public class PurchaseRow {
+    public DateTime At;
+    public string Receipt = "";
+    public string Detail = "";
+  }
 }
