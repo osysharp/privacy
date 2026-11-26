@@ -55,12 +55,12 @@ public class QualificationsPersonalData : IPersonalDataHolder {
     }
     return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
   }
-}
 
-/// One line of a person's qualifications in their export.
-public class QualificationRow {
-  public DateTime At;
-  public string What = "";
-  public string Detail = "";
-  public string Signed = "";
+  /// One line of a person's qualifications in their export.
+  public class QualificationRow {
+    public DateTime At;
+    public string What = "";
+    public string Detail = "";
+    public string Signed = "";
+  }
 }

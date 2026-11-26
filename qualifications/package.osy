@@ -5,10 +5,11 @@
 //   records inductions, and Privacy does not force qualifications on its apps. An app using both gets it by itself —
 //   `completes` below, and `osy lock` says so — the holder is DISCOVERED, nothing is wired.
 package Osysharp.Privacy.Qualifications {
-  version     "0.2.0";
-  minPlatform "0.14.0";
+  version     "1.0.0";
+  minPlatform "0.25.0";
   summary     "Osysharp.Privacy's holder for Osysharp.Qualifications — the qualifications a person holds, what they signed and on which text, and the evidence files, in their copy of their data and erased when they ask.";
   completes   Osysharp.Privacy@0, Osysharp.Qualifications@0;
+  layout "Osysharp.Privacy.Qualifications" members;
   model "model/*.osy";
   use Osysharp.Identity@0;
   use Osysharp.Qualifications@0;
