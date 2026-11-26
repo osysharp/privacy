@@ -56,11 +56,11 @@ public class MembershipsPersonalData : IPersonalDataHolder {
     }
     return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
   }
-}
 
-/// One line of a person's memberships in their export.
-public class MembershipRow {
-  public DateTime At;
-  public string What = "";
-  public string Detail = "";
+  /// One line of a person's memberships in their export.
+  public class MembershipRow {
+    public DateTime At;
+    public string What = "";
+    public string Detail = "";
+  }
 }
