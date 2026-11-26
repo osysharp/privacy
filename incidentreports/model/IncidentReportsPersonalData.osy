@@ -38,36 +38,36 @@ public class IncidentReportsPersonalData : IPersonalDataHolder {
   }
 
   public ExportSection Export(DataSubject s, DataCategory c) {
-    List<IncidentRecordRow> rows = [];
+    List<RecordRow> rows = [];
     List<ExportItem> items = [];
     if (s.Account != null) {
       var id = s.Account.Value;
       foreach (var r in IncidentReport.Include(r => r.Category).Where(r => r.Reporter.Id == id).OrderBy(r => r.ReportedAt).Take(1000).ToList()) {
         var body = r.Category.Name + " at " + r.Location + ", " + r.OccurredAt.ToString("yyyy-MM-dd HH:mm") + "\n\n" + r.Description
                    + (r.ImmediateAction != "" ? "\n\nDone there and then: " + r.ImmediateAction : "");
-        rows.Add(new IncidentRecordRow { At = r.ReportedAt, What = "You reported " + r.Number, Detail = body });
+        rows.Add(new RecordRow { At = r.ReportedAt, What = "You reported " + r.Number, Detail = body });
         items.Add(new ExportItem { At = r.ReportedAt, Title = "You reported " + r.Number, Body = body });
       }
       foreach (var p in IncidentPerson.Include(p => p.Report).Where(p => p.Person.Id == id).OrderBy(p => p.AddedAt).Take(1000).ToList()) {
         var body = p.Role.Label + (p.Injury != "" ? " · injury: " + p.Injury : "")
                    + (p.Role == IncidentRole.Injured ? " · care: " + p.Treatment.Label + (p.TreatmentNote != "" ? " — " + p.TreatmentNote : "") : "")
                    + (p.Statement != "" ? "\n\nYour statement: " + p.Statement : "");
-        rows.Add(new IncidentRecordRow { At = p.AddedAt, What = "Named in " + p.Report.Number, Detail = body });
+        rows.Add(new RecordRow { At = p.AddedAt, What = "Named in " + p.Report.Number, Detail = body });
         items.Add(new ExportItem { At = p.AddedAt, Title = "Named in " + p.Report.Number, Body = body });
       }
       foreach (var n in IncidentNotice.Where(n => n.Recipient.Id == id).OrderBy(n => n.SentAt).Take(1000).ToList()) {
         var body = n.Summary + (n.Response != "" ? "\n\nYou said: " + n.Response : "");
-        rows.Add(new IncidentRecordRow { At = n.SentAt, What = "Told about an incident", Detail = body });
+        rows.Add(new RecordRow { At = n.SentAt, What = "Told about an incident", Detail = body });
         items.Add(new ExportItem { At = n.SentAt, Title = "Told about an incident", Body = body });
       }
     }
     return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
   }
-}
 
-/// One line of a person's incident record in their export.
-public class IncidentRecordRow {
-  public DateTime At;
-  public string What = "";
-  public string Detail = "";
+  /// One line of a person's incident record in their export.
+  public class RecordRow {
+    public DateTime At;
+    public string What = "";
+    public string Detail = "";
+  }
 }
