@@ -39,10 +39,10 @@ public class SmsPersonalData : IPersonalDataHolder {
     }
     return new ExportSection { Category = c.Key, Json = JsonSerializer.Serialize(rows), Items = items };
   }
-}
 
-/// One text in a person's export.
-public class SentTextRow {
-  public DateTime At;
-  public string Text = "";
+  /// One text in a person's export.
+  public class SentTextRow {
+    public DateTime At;
+    public string Text = "";
+  }
 }
